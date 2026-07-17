@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0b">
+  <title>Пример приложения — Товары</title>
+  <link rel="icon" href="../../favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="../../favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+
+  <!-- Общие стили портала. Путь ../../ ведёт из /apps/example/ в корень. -->
+  <link rel="stylesheet" href="../../assets/portal.css">
+
+  <style>
+    /* Локальные стили только этого приложения */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: clamp(20px, 4vw, 32px);
+    }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+    .tab {
+      padding: 9px 16px; font-size: 14px; font-weight: 600;
+      color: var(--text-dim); background: var(--panel);
+      border: 1px solid var(--border); border-radius: 999px;
+      cursor: pointer; transition: all .18s ease;
+    }
+    .tab:hover { border-color: var(--border-hover); color: var(--text); }
+    .tab.is-active { color: #0a0a0b; background: var(--accent); border-color: var(--accent); }
+
+    .pane { display: none; }
+    .pane.is-active { display: block; }
+
+    .field { margin-bottom: 20px; }
+    .field:last-child { margin-bottom: 0; }
+    .field__label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 9px; }
+
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+           padding: 14px 0; border-bottom: 1px solid var(--border); }
+    .row:last-child { border-bottom: none; }
+    .row__text { font-size: 15px; }
+
+    /* Переключатель */
+    .switch { position: relative; width: 46px; height: 26px; flex: none; }
+    .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+    .switch__track {
+      position: absolute; inset: 0; background: #2a2a2e; border-radius: 999px; transition: background .18s ease;
+    }
+    .switch__track::after {
+      content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+      background: #f4f4f2; border-radius: 50%; transition: transform .18s ease;
+    }
+    .switch input:checked + .switch__track { background: var(--green); }
+    .switch input:checked + .switch__track::after { transform: translateX(20px); }
+    .switch input:focus-visible + .switch__track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    select, textarea {
+      width: 100%; font-family: var(--font); font-size: 15px; color: var(--text);
+      background: #0e0e10; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 12px 14px;
+    }
+    select:focus, textarea:focus { outline: none; border-color: var(--border-hover); }
+    textarea { min-height: 140px; resize: vertical; line-height: 1.6; }
+
+    .hint {
+      margin-top: 18px; font-size: 13px; color: var(--text-faint); line-height: 1.6;
+    }
+    .saved {
+      display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--green);
+      opacity: 0; transition: opacity .25s ease;
+    }
+    .saved.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <!-- =====================================================================
+       ШАПКА С КНОПКОЙ «ГЛАВНАЯ»
+       Скопируйте этот блок в начало каждого нового приложения.
+       href="../../index.html" ведёт на главную страницу портала.
+       ===================================================================== -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand__name">ТОВАРЫ<span class="slash">//</span></div>
+      <div class="brand__sub">Пример приложения</div>
+    </div>
+    <a class="home-btn" href="../../index.html">
+      <span class="home-btn__arrow">←</span> Главная
+    </a>
+  </header>
+
+  <main class="wrap">
+    <p class="eyebrow">Настройки сохраняются автоматически <span class="saved" id="saved">● сохранено</span></p>
+
+    <div class="panel">
+      <!-- Вкладки -->
+      <div class="tabs" id="tabs">
+        <button class="tab" data-tab="overview">Обзор</button>
+        <button class="tab" data-tab="settings">Настройки</button>
+        <button class="tab" data-tab="notes">Заметки</button>
+      </div>
+
+      <!-- Вкладка: Обзор -->
+      <section class="pane" data-pane="overview">
+        <p class="row__text" style="line-height:1.7; color:var(--text-dim); margin:0;">
+          Это приложение-образец. Оно показывает две вещи, которые вы просили:
+          сверху есть кнопка «Главная» (вернёт на портал), а любые настройки ниже
+          сохраняются в браузере. Переключите вкладку, включите тумблеры, напишите
+          заметку — и нажмите обновление страницы (F5). Всё останется на месте,
+          и вас не выкинет из приложения.
+        </p>
+      </section>
+
+      <!-- Вкладка: Настройки -->
+      <section class="pane" data-pane="settings">
+        <div class="row">
+          <span class="row__text">Уведомления</span>
+          <label class="switch">
+            <input type="checkbox" data-key="notify">
+            <span class="switch__track"></span>
+          </label>
+        </div>
+        <div class="row">
+          <span class="row__text">Компактный режим</span>
+          <label class="switch">
+            <input type="checkbox" data-key="compact">
+            <span class="switch__track"></span>
+          </label>
+        </div>
+        <div class="row" style="border-bottom:none; padding-bottom:0;">
+          <span class="row__text">Показывать архив</span>
+          <label class="switch">
+            <input type="checkbox" data-key="archive">
+            <span class="switch__track"></span>
+          </label>
+        </div>
+
+        <div class="field" style="margin-top:22px;">
+          <label class="field__label" for="period">Период по умолчанию</label>
+          <select id="period" data-key="period">
+            <option value="today">Сегодня</option>
+            <option value="week">Неделя</option>
+            <option value="month">Месяц</option>
+            <option value="quarter">Квартал</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- Вкладка: Заметки -->
+      <section class="pane" data-pane="notes">
+        <div class="field">
+          <label class="field__label" for="note">Ваша заметка</label>
+          <textarea id="note" data-key="note" placeholder="Напишите что-нибудь и обновите страницу — текст сохранится…"></textarea>
+        </div>
+      </section>
+
+      <p class="hint">
+        Как это работает: значения хранятся в памяти браузера (localStorage) под ключом
+        <code>tovary:example</code>. Обновление страницы их не стирает.
+      </p>
+    </div>
+  </main>
+
+  <script>
+    /* =====================================================================
+       СОХРАНЕНИЕ НАСТРОЕК
+       Ключ уникален для каждого приложения — меняйте STORAGE_KEY при копировании.
+       ===================================================================== */
+    const STORAGE_KEY = 'tovary:example';
+
+    const load = () => {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+      catch { return {}; }
+    };
+    let state = load();
+
+    const savedEl = document.getElementById('saved');
+    let savedTimer;
+    const save = () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      savedEl.classList.add('show');
+      clearTimeout(savedTimer);
+      savedTimer = setTimeout(() => savedEl.classList.remove('show'), 1200);
+    };
+
+    /* ---- Вкладки -------------------------------------------------------- */
+    const tabs  = [...document.querySelectorAll('.tab')];
+    const panes = [...document.querySelectorAll('.pane')];
+
+    function showTab(name) {
+      tabs.forEach(t => t.classList.toggle('is-active', t.dataset.tab === name));
+      panes.forEach(p => p.classList.toggle('is-active', p.dataset.pane === name));
+    }
+    tabs.forEach(t => t.addEventListener('click', () => {
+      state.tab = t.dataset.tab;
+      showTab(state.tab);
+      save();
+    }));
+
+    /* ---- Поля (тумблеры, select, textarea) ----------------------------- */
+    const inputs = [...document.querySelectorAll('[data-key]')];
+    inputs.forEach(el => {
+      const key = el.dataset.key;
+      const evt = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
+      el.addEventListener(evt, () => {
+        state[key] = (el.type === 'checkbox') ? el.checked : el.value;
+        save();
+      });
+    });
+
+    /* ---- Восстановление состояния при загрузке ------------------------- */
+    function restore() {
+      inputs.forEach(el => {
+        const key = el.dataset.key;
+        if (state[key] === undefined) return;
+        if (el.type === 'checkbox') el.checked = state[key];
+        else el.value = state[key];
+      });
+      showTab(state.tab || 'overview');
+    }
+    restore();
+  </script>
+
+</body>
+</html>

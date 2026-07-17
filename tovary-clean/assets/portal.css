@@ -1,0 +1,206 @@
+/* ==========================================================================
+   Портал «Товары» — общие стили
+   Один файл для главной страницы и всех приложений.
+   Цвета и типографику меняйте здесь — изменится везде сразу.
+   ========================================================================== */
+
+:root {
+  --bg:            #0a0a0b;
+  --bg-grad:       #101013;
+  --panel:         #141416;
+  --panel-hover:   #1a1a1e;
+  --border:        rgba(255, 255, 255, 0.07);
+  --border-hover:  rgba(255, 255, 255, 0.18);
+
+  --text:          #f4f4f2;
+  --text-dim:      #8b8b86;
+  --text-faint:    #5c5c58;
+
+  --accent:        #d6f24a;   /* лаймовый акцент — «//» в логотипе */
+  --green:         #34d399;
+  --green-bg:      rgba(52, 211, 153, 0.10);
+  --green-border:  rgba(52, 211, 153, 0.28);
+
+  --radius:        10px;
+  --radius-sm:     7px;
+  --maxw:          1120px;
+
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, "Noto Sans", "Liberation Sans", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font);
+  color: var(--text);
+  background:
+    radial-gradient(1200px 600px at 50% -10%, var(--bg-grad), transparent 70%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: inherit; text-decoration: none; }
+
+/* ---------- Шапка ---------------------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px clamp(16px, 5vw, 48px);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+.brand__name {
+  font-size: clamp(19px, 2.4vw, 22px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.brand__name .slash { color: var(--accent); margin-left: 6px; }
+
+.brand__sub {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  letter-spacing: 0.01em;
+}
+
+/* Кнопка «Главная» — используется в шапке каждого приложения */
+.home-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 15px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+  white-space: nowrap;
+}
+.home-btn:hover  { border-color: var(--border-hover); background: var(--panel-hover); }
+.home-btn:active { transform: translateY(1px); }
+.home-btn__arrow { font-size: 15px; line-height: 1; }
+
+/* ---------- Основной контейнер -------------------------------------------- */
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: clamp(28px, 6vw, 64px) clamp(16px, 5vw, 48px) 80px;
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 0 0 22px;
+}
+
+/* ---------- Сетка приложений ---------------------------------------------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 236px;
+  padding: 26px 26px 22px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+
+/* Активная карточка кликабельна */
+a.card:hover {
+  border-color: var(--border-hover);
+  background: var(--panel-hover);
+  transform: translateY(-2px);
+}
+a.card:hover .card__arrow { color: var(--text); transform: translate(2px, -2px); }
+a.card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Карточка «скоро» — приглушена, некликабельна */
+.card--soon { opacity: 0.5; }
+
+.card__icon { font-size: 30px; line-height: 1; }
+
+.card__arrow {
+  position: absolute;
+  top: 22px; right: 22px;
+  font-size: 18px;
+  color: var(--text-faint);
+  transition: color .2s ease, transform .2s ease;
+}
+
+.card__title {
+  margin: 26px 0 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.card__desc {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.card__foot { margin-top: auto; padding-top: 18px; }
+
+/* Статус-бейджи */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+}
+.badge--active {
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+}
+.badge--active .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+.badge--soon {
+  color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+}
+
+/* ---------- Служебное ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

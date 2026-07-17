@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0b">
+  <title>Товары — портал приложений</title>
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="assets/portal.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand__name">ТОВАРЫ<span class="slash">//</span></div>
+      <div class="brand__sub">Внутренний портал приложений</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <p class="eyebrow">Выберите приложение</p>
+    <div class="grid" id="grid"></div>
+  </main>
+
+  <script>
+    /* =====================================================================
+       СПИСОК ПРИЛОЖЕНИЙ
+       ---------------------------------------------------------------------
+       Чтобы добавить новое приложение — допишите объект в массив APPS.
+         icon   — эмодзи или символ
+         title  — название
+         desc   — короткое описание
+         href   — путь к приложению (папка внутри /apps/…)
+         status — 'active' (кликабельно) или 'soon' (серым, «Скоро»)
+       ===================================================================== */
+    const APPS = [
+      {
+        icon:   '🧩',
+        title:  'Пример приложения',
+        desc:   'Шаблон-образец: кнопка «Главная» сверху и сохранение настроек при обновлении страницы. Скопируйте его под своё приложение.',
+        href:   'apps/example/index.html',
+        status: 'active'
+      }
+    ];
+
+    /* ---- Отрисовка карточек (менять обычно не нужно) -------------------- */
+    const grid = document.getElementById('grid');
+
+    const esc = (s) => String(s).replace(/[&<>"]/g, c => (
+      { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]
+    ));
+
+    grid.innerHTML = APPS.map(app => {
+      const active = app.status === 'active';
+      const tag = active ? 'a' : 'div';
+      const hrefAttr = active ? ` href="${esc(app.href)}"` : '';
+      const cls = active ? 'card' : 'card card--soon';
+      const arrow = active ? '<span class="card__arrow">↗</span>' : '';
+      const badge = active
+        ? '<span class="badge badge--active"><span class="dot"></span>Активно</span>'
+        : '<span class="badge badge--soon">Скоро</span>';
+
+      return `
+        <${tag} class="${cls}"${hrefAttr}>
+          <div class="card__icon">${esc(app.icon)}</div>
+          ${arrow}
+          <h2 class="card__title">${esc(app.title)}</h2>
+          <p class="card__desc">${esc(app.desc)}</p>
+          <div class="card__foot">${badge}</div>
+        </${tag}>`;
+    }).join('');
+  </script>
+
+</body>
+</html>

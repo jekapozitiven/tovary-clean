@@ -227,7 +227,7 @@
   <div id="work" class="hidden">
 
     <div class="toolbar">
-      <button class="btn btn--sm" id="load">Загрузить все магазины</button>
+      <button class="btn btn--sm" id="load">Обновить из Prom</button>
       <input type="text" class="search" id="search" placeholder="Артикул или название — ищет во всех магазинах…">
       <select id="fstatus"><option value="">Все статусы</option></select>
       <select id="fnote">
@@ -236,6 +236,7 @@
         <option value="no">Только без заметки</option>
       </select>
       <button class="btn btn--ghost btn--sm" id="cfg-open">Настройки</button>
+      <button class="btn btn--ghost btn--sm" id="wipe" title="Стереть сохранённые данные">Очистить</button>
     </div>
 
     <div class="bulk hidden" id="bulk">
@@ -252,7 +253,7 @@
     <div class="cols">
       <div class="panel" style="padding:6px;">
         <div class="list" id="list">
-          <div class="empty">Нажмите «Загрузить все магазины»</div>
+          <div class="empty">Нажмите «Обновить из Prom»</div>
         </div>
       </div>
       <div class="panel" id="editor">
@@ -300,6 +301,7 @@ let current = null;    // { store, product }
 let openBase = null;   // какая группа раскрыта
 let picked = new Set();// выделенные позиции для массовых заметок
 let lastResponse = null; // последний ответ Prom — для разбора
+let cacheAge = null;   // когда данные были загружены
 
 const $ = (id) => document.getElementById(id);
 
@@ -348,14 +350,132 @@ $('cfg-open').addEventListener('click', () => {
 });
 $('cfg-hide').addEventListener('click', () => $('setup').classList.add('hidden'));
 
+$('wipe').addEventListener('click', async function () {
+  if (!confirm('Стереть сохранённые товары из браузера? Заметки останутся.')) return;
+  await cacheClear();
+  byStore = {}; groups = []; shown = []; current = null; cacheAge = null;
+  renderList(); renderEditor();
+  $('stats').innerHTML = '<div class="msg msg--warn">Данные стёрты. Нажмите «Обновить из Prom».</div>';
+});
+
 if (cfg.url && cfg.pass) {
   $('setup').classList.add('hidden');
   $('cfg-hide').classList.remove('hidden');
   $('work').classList.remove('hidden');
+  // сразу показываем сохранённые данные, без обращения к Prom
+  $('stats').innerHTML = '<div class="msg msg--warn">Открываю сохранённые данные…</div>';
+  loadFromCache().then(function (ok) {
+    if (!ok) $('stats').innerHTML =
+      '<div class="msg msg--warn">Данных пока нет. Нажмите «Обновить из Prom».</div>';
+  });
 }
 
 /* ===================================================================== */
-/*  Загрузка всех магазинов                                               */
+/*  Хранилище товаров в браузере (IndexedDB)                              */
+/*  Чтобы после обновления страницы не грузить всё заново.                */
+/* ===================================================================== */
+const DB_NAME = 'tovary-catalog';
+const DB_STORE = 'stores';
+let dbPromise = null;
+
+function db() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise(function (resolve, reject) {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = function () {
+      const d = req.result;
+      if (!d.objectStoreNames.contains(DB_STORE)) d.createObjectStore(DB_STORE);
+    };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
+  });
+  return dbPromise;
+}
+
+/* В хранилище кладём облегчённый вид — без описаний и ключевых слов.
+   Они тяжёлые, а нужны только когда карточка открыта. Подгрузим по месту. */
+const HEAVY = ['description', 'description_multilang', 'keywords', 'keywords_multilang'];
+
+function slim(p) {
+  const o = {};
+  for (const k in p) {
+    if (HEAVY.indexOf(k) !== -1) continue;
+    if (k === 'images' && Array.isArray(p.images)) {
+      o.images = p.images.slice(0, 12).map(i => ({ url: i.url, thumbnail_url: i.thumbnail_url }));
+      continue;
+    }
+    o[k] = p[k];
+  }
+  o.__slim = true;         // пометка: полные данные ещё не загружены
+  return o;
+}
+
+async function cacheSet(key, value) {
+  try {
+    const d = await db();
+    await new Promise(function (resolve, reject) {
+      const tx = d.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(value, key);
+      tx.oncomplete = resolve;
+      tx.onerror = function () { reject(tx.error); };
+    });
+  } catch (e) { console.warn('не удалось сохранить в кэш', e); }
+}
+
+async function cacheGet(key) {
+  try {
+    const d = await db();
+    return await new Promise(function (resolve, reject) {
+      const tx = d.transaction(DB_STORE, 'readonly');
+      const r = tx.objectStore(DB_STORE).get(key);
+      r.onsuccess = function () { resolve(r.result || null); };
+      r.onerror = function () { reject(r.error); };
+    });
+  } catch (e) { return null; }
+}
+
+async function cacheClear() {
+  try {
+    const d = await db();
+    await new Promise(function (resolve) {
+      const tx = d.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).clear();
+      tx.oncomplete = resolve;
+    });
+  } catch (e) {}
+}
+
+/* Возраст данных по-человечески */
+function ageText(ts) {
+  if (!ts) return '';
+  const min = Math.round((Date.now() - ts) / 60000);
+  if (min < 1) return 'только что';
+  if (min < 60) return min + ' мин назад';
+  const h = Math.round(min / 60);
+  if (h < 24) return h + ' ч назад';
+  return Math.round(h / 24) + ' дн назад';
+}
+
+/* Достаём сохранённые данные при открытии страницы */
+async function loadFromCache() {
+  let any = false, oldest = null;
+  for (const key of STORE_KEYS) {
+    const rec = await cacheGet(key);
+    if (rec && Array.isArray(rec.products) && rec.products.length) {
+      byStore[key] = rec.products;
+      any = true;
+      if (!oldest || rec.savedAt < oldest) oldest = rec.savedAt;
+    }
+  }
+  if (!any) return false;
+  cacheAge = oldest;
+  buildGroups();
+  showStats();
+  applyFilter();
+  return true;
+}
+/* ===================================================================== */
+/*  Загрузка всех магазинов из Prom                                       */
 /* ===================================================================== */
 $('load').addEventListener('click', loadAll);
 
@@ -394,9 +514,11 @@ async function loadAll() {
         $('stats').innerHTML =
           '<div class="msg msg--warn">Загружаю ' + STORES[key].title + '… <b>' + n + '</b></div>';
       });
+      await cacheSet(key, { products: byStore[key].map(slim), savedAt: Date.now() });
       done++;
       prog.firstElementChild.style.width = (done / STORE_KEYS.length * 100) + '%';
     }
+    cacheAge = Date.now();
     buildGroups();
     showStats();
     applyFilter();
@@ -527,6 +649,8 @@ function showStats() {
     '<div class="msg msg--warn">' + parts.join(' · ') +
     '<br>Карточек всего: <b>' + groups.length + '</b>' +
     (linkInfo.length ? '<br>Связано с Black Street точно — ' + linkInfo.join(' · ') : '') +
+    (cacheAge ? '<br><span style="opacity:.7">Данные загружены ' + ageText(cacheAge) +
+                '. Кнопка «Обновить из Prom» тянет свежие.</span>' : '') +
     '</div>';
 
   const by = {};
@@ -589,7 +713,7 @@ function applyFilter() {
 function renderList() {
   const box = $('list');
   if (!groups.length) {
-    box.innerHTML = '<div class="empty">Нажмите «Загрузить все магазины»</div>'; return;
+    box.innerHTML = '<div class="empty">Нажмите «Обновить из Prom»</div>'; return;
   }
   if (!shown.length) {
     box.innerHTML = '<div class="empty">Ничего не найдено</div>'; return;
@@ -656,11 +780,31 @@ function renderList() {
     });
   });
   Array.from(box.querySelectorAll('.kid__open')).forEach(function (el) {
-    el.addEventListener('click', function () {
+    el.addEventListener('click', async function () {
       const g = slice[Number(el.dataset.g)];
       const store = el.dataset.s;
-      current = { store: store, product: g.stores[store][Number(el.dataset.i)] };
-      renderList(); renderEditor();
+      const p = g.stores[store][Number(el.dataset.i)];
+      current = { store: store, product: p };
+      renderList();
+      renderEditor();
+
+      // если данные облегчённые — дотягиваем полные (описание, ключевые слова)
+      if (p.__slim) {
+        try {
+          const full = await api('/get', { store: store, id: p.id });
+          const data = full && (full.product || full);
+          if (data && data.id) {
+            Object.assign(p, data);
+            delete p.__slim;
+            if (current && current.product === p) renderEditor();
+          }
+        } catch (e) {
+          const m = document.getElementById('ed-msg');
+          if (m) showMsg(m, 'warn',
+            'Не удалось дотянуть описание и ключевые слова: ' + escapeHtml(e.message) +
+            '<br>Остальные поля править можно.');
+        }
+      }
     });
   });
   Array.from(box.querySelectorAll('.kid__chk')).forEach(function (el) {
@@ -734,10 +878,11 @@ function renderEditor() {
 
   const thumbs = '';
 
-  // два языка: русский и украинский
+  // два языка: русский и украинский. Поля показываем всегда —
+  // если Prom украинскую версию не прислал, её можно вписать.
   const nml = p.name_multilang || null;
   const dml = p.description_multilang || null;
-  const hasML = !!(nml || dml);
+  const hasML = true;
   const nameRu = nml && nml.ru != null ? nml.ru : (p.name || '');
   const nameUk = nml && nml.uk != null ? nml.uk : '';
   const descRu = dml && dml.ru != null ? dml.ru : (p.description || '');
@@ -745,7 +890,7 @@ function renderEditor() {
 
   // ключевые слова
   const kml = p.keywords_multilang || null;
-  const hasKwML = !!kml || hasML;   // если товар вообще двуязычный — показываем оба поля
+  const hasKwML = true;
   const kwRu = kml && kml.ru != null ? kml.ru : (p.keywords || '');
   const kwUk = kml && kml.uk != null ? kml.uk : '';
 
@@ -1167,6 +1312,8 @@ async function saveProduct() {
       '<br><br><b>Ответ Prom:</b><pre>' + escapeHtml(JSON.stringify(lastResponse, null, 2)) + '</pre>' +
       '<b>Что отправляли:</b><pre>' + escapeHtml(JSON.stringify(upd, null, 2)) + '</pre>');
     buildGroups(); applyFilter();
+    // обновляем сохранённые данные, чтобы правка не пропала после перезагрузки
+    cacheSet(store, { products: byStore[store].map(slim), savedAt: cacheAge || Date.now() });
   } catch (e) {
     showMsg(box, 'err', 'Prom не принял изменения.<pre>' + escapeHtml(e.message) + '</pre>' +
       '<span style="opacity:.8">Если ругается на конкретное поле — уберите его и сохраните остальное.</span>');

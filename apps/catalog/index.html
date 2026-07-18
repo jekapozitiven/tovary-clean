@@ -168,11 +168,17 @@
         <option value="core22">Core22</option>
       </select>
       <button class="btn btn--sm" id="load">Загрузить товары</button>
+      <select id="fstatus">
+        <option value="">Все статусы</option>
+        <option value="on_display">Только опубликованные</option>
+        <option value="draft">Только скрытые</option>
+      </select>
       <input type="text" class="search" id="search" placeholder="Поиск по названию или артикулу…">
       <span class="muted" id="count"></span>
       <button class="btn btn--ghost btn--sm" id="cfg-open">Настройки</button>
     </div>
     <div class="progress hidden" id="prog"><i></i></div>
+    <div id="stats"></div>
 
     <div class="cols">
       <!-- Список -->
@@ -312,6 +318,7 @@ async function loadProducts() {
     }
     prog.firstElementChild.style.width = '100%';
     $('count').textContent = `${items.length} товаров`;
+    showStats();
     applyFilter();
   } catch (e) {
     $('list').innerHTML = `<div class="msg msg--err" style="margin:12px">Не удалось загрузить.<pre>${escapeHtml(e.message)}</pre></div>`;
@@ -322,16 +329,43 @@ async function loadProducts() {
 }
 
 /* ===================================================================== */
-/*  Список и поиск                                                        */
+/*  Список, поиск, фильтр                                                 */
 /* ===================================================================== */
 $('search').addEventListener('input', applyFilter);
+$('fstatus').addEventListener('change', applyFilter);
+
+/* Что реально пришло от Prom — по статусам */
+function showStats() {
+  const by = {};
+  let withVariants = 0;
+  for (const p of items) {
+    const s = p.status || 'без статуса';
+    by[s] = (by[s] || 0) + 1;
+    if (Array.isArray(p.variations) && p.variations.length) withVariants++;
+    else if (Array.isArray(p.variants) && p.variants.length) withVariants++;
+  }
+  const nice = { on_display: 'опубликовано', draft: 'скрыто', deleted: 'удалено',
+                 not_on_display: 'не показывается', approved: 'одобрено' };
+  const parts = Object.entries(by)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${nice[k] || k}: <b>${v}</b>`);
+
+  $('stats').innerHTML = `
+    <div class="msg msg--warn">
+      Пришло от Prom: <b>${items.length}</b> — ${parts.join(' · ')}
+      ${withVariants ? `<br>Товаров с вариантами внутри ответа: <b>${withVariants}</b>` : ''}
+    </div>`;
+}
 
 function applyFilter() {
   const q = $('search').value.trim().toLowerCase();
-  filtered = !q ? items : items.filter(p =>
-    (p.name || '').toLowerCase().includes(q) ||
-    (p.sku  || '').toLowerCase().includes(q)
-  );
+  const st = $('fstatus').value;
+  filtered = items.filter(p => {
+    if (st && (p.status || '') !== st) return false;
+    if (!q) return true;
+    return (p.name || '').toLowerCase().includes(q) ||
+           (p.sku  || '').toLowerCase().includes(q);
+  });
   renderList();
 }
 

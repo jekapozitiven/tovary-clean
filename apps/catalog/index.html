@@ -412,34 +412,32 @@ function db() {
   return dbPromise;
 }
 
-/* В хранилище кладём облегчённый вид — без описаний и ключевых слов.
-   Они тяжёлые, а нужны только когда карточка открыта. Подгрузим по месту. */
-const HEAVY = ['description', 'description_multilang', 'keywords', 'keywords_multilang'];
+/* В хранилище кладём только то, что нужно для списка и поиска.
+   Описания, ключевые слова и прочее тяжёлое подтягиваем при открытии карточки. */
+const KEEP = ['id', 'external_id', 'name', 'sku', 'price', 'presence', 'status',
+              'discount', 'variation_group_id', 'is_variation', 'quantity_in_stock'];
 
 function slim(p) {
   const o = {};
-  for (const k in p) {
-    if (HEAVY.indexOf(k) !== -1) continue;
-    if (k === 'images' && Array.isArray(p.images)) {
-      o.images = p.images.slice(0, 12).map(i => ({ url: i.url, thumbnail_url: i.thumbnail_url }));
-      continue;
-    }
-    o[k] = p[k];
+  for (const k of KEEP) if (p[k] !== undefined) o[k] = p[k];
+  // одна картинка для списка — этого достаточно
+  if (Array.isArray(p.images) && p.images.length) {
+    const i = p.images[0];
+    o.images = [{ url: i.url, thumbnail_url: i.thumbnail_url }];
   }
   o.__slim = true;         // пометка: полные данные ещё не загружены
   return o;
 }
 
 async function cacheSet(key, value) {
-  try {
-    const d = await db();
-    await new Promise(function (resolve, reject) {
-      const tx = d.transaction(DB_STORE, 'readwrite');
-      tx.objectStore(DB_STORE).put(value, key);
-      tx.oncomplete = resolve;
-      tx.onerror = function () { reject(tx.error); };
-    });
-  } catch (e) { console.warn('не удалось сохранить в кэш', e); }
+  const d = await db();
+  await new Promise(function (resolve, reject) {
+    const tx = d.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).put(value, key);
+    tx.oncomplete = resolve;
+    tx.onerror = function () { reject(tx.error); };
+    tx.onabort = function () { reject(tx.error || new Error('запись прервана')); };
+  });
 }
 
 async function cacheGet(key) {
@@ -507,13 +505,17 @@ async function loadStore(store, onProgress) {
   while (guard++ < 3000) {
     let data = null, tries = 0;
 
-    // Prom иногда защищается от частых запросов — повторяем с паузой
     while (tries++ < 4) {
       try {
         data = await api('/list', { store: store, limit: 100, last_id: lastId });
         break;
       } catch (e) {
-        if (tries >= 4) throw e;
+        if (tries >= 4) {
+          // не теряем то, что уже успели загрузить
+          const err = new Error(e.message);
+          err.partial = out;
+          throw err;
+        }
         onProgress(out.length, 'Prom не ответил, жду ' + (tries * 5) + ' сек…');
         await sleep(tries * 5000);
       }
@@ -531,7 +533,7 @@ async function loadStore(store, onProgress) {
     lastId = next;
     onProgress(out.length, '');
     if (added === 0 && batch.length < 100) break;
-    await sleep(120);          // бережём Prom, чтобы не считал нас роботом
+    await sleep(120);
   }
   return out;
 }
@@ -546,23 +548,31 @@ async function loadAll() {
   let done = 0;
 
   for (const key of STORE_KEYS) {
+    let list = null;
     try {
-      const list = await loadStore(key, function (n, note) {
+      list = await loadStore(key, function (n, note) {
         $('stats').innerHTML =
           '<div class="msg msg--warn">Загружаю ' + STORES[key].title + '… <b>' + n + '</b>' +
           (note ? ' — ' + escapeHtml(note) : '') + '</div>';
       });
-
-      if (!list.length) {
-        // пусто — скорее всего сбой. Старые данные не трогаем.
-        problems.push(STORES[key].title + ': Prom вернул пусто, оставил прежние данные');
-      } else {
-        byStore[key] = list;
-        await cacheSet(key, { products: list.map(slim), savedAt: Date.now() });
-      }
     } catch (e) {
-      problems.push(STORES[key].title + ': ' + e.message + ' — оставил прежние данные');
+      list = e.partial || null;
+      problems.push(STORES[key].title + ': ' + e.message +
+        (list && list.length ? ' (успели загрузить ' + list.length + ')' : ''));
     }
+
+    if (list && list.length) {
+      byStore[key] = list;
+      try {
+        await cacheSet(key, { products: list.map(slim), savedAt: Date.now() });
+      } catch (e) {
+        problems.push(STORES[key].title + ': загружен, но НЕ сохранился на устройстве — ' +
+          e.message + '. После обновления страницы пропадёт.');
+      }
+    } else if (!list) {
+      problems.push(STORES[key].title + ': оставил прежние данные');
+    }
+
     done++;
     prog.firstElementChild.style.width = (done / STORE_KEYS.length * 100) + '%';
   }
@@ -573,9 +583,8 @@ async function loadAll() {
   applyFilter();
 
   if (problems.length) {
-    $('stats').innerHTML += '<div class="msg msg--err">Не всё загрузилось:<br>' +
-      problems.map(escapeHtml).join('<br>') +
-      '<br><span style="opacity:.8">Подождите пару минут и нажмите «Обновить из Prom» ещё раз.</span></div>';
+    $('stats').innerHTML += '<div class="msg msg--err">Не всё гладко:<br>' +
+      problems.map(escapeHtml).join('<br>') + '</div>';
   }
 
   btn.disabled = false;

@@ -12,12 +12,11 @@
 <link rel="stylesheet" href="../../assets/portal.css">
 
 <style>
-  .wrap { max-width: 1400px; }
+  .wrap { max-width: 1500px; }
 
   .panel {
     background: var(--panel); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: clamp(18px, 3vw, 26px);
-    margin-bottom: 16px;
+    border-radius: var(--radius); padding: clamp(18px, 3vw, 26px); margin-bottom: 16px;
   }
   .panel h2 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
   .panel .sub { margin: 0 0 18px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
@@ -45,49 +44,69 @@
   .btn--ghost { color: var(--text); background: transparent; border: 1px solid var(--border); }
   .btn--sm { padding: 7px 13px; font-size: 13px; }
 
-  /* Панель управления */
-  .toolbar {
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-    margin-bottom: 16px;
-  }
-  .toolbar select, .toolbar input[type=text] { width: auto; flex: none; }
-  .toolbar .search { flex: 1; min-width: 200px; }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .toolbar .search { flex: 1; min-width: 220px; }
+  .toolbar select, .toolbar input[type=text] { width: auto; }
   .muted { font-size: 12.5px; color: var(--text-faint); }
 
-  .progress { height: 3px; background: #1e1e22; border-radius: 999px; overflow: hidden; margin-top: 10px; }
+  .progress { height: 3px; background: #1e1e22; border-radius: 999px; overflow: hidden; margin-bottom: 12px; }
   .progress i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
 
-  /* Две колонки */
-  .cols { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.15fr); gap: 16px; align-items: start; }
-  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .cols { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); gap: 16px; align-items: start; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } }
 
-  /* Список */
-  .list { max-height: 70vh; overflow-y: auto; }
-  .item {
+  .list { max-height: 72vh; overflow-y: auto; }
+
+  .grp { border-bottom: 1px solid var(--border); }
+  .grp:last-child { border-bottom: none; }
+  .grp__head {
     display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
-    padding: 11px 12px; background: transparent; border: 1px solid transparent;
-    border-radius: var(--radius-sm); cursor: pointer; font-family: var(--font);
-    border-bottom: 1px solid var(--border);
+    padding: 12px; background: transparent; border: none; cursor: pointer;
+    font-family: var(--font); color: var(--text);
   }
-  .item:hover { background: var(--panel-hover); }
-  .item.is-active { background: var(--panel-hover); border-color: var(--border-hover); }
-  .item__img {
-    width: 42px; height: 42px; flex: none; border-radius: 6px; object-fit: cover;
-    background: #17171a; border: 1px solid var(--border);
-  }
-  .item__body { min-width: 0; flex: 1; }
-  .item__name {
-    font-size: 13.5px; color: var(--text); font-weight: 600;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .item__meta { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
-  .item__price { font-size: 13px; color: var(--text-dim); white-space: nowrap; }
+  .grp__head:hover { background: var(--panel-hover); }
+  .grp__img { width: 44px; height: 44px; flex: none; border-radius: 6px; object-fit: cover;
+              background: #17171a; border: 1px solid var(--border); }
+  .grp__body { flex: 1; min-width: 0; }
+  .grp__name { display: block; font-size: 13.5px; font-weight: 600;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grp__meta { display: block; font-size: 12px; color: var(--text-faint); margin-top: 3px; }
+  .grp__chev { color: var(--text-faint); font-size: 12px; flex: none; transition: transform .15s; }
+  .grp.is-open .grp__chev { transform: rotate(90deg); }
 
-  .dot-status { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; }
+  .grp__kids { display: none; padding: 0 12px 12px 12px; }
+  .grp.is-open .grp__kids { display: block; }
+
+  .store-block { margin-top: 10px; }
+  .store-block__t {
+    font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-faint); margin-bottom: 6px;
+  }
+  .store-block__t b { color: var(--text-dim); }
+
+  .kid {
+    display: flex; gap: 8px; align-items: center; width: 100%;
+    padding: 6px 10px; margin-bottom: 4px;
+    background: #101013; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  }
+  .kid:hover { border-color: var(--border-hover); }
+  .kid.is-active { border-color: var(--accent); }
+  .kid__open {
+    display: flex; gap: 10px; align-items: center; flex: 1; min-width: 0;
+    padding: 4px 0; background: transparent; border: none; text-align: left;
+    cursor: pointer; font-family: var(--font); color: var(--text);
+  }
+  .kid__name { flex: 1; min-width: 0; font-size: 13px;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kid__price { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
+  .kid__sku { font-size: 11.5px; color: var(--text-faint); white-space: nowrap; }
+
+  .dot-status { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex: none; }
   .dot-on  { background: var(--green); }
   .dot-off { background: #6b6b66; }
 
-  /* Редактор */
+  .miss { font-size: 12.5px; color: var(--text-faint); padding: 6px 10px; }
+
   .ed__head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px; }
   .ed__thumb { width: 64px; height: 64px; border-radius: 8px; object-fit: cover;
                background: #17171a; border: 1px solid var(--border); flex: none; }
@@ -97,24 +116,13 @@
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
 
-  .changed { border-color: var(--accent) !important; }
-
   .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
   .thumbs img { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); }
-
-  .spread {
-    margin-top: 16px; padding: 14px; border-radius: var(--radius-sm);
-    background: rgba(214,242,74,0.05); border: 1px solid rgba(214,242,74,0.16);
-  }
-  .spread .t { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
-  .spread .d { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; margin-bottom: 10px; }
-  .chk { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-bottom: 7px; cursor: pointer; }
-  .chk input { width: 16px; height: 16px; accent-color: var(--accent); }
 
   .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 18px;
          padding-top: 16px; border-top: 1px solid var(--border); }
 
-  .msg { padding: 11px 14px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.5; margin-top: 12px; }
+  .msg { padding: 11px 14px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.55; margin-top: 12px; }
   .msg--ok   { background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.25); color: #6ee7b7; }
   .msg--err  { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.25); color: #fca5a5; }
   .msg--warn { background: rgba(214,242,74,.06); border: 1px solid rgba(214,242,74,.2); color: var(--text-dim); }
@@ -122,7 +130,70 @@
 
   .empty { padding: 40px 20px; text-align: center; color: var(--text-faint); font-size: 13.5px; }
   .hidden { display: none !important; }
-  code { background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+
+  .bulk {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    padding: 12px 14px; margin-bottom: 14px;
+    background: rgba(214,242,74,.06); border: 1px solid rgba(214,242,74,.2);
+    border-radius: var(--radius-sm);
+  }
+  .bulk__n { font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+  .bulk input[type=text] { flex: 1; min-width: 200px; width: auto; }
+
+  .kid__chk { width: 15px; height: 15px; flex: none; accent-color: var(--accent); cursor: pointer; }
+  .kid__note {
+    font-size: 11.5px; color: var(--accent); white-space: nowrap;
+    max-width: 160px; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .raw {
+    margin-top: 12px; padding: 12px; max-height: 320px; overflow: auto;
+    background: #0e0e10; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-size: 11.5px; line-height: 1.5; color: var(--text-dim);
+    white-space: pre-wrap; word-break: break-word;
+  }
+
+  .flabel { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+
+  /* Фото */
+  .ph { display: flex; align-items: center; gap: 8px; padding: 6px;
+        border: 1px solid var(--border); border-radius: var(--radius-sm);
+        background: #101013; margin-bottom: 6px; }
+  .ph__img { width: 44px; height: 44px; flex: none; border-radius: 5px; object-fit: cover;
+             background: #17171a; border: 1px solid var(--border); }
+  .ph__n { font-size: 11px; color: var(--text-faint); flex: none; width: 52px; }
+  .ph__url { flex: 1; min-width: 0; font-size: 11.5px; color: var(--text-dim);
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ph__b { flex: none; width: 28px; height: 28px; font-size: 13px; cursor: pointer;
+           color: var(--text-dim); background: transparent;
+           border: 1px solid var(--border); border-radius: 6px; }
+  .ph__b:hover { color: var(--text); border-color: var(--border-hover); }
+  .ph__b--del:hover { color: #fca5a5; border-color: rgba(248,113,113,.4); }
+  .ph__empty { font-size: 12.5px; color: var(--text-faint); padding: 6px 0; }
+  .ph__add { display: flex; gap: 8px; margin-top: 8px; }
+  .ph__add input { flex: 1; }
+
+  /* Скидка */
+  .disc { padding: 12px 14px; margin-bottom: 14px; border-radius: var(--radius-sm);
+          background: #101013; border: 1px solid var(--border); }
+  .disc__t { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+  .disc__row { display: flex; gap: 8px; align-items: center; }
+  .disc__row input { flex: 1; }
+  .disc__row select { width: 70px; flex: none; }
+  .disc__now { font-size: 12px; color: var(--green); margin-top: 8px; min-height: 15px; }
+
+  /* Разновидности */
+  .sibs { padding: 12px 14px; margin-bottom: 14px; border-radius: var(--radius-sm);
+          background: rgba(214,242,74,.05); border: 1px solid rgba(214,242,74,.16); }
+  .sibs__hint { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 6px; }
+  .sibs__list { font-size: 11.5px; color: var(--text-faint); line-height: 1.6; margin-top: 6px;
+                max-height: 110px; overflow: auto; }
+  .chk { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-bottom: 7px; cursor: pointer; }
+  .chk input { width: 16px; height: 16px; accent-color: var(--accent); }
+  .spread { margin-top: 16px; padding: 14px; border-radius: var(--radius-sm);
+            background: rgba(214,242,74,.05); border: 1px solid rgba(214,242,74,.16); }
+  .spread .t { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .spread .d { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -137,19 +208,14 @@
 
 <main class="wrap">
 
-  <!-- ================= НАСТРОЙКА ================= -->
   <div class="panel" id="setup">
     <h2>Подключение</h2>
-    <p class="sub">Адрес посредника и пароль приложения. Вводится один раз — дальше сохраняется в этом браузере. Токены Prom сюда не вводятся, они лежат в посреднике.</p>
+    <p class="sub">Адрес посредника и пароль приложения. Вводится один раз. Токены Prom сюда не вводятся — они в посреднике.</p>
     <div class="grid2">
-      <label class="f">
-        <span>Адрес посредника</span>
-        <input type="text" id="cfg-url" placeholder="https://tovary.ваше-имя.workers.dev">
-      </label>
-      <label class="f">
-        <span>Пароль приложения</span>
-        <input type="password" id="cfg-pass" placeholder="тот, что задали в секрете APP_PASSWORD">
-      </label>
+      <label class="f"><span>Адрес посредника</span>
+        <input type="text" id="cfg-url" placeholder="https://…workers.dev"></label>
+      <label class="f"><span>Пароль приложения</span>
+        <input type="password" id="cfg-pass" placeholder="секрет APP_PASSWORD"></label>
     </div>
     <div class="bar" style="border:none; padding-top:0; margin-top:0;">
       <button class="btn" id="cfg-save">Проверить и сохранить</button>
@@ -158,39 +224,39 @@
     <div id="cfg-msg"></div>
   </div>
 
-  <!-- ================= РАБОТА ================= -->
   <div id="work" class="hidden">
 
     <div class="toolbar">
-      <select id="store">
-        <option value="blackstreet">Black Street — главный</option>
-        <option value="bonna">Bonna-shop</option>
-        <option value="core22">Core22</option>
+      <button class="btn btn--sm" id="load">Загрузить все магазины</button>
+      <input type="text" class="search" id="search" placeholder="Артикул или название — ищет во всех магазинах…">
+      <select id="fstatus"><option value="">Все статусы</option></select>
+      <select id="fnote">
+        <option value="">Заметки: любые</option>
+        <option value="has">Только с заметкой</option>
+        <option value="no">Только без заметки</option>
       </select>
-      <button class="btn btn--sm" id="load">Загрузить товары</button>
-      <select id="fstatus">
-        <option value="">Все статусы</option>
-        <option value="on_display">Только опубликованные</option>
-        <option value="draft">Только скрытые</option>
-      </select>
-      <input type="text" class="search" id="search" placeholder="Поиск по названию или артикулу…">
-      <span class="muted" id="count"></span>
       <button class="btn btn--ghost btn--sm" id="cfg-open">Настройки</button>
     </div>
+
+    <div class="bulk hidden" id="bulk">
+      <span class="bulk__n" id="bulk-n">выбрано 0</span>
+      <input type="text" id="bulk-note" placeholder="Например: Скрыл до 25 числа">
+      <button class="btn btn--sm" id="bulk-apply">Записать заметку всем</button>
+      <button class="btn btn--ghost btn--sm" id="bulk-clear-note">Стереть заметку</button>
+      <button class="btn btn--ghost btn--sm" id="bulk-none">Снять выделение</button>
+    </div>
+
     <div class="progress hidden" id="prog"><i></i></div>
     <div id="stats"></div>
 
     <div class="cols">
-      <!-- Список -->
-      <div class="panel" style="padding:8px;">
+      <div class="panel" style="padding:6px;">
         <div class="list" id="list">
-          <div class="empty">Нажмите «Загрузить товары»</div>
+          <div class="empty">Нажмите «Загрузить все магазины»</div>
         </div>
       </div>
-
-      <!-- Редактор -->
       <div class="panel" id="editor">
-        <div class="empty">Выберите товар слева</div>
+        <div class="empty">Выберите позицию слева</div>
       </div>
     </div>
   </div>
@@ -199,37 +265,49 @@
 
 <script>
 /* ===================================================================== */
-/*  Хранилище настроек и заметок                                          */
+/*  Настройки и заметки                                                   */
 /* ===================================================================== */
 const CFG_KEY  = 'tovary:catalog:cfg';
 const NOTE_KEY = 'tovary:catalog:notes';
-
-const loadJSON = (k, def) => { try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } };
+const loadJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
 const saveJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 let cfg   = loadJSON(CFG_KEY, { url: '', pass: '' });
-let notes = loadJSON(NOTE_KEY, {});          // ключ: "store:id" -> текст
+let notes = loadJSON(NOTE_KEY, {});
 
-/* Суффиксы магазинов. Black Street — главный, без суффикса. */
+/* Black Street — главный, без суффикса */
 const STORES = {
-  blackstreet: { title: 'Black Street', suffix: ''    },
+  blackstreet: { title: 'Black Street', suffix: ''     },
   bonna:       { title: 'Bonna-shop',   suffix: ' (B)' },
   core22:      { title: 'Core22',       suffix: ' (С)' },
 };
+const STORE_KEYS = Object.keys(STORES);
 
-/* Состояние */
-let items = [];        // загруженные товары текущего магазина
-let filtered = [];
-let current = null;    // выбранный товар
-let currentStore = 'blackstreet';
+const STATUS_RU = {
+  on_display: 'опубликован',
+  not_on_display: 'не показывается',
+  draft: 'черновик',
+  deleted: 'удалён',
+  approved: 'одобрен',
+  editing_required: 'требует правки',
+  waiting_for_moderation: 'на модерации',
+};
+
+let byStore = {};      // магазин -> массив товаров
+let groups  = [];      // группы по артикулу
+let shown   = [];      // отфильтрованные
+let current = null;    // { store, product }
+let openBase = null;   // какая группа раскрыта
+let picked = new Set();// выделенные позиции для массовых заметок
+
+const $ = (id) => document.getElementById(id);
 
 /* ===================================================================== */
 /*  Связь с посредником                                                   */
 /* ===================================================================== */
 async function api(route, payload) {
   if (!cfg.url) throw new Error('Не задан адрес посредника');
-  const base = cfg.url.replace(/\/+$/, '');
-  const res = await fetch(base + route, {
+  const res = await fetch(cfg.url.replace(/\/+$/, '') + route, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-App-Password': cfg.pass },
     body: JSON.stringify(payload || {}),
@@ -245,39 +323,30 @@ async function api(route, payload) {
 /* ===================================================================== */
 /*  Настройка                                                             */
 /* ===================================================================== */
-const $ = (id) => document.getElementById(id);
-
 $('cfg-url').value  = cfg.url;
 $('cfg-pass').value = cfg.pass;
-
-function showMsg(el, kind, html) {
-  el.innerHTML = `<div class="msg msg--${kind}">${html}</div>`;
-}
+const showMsg = (el, kind, html) => { el.innerHTML = '<div class="msg msg--' + kind + '">' + html + '</div>'; };
 
 $('cfg-save').addEventListener('click', async () => {
-  cfg.url  = $('cfg-url').value.trim();
+  cfg.url = $('cfg-url').value.trim();
   cfg.pass = $('cfg-pass').value;
-  const box = $('cfg-msg');
-  showMsg(box, 'warn', 'Проверяю связь…');
+  showMsg($('cfg-msg'), 'warn', 'Проверяю связь…');
   try {
     await api('/ping', {});
     saveJSON(CFG_KEY, cfg);
-    showMsg(box, 'ok', 'Связь есть, настройки сохранены.');
+    showMsg($('cfg-msg'), 'ok', 'Связь есть, настройки сохранены.');
     $('work').classList.remove('hidden');
     $('cfg-hide').classList.remove('hidden');
     setTimeout(() => $('setup').classList.add('hidden'), 700);
   } catch (e) {
-    showMsg(box, 'err', 'Не получилось.<pre>' + escapeHtml(e.message) + '</pre>');
+    showMsg($('cfg-msg'), 'err', 'Не получилось.<pre>' + escapeHtml(e.message) + '</pre>');
   }
 });
-
 $('cfg-open').addEventListener('click', () => {
-  $('setup').classList.remove('hidden');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  $('setup').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 $('cfg-hide').addEventListener('click', () => $('setup').classList.add('hidden'));
 
-/* Если уже настроено — сразу к работе */
 if (cfg.url && cfg.pass) {
   $('setup').classList.add('hidden');
   $('cfg-hide').classList.remove('hidden');
@@ -285,58 +354,54 @@ if (cfg.url && cfg.pass) {
 }
 
 /* ===================================================================== */
-/*  Загрузка товаров                                                      */
+/*  Загрузка всех магазинов                                               */
 /* ===================================================================== */
-$('store').addEventListener('change', () => {
-  currentStore = $('store').value;
-  items = []; filtered = []; current = null;
-  renderList(); renderEditor();
-  $('count').textContent = '';
-});
+$('load').addEventListener('click', loadAll);
 
-$('load').addEventListener('click', loadProducts);
+async function loadStore(store, onProgress) {
+  const out = [], seen = new Set();
+  let lastId = null, guard = 0;
+  while (guard++ < 3000) {
+    const data = await api('/list', { store: store, limit: 100, last_id: lastId });
+    const batch = data.products || [];
+    if (!batch.length) break;
+    let added = 0;
+    for (const p of batch) {
+      if (seen.has(p.id)) continue;
+      seen.add(p.id); out.push(p); added++;
+    }
+    const next = batch[batch.length - 1].id;
+    if (next === lastId) break;
+    lastId = next;
+    onProgress(out.length);
+    if (added === 0 && batch.length < 100) break;
+  }
+  return out;
+}
 
-async function loadProducts() {
-  const btn = $('load');
-  const prog = $('prog');
+async function loadAll() {
+  const btn = $('load'), prog = $('prog');
   btn.disabled = true;
   prog.classList.remove('hidden');
-  prog.firstElementChild.style.width = '0%';
-  items = [];
+  prog.firstElementChild.style.width = '2%';
+  byStore = {};
 
   try {
-    let lastId = null, guard = 0, seen = new Set();
-    while (guard++ < 2000) {                      // предохранитель
-      const data = await api('/list', { store: currentStore, limit: 100, last_id: lastId });
-      const batch = data.products || [];
-
-      // конец — только когда Prom вернул совсем пусто
-      if (!batch.length) break;
-
-      // отсекаем повторы, если Prom вдруг зациклится
-      let added = 0;
-      for (const p of batch) {
-        if (seen.has(p.id)) continue;
-        seen.add(p.id);
-        items.push(p);
-        added++;
-      }
-
-      const nextId = batch[batch.length - 1].id;
-      if (nextId === lastId) break;               // указатель не двигается — выходим
-      lastId = nextId;
-
-      $('count').textContent = `загружено ${items.length}`;
-      prog.firstElementChild.style.width = Math.min(95, items.length / 300) + '%';
-
-      if (added === 0 && batch.length < 100) break;
+    let done = 0;
+    for (const key of STORE_KEYS) {
+      byStore[key] = await loadStore(key, (n) => {
+        $('stats').innerHTML =
+          '<div class="msg msg--warn">Загружаю ' + STORES[key].title + '… <b>' + n + '</b></div>';
+      });
+      done++;
+      prog.firstElementChild.style.width = (done / STORE_KEYS.length * 100) + '%';
     }
-    prog.firstElementChild.style.width = '100%';
-    $('count').textContent = `${items.length} товаров`;
+    buildGroups();
     showStats();
     applyFilter();
   } catch (e) {
-    $('list').innerHTML = `<div class="msg msg--err" style="margin:12px">Не удалось загрузить.<pre>${escapeHtml(e.message)}</pre></div>`;
+    $('stats').innerHTML = '<div class="msg msg--err">Не удалось загрузить.<pre>' +
+      escapeHtml(e.message) + '</pre></div>';
   } finally {
     btn.disabled = false;
     setTimeout(() => prog.classList.add('hidden'), 600);
@@ -344,55 +409,13 @@ async function loadProducts() {
 }
 
 /* ===================================================================== */
-/*  Список, поиск, фильтр                                                 */
+/*  Группировка по артикулу                                               */
 /* ===================================================================== */
-$('search').addEventListener('input', applyFilter);
-$('fstatus').addEventListener('change', applyFilter);
-
-/* Что реально пришло от Prom — по статусам */
-const STATUS_RU = {
-  on_display: 'опубликовано',
-  not_on_display: 'не показывается',
-  draft: 'черновик',
-  deleted: 'удалено',
-  approved: 'одобрено',
-  editing_required: 'требует правки',
-  waiting_for_moderation: 'на модерации',
-};
-
-function showStats() {
-  const by = {};
-  for (const p of items) {
-    const s = p.status || 'без статуса';
-    by[s] = (by[s] || 0) + 1;
-  }
-  const entries = Object.entries(by).sort((a, b) => b[1] - a[1]);
-
-  $('stats').innerHTML = `
-    <div class="msg msg--warn">
-      ${STORES[currentStore].title} — пришло от Prom: <b>${items.length}</b><br>
-      ${entries.map(([k, v]) => `${STATUS_RU[k] || k}: <b>${v}</b>`).join(' · ')}
-    </div>`;
-
-  // фильтр строим по тем статусам, что реально есть
-  const sel = $('fstatus');
-  const prev = sel.value;
-  sel.innerHTML = `<option value="">Все статусы (${items.length})</option>` +
-    entries.map(([k, v]) =>
-      `<option value="${escapeAttr(k)}">${STATUS_RU[k] || k} (${v})</option>`).join('');
-  sel.value = [...sel.options].some(o => o.value === prev) ? prev : '';
-}
-
-function applyFilter() {
-  const q = $('search').value.trim().toLowerCase();
-  const st = $('fstatus').value;
-  filtered = items.filter(p => {
-    if (st && (p.status || 'без статуса') !== st) return false;
-    if (!q) return true;
-    return (p.name || '').toLowerCase().includes(q) ||
-           (p.sku  || '').toLowerCase().includes(q);
-  });
-  renderList();
+function baseSku(sku, store) {
+  let s = (sku || '').trim();
+  const suf = (STORES[store].suffix || '').trim();
+  if (suf && s.endsWith(suf)) s = s.slice(0, -suf.length).trim();
+  return s;
 }
 
 function firstImage(p) {
@@ -401,252 +424,592 @@ function firstImage(p) {
   }
   return p.main_image || '';
 }
+const isVisible = (p) => (p.status || '') === 'on_display';
 
-function isVisible(p) {
-  return (p.status || '').toLowerCase() === 'on_display';
+function buildGroups() {
+  const map = new Map();
+  for (const store of STORE_KEYS) {
+    for (const p of (byStore[store] || [])) {
+      const base = baseSku(p.sku, store) || ('#' + p.id);
+      if (!map.has(base)) map.set(base, { base: base, stores: {} });
+      const g = map.get(base);
+      if (!g.stores[store]) g.stores[store] = [];
+      g.stores[store].push(p);
+    }
+  }
+  groups = Array.from(map.values());
+
+  for (const g of groups) {
+    let best = null, img = '';
+    for (const store of STORE_KEYS) {
+      const arr = g.stores[store];
+      if (!arr) continue;
+      arr.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      for (const p of arr) {
+        const n = p.name || '';
+        if (best === null || n.length < best.length) best = n;
+        if (!img) img = firstImage(p);
+      }
+    }
+    g.name = best || g.base;
+    g.image = img;
+  }
+  groups.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/* ===================================================================== */
+/*  Статистика и фильтр                                                   */
+/* ===================================================================== */
+function showStats() {
+  const parts = STORE_KEYS.map(function (k) {
+    const arr = byStore[k] || [];
+    const on = arr.filter(isVisible).length;
+    return STORES[k].title + ': <b>' + arr.length + '</b> (виден ' + on + ')';
+  });
+  $('stats').innerHTML =
+    '<div class="msg msg--warn">' + parts.join(' · ') +
+    '<br>Уникальных артикулов: <b>' + groups.length + '</b></div>';
+
+  const by = {};
+  for (const k of STORE_KEYS) {
+    for (const p of (byStore[k] || [])) {
+      const s = p.status || 'без статуса';
+      by[s] = (by[s] || 0) + 1;
+    }
+  }
+  const sel = $('fstatus'), prev = sel.value;
+  sel.innerHTML = '<option value="">Все статусы</option>' +
+    Object.entries(by).sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => '<option value="' + escapeAttr(k) + '">' +
+        (STATUS_RU[k] || k) + ' (' + v + ')</option>').join('');
+  sel.value = Array.from(sel.options).some(o => o.value === prev) ? prev : '';
+}
+
+function debounce(fn, ms) {
+  let t;
+  return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+}
+$('search').addEventListener('input', debounce(applyFilter, 250));
+$('fstatus').addEventListener('change', applyFilter);
+$('fnote').addEventListener('change', applyFilter);
+
+function applyFilter() {
+  const q = $('search').value.trim().toLowerCase();
+  const st = $('fstatus').value;
+  const fn = $('fnote').value;
+
+  shown = groups.filter(function (g) {
+    if (st) {
+      const any = STORE_KEYS.some(k =>
+        (g.stores[k] || []).some(p => (p.status || 'без статуса') === st));
+      if (!any) return false;
+    }
+    if (fn) {
+      const has = STORE_KEYS.some(k =>
+        (g.stores[k] || []).some(p => !!notes[k + ':' + p.id]));
+      if (fn === 'has' && !has) return false;
+      if (fn === 'no'  &&  has) return false;
+    }
+    if (!q) return true;
+    if (g.base.toLowerCase().indexOf(q) !== -1) return true;
+    if (g.name.toLowerCase().indexOf(q) !== -1) return true;
+    // ищем и по тексту заметки
+    const inNote = STORE_KEYS.some(k => (g.stores[k] || []).some(p =>
+      (notes[k + ':' + p.id] || '').toLowerCase().indexOf(q) !== -1));
+    if (inNote) return true;
+    return STORE_KEYS.some(k => (g.stores[k] || []).some(p =>
+      (p.sku || '').toLowerCase().indexOf(q) !== -1 ||
+      (p.name || '').toLowerCase().indexOf(q) !== -1));
+  });
+  renderList();
+}
+
+/* ===================================================================== */
+/*  Список групп                                                          */
+/* ===================================================================== */
 function renderList() {
   const box = $('list');
-  if (!filtered.length) {
-    box.innerHTML = `<div class="empty">${items.length ? 'Ничего не найдено' : 'Нажмите «Загрузить товары»'}</div>`;
-    return;
+  if (!groups.length) {
+    box.innerHTML = '<div class="empty">Нажмите «Загрузить все магазины»</div>'; return;
   }
-  const slice = filtered.slice(0, 300);          // рисуем первые 300, чтобы не тормозило
-  box.innerHTML = slice.map((p, i) => `
-    <button class="item ${current && current.id === p.id ? 'is-active' : ''}" data-i="${i}">
-      ${firstImage(p)
-        ? `<img class="item__img" src="${escapeAttr(firstImage(p))}" loading="lazy" alt="">`
-        : `<span class="item__img"></span>`}
-      <span class="item__body">
-        <span class="item__name">${escapeHtml(p.name || 'без названия')}</span>
-        <span class="item__meta">
-          <span class="dot-status ${isVisible(p) ? 'dot-on' : 'dot-off'}"></span>
-          ${escapeHtml(p.sku || '—')}
-          ${notes[currentStore + ':' + p.id] ? ' · 📝' : ''}
-        </span>
-      </span>
-      <span class="item__price">${p.price != null ? escapeHtml(String(p.price)) : ''}</span>
-    </button>
-  `).join('') + (filtered.length > 300
-      ? `<div class="empty">Показано 300 из ${filtered.length}. Уточните поиск.</div>` : '');
+  if (!shown.length) {
+    box.innerHTML = '<div class="empty">Ничего не найдено</div>'; return;
+  }
 
-  [...box.querySelectorAll('.item')].forEach(el => {
-    el.addEventListener('click', () => {
-      current = slice[Number(el.dataset.i)];
+  const slice = shown.slice(0, 200);
+
+  box.innerHTML = slice.map(function (g, gi) {
+    const counts = STORE_KEYS.map(function (k) {
+      const n = (g.stores[k] || []).length;
+      return n ? (STORES[k].title + ': ' + n) : null;
+    }).filter(Boolean).join(' · ');
+
+    const kids = STORE_KEYS.map(function (k) {
+      const arr = g.stores[k] || [];
+      if (!arr.length) {
+        return '<div class="store-block">' +
+          '<div class="store-block__t"><b>' + STORES[k].title + '</b></div>' +
+          '<div class="miss">— нет такого артикула</div></div>';
+      }
+      const rows = arr.map(function (p, pi) {
+        const active = (current && current.store === k && current.product.id === p.id) ? ' is-active' : '';
+        const nk = k + ':' + p.id;
+        const note = notes[nk];
+        return '<div class="kid' + active + '">' +
+          '<input type="checkbox" class="kid__chk" data-nk="' + escapeAttr(nk) + '"' +
+            (picked.has(nk) ? ' checked' : '') + '>' +
+          '<button class="kid__open" data-g="' + gi + '" data-s="' + k + '" data-i="' + pi + '">' +
+            '<span class="dot-status ' + (isVisible(p) ? 'dot-on' : 'dot-off') + '"></span>' +
+            '<span class="kid__name">' + escapeHtml(p.name || 'без названия') + '</span>' +
+            (note ? '<span class="kid__note">📝 ' + escapeHtml(note) + '</span>' : '') +
+            '<span class="kid__sku">' + escapeHtml(p.sku || '—') + '</span>' +
+            '<span class="kid__price">' + (p.price != null ? escapeHtml(String(p.price)) : '') + '</span>' +
+          '</button>' +
+        '</div>';
+      }).join('');
+      return '<div class="store-block">' +
+        '<div class="store-block__t"><b>' + STORES[k].title + '</b> — ' + arr.length + ' шт.</div>' +
+        rows + '</div>';
+    }).join('');
+
+    const img = g.image
+      ? '<img class="grp__img" src="' + escapeAttr(g.image) + '" loading="lazy" alt="">'
+      : '<span class="grp__img"></span>';
+
+    return '<div class="grp' + (openBase === g.base ? ' is-open' : '') + '">' +
+      '<button class="grp__head" data-g="' + gi + '">' + img +
+        '<span class="grp__body">' +
+          '<span class="grp__name">' + escapeHtml(g.name) + '</span>' +
+          '<span class="grp__meta">' + escapeHtml(g.base) + ' · ' + (counts || 'нет позиций') + '</span>' +
+        '</span>' +
+        '<span class="grp__chev">▶</span>' +
+      '</button>' +
+      '<div class="grp__kids">' + kids + '</div>' +
+    '</div>';
+  }).join('') + (shown.length > 200
+    ? '<div class="empty">Показано 200 из ' + shown.length + '. Уточните поиск.</div>' : '');
+
+  Array.from(box.querySelectorAll('.grp__head')).forEach(function (el) {
+    el.addEventListener('click', function () {
+      const g = slice[Number(el.dataset.g)];
+      openBase = (openBase === g.base) ? null : g.base;
+      renderList();
+    });
+  });
+  Array.from(box.querySelectorAll('.kid__open')).forEach(function (el) {
+    el.addEventListener('click', function () {
+      const g = slice[Number(el.dataset.g)];
+      const store = el.dataset.s;
+      current = { store: store, product: g.stores[store][Number(el.dataset.i)] };
       renderList(); renderEditor();
+    });
+  });
+  Array.from(box.querySelectorAll('.kid__chk')).forEach(function (el) {
+    el.addEventListener('change', function () {
+      const nk = el.dataset.nk;
+      if (el.checked) picked.add(nk); else picked.delete(nk);
+      updateBulk();
     });
   });
 }
 
 /* ===================================================================== */
-/*  Редактор товара                                                       */
+/*  Массовые заметки                                                      */
 /* ===================================================================== */
-function renderEditor() {
-  const box = $('editor');
-  if (!current) {
-    box.innerHTML = '<div class="empty">Выберите товар слева</div>';
-    return;
-  }
-  const p = current;
-  const noteKey = currentStore + ':' + p.id;
-  const isMain = currentStore === 'blackstreet';
-  const imgs = Array.isArray(p.images) ? p.images : [];
-
-  box.innerHTML = `
-    <div class="ed__head">
-      ${firstImage(p) ? `<img class="ed__thumb" src="${escapeAttr(firstImage(p))}" alt="">` : `<span class="ed__thumb"></span>`}
-      <div>
-        <div class="ed__title">${escapeHtml(p.name || 'без названия')}</div>
-        <div class="ed__id">${STORES[currentStore].title} · id ${escapeHtml(String(p.id))}</div>
-      </div>
-    </div>
-
-    <div class="grid2">
-      <label class="f"><span>Цена</span>
-        <input type="number" step="0.01" id="e-price" value="${p.price != null ? escapeAttr(String(p.price)) : ''}"></label>
-      <label class="f"><span>Артикул</span>
-        <input type="text" id="e-sku" value="${escapeAttr(p.sku || '')}"></label>
-    </div>
-
-    <label class="f"><span>Название</span>
-      <input type="text" id="e-name" value="${escapeAttr(p.name || '')}"></label>
-
-    <div class="grid2">
-      <label class="f"><span>Наличие</span>
-        <select id="e-presence">
-          ${['available','not_available','order','service','waiting_for_supply']
-            .map(v => `<option value="${v}" ${p.presence === v ? 'selected' : ''}>${presenceLabel(v)}</option>`).join('')}
-        </select></label>
-      <label class="f"><span>Видимость</span>
-        <select id="e-status">
-          <option value="on_display" ${p.status === 'on_display' ? 'selected' : ''}>Опубликован</option>
-          <option value="not_on_display" ${p.status === 'not_on_display' ? 'selected' : ''}>Не показывается</option>
-          ${!['on_display','not_on_display'].includes(p.status || '')
-            ? `<option value="${escapeAttr(p.status || '')}" selected>${escapeHtml(STATUS_RU[p.status] || p.status || 'без статуса')}</option>`
-            : ''}
-        </select></label>
-    </div>
-
-    <label class="f"><span>Описание</span>
-      <textarea id="e-desc" rows="5">${escapeHtml(p.description || '')}</textarea></label>
-
-    <label class="f"><span>Фото — по одной ссылке в строке</span>
-      <textarea id="e-images" rows="3">${escapeHtml(imgs.map(i => i.url || i.thumbnail_url || '').filter(Boolean).join('\n'))}</textarea></label>
-    ${imgs.length ? `<div class="thumbs">${imgs.slice(0,6).map(i =>
-        `<img src="${escapeAttr(i.thumbnail_url || i.url)}" alt="">`).join('')}</div>` : ''}
-
-    <label class="f" style="margin-top:16px;"><span>Заметка — только в приложении, на Prom не уходит</span>
-      <textarea id="e-note" rows="2" placeholder="Например: уточнить остаток у поставщика">${escapeHtml(notes[noteKey] || '')}</textarea></label>
-
-    ${isMain ? `
-      <div class="spread">
-        <div class="t">Продублировать на другие магазины</div>
-        <div class="d">Артикул и название уйдут с суффиксом: <code>${escapeHtml((document.getElementById('e-sku')?.value) || p.sku || 'Мой-102')}</code> → <code>${escapeHtml(((p.sku||'Мой-102')) + ' (B)')}</code>. Товар ищется там по артикулу.</div>
-        <label class="chk"><input type="checkbox" id="sp-bonna"> Bonna-shop</label>
-        <label class="chk"><input type="checkbox" id="sp-core22"> Core22</label>
-      </div>` : ''}
-
-    <div class="bar">
-      <button class="btn" id="save">Сохранить на Prom</button>
-      <button class="btn btn--ghost btn--sm" id="save-note">Сохранить только заметку</button>
-      <span class="muted">Поля, которые вы не трогали, не отправляются.</span>
-    </div>
-    <div id="ed-msg"></div>
-  `;
-
-  $('save-note').addEventListener('click', () => {
-    notes[noteKey] = $('e-note').value;
-    if (!notes[noteKey]) delete notes[noteKey];
-    saveJSON(NOTE_KEY, notes);
-    showMsg($('ed-msg'), 'ok', 'Заметка сохранена в приложении.');
-    renderList();
-  });
-
-  $('save').addEventListener('click', saveProduct);
+function updateBulk() {
+  const bar = $('bulk');
+  $('bulk-n').textContent = 'выбрано ' + picked.size;
+  bar.classList.toggle('hidden', picked.size === 0);
 }
 
+$('bulk-apply').addEventListener('click', function () {
+  const text = $('bulk-note').value.trim();
+  if (!text) { alert('Впишите текст заметки'); return; }
+  picked.forEach(function (nk) { notes[nk] = text; });
+  saveJSON(NOTE_KEY, notes);
+  $('bulk-note').value = '';
+  renderList();
+  if (current) renderEditor();
+});
+
+$('bulk-clear-note').addEventListener('click', function () {
+  picked.forEach(function (nk) { delete notes[nk]; });
+  saveJSON(NOTE_KEY, notes);
+  renderList();
+  if (current) renderEditor();
+});
+
+$('bulk-none').addEventListener('click', function () {
+  picked.clear();
+  updateBulk();
+  renderList();
+});
+
+/* ===================================================================== */
+/*  Редактор                                                              */
+/* ===================================================================== */
 function presenceLabel(v) {
-  return ({
-    available: 'В наличии',
-    not_available: 'Нет в наличии',
-    order: 'Под заказ',
-    service: 'Услуга',
-    waiting_for_supply: 'Ожидается поставка',
-  })[v] || v;
+  const m = { available: 'В наличии', not_available: 'Нет в наличии', order: 'Под заказ',
+              service: 'Услуга', waiting_for_supply: 'Ожидается поставка' };
+  return m[v] || v;
+}
+
+function renderEditor() {
+  const box = $('editor');
+  if (!current) { box.innerHTML = '<div class="empty">Выберите позицию слева</div>'; return; }
+
+  const store = current.store, p = current.product;
+  const noteKey = store + ':' + p.id;
+  const imgs = Array.isArray(p.images) ? p.images : [];
+  const isMain = store === 'blackstreet';
+
+  const presenceOpts = ['available', 'not_available', 'order', 'service', 'waiting_for_supply']
+    .map(v => '<option value="' + v + '"' + (p.presence === v ? ' selected' : '') + '>' +
+      presenceLabel(v) + '</option>').join('');
+
+  const extraStatus = (['on_display', 'not_on_display'].indexOf(p.status || '') === -1)
+    ? '<option value="' + escapeAttr(p.status || '') + '" selected>' +
+      escapeHtml(STATUS_RU[p.status] || p.status || '—') + '</option>' : '';
+
+  const thumbs = '';
+
+  // все разновидности этого товара в этом же магазине
+  const sibs = siblingsOf(store, p);
+  const siblingsBox = sibs.length
+    ? '<div class="sibs">' +
+        '<label class="chk"><input type="checkbox" id="apply-sibs"> ' +
+        '<b>Применить изменения ко всем разновидностям</b> (' + (sibs.length + 1) + ' шт.)</label>' +
+        '<div class="sibs__hint">Цена, скидка, наличие, видимость, описание, фото и артикул — как есть. ' +
+        'В названии меняется только общая часть, размер на конце сохраняется.</div>' +
+        '<div class="sibs__list">' +
+          sibs.slice(0, 8).map(s => escapeHtml(s.name || '')).join('<br>') +
+          (sibs.length > 8 ? '<br>… и ещё ' + (sibs.length - 8) : '') +
+        '</div>' +
+      '</div>'
+    : '';
+
+  // скидка: показываем то, что уже стоит, если есть
+  const d = p.discount || null;
+  const dVal = d ? (d.value != null ? d.value : (d.amount != null ? d.amount : '')) : '';
+  const dType = d && (d.type === 'percent' || d.type === '%') ? 'percent' : 'amount';
+  const discountBox =
+    '<div class="disc">' +
+      '<div class="disc__t">Скидка</div>' +
+      '<div class="disc__row">' +
+        '<input type="number" step="0.01" id="e-disc" placeholder="пусто — без скидки" value="' +
+          escapeAttr(String(dVal)) + '">' +
+        '<select id="e-disc-type">' +
+          '<option value="amount"' + (dType === 'amount' ? ' selected' : '') + '>₴</option>' +
+          '<option value="percent"' + (dType === 'percent' ? ' selected' : '') + '>%</option>' +
+        '</select>' +
+        '<button class="btn btn--ghost btn--sm" id="disc-clear">Убрать</button>' +
+      '</div>' +
+      '<div class="disc__now" id="disc-now"></div>' +
+    '</div>';
+
+  const spread = isMain
+    ? '<div class="spread">' +
+        '<div class="t">Продублировать на другие магазины</div>' +
+        '<div class="d">Ищет позицию с тем же артикулом и тем же названием (с суффиксом).</div>' +
+        '<label class="chk"><input type="checkbox" id="sp-bonna"> Bonna-shop</label>' +
+        '<label class="chk"><input type="checkbox" id="sp-core22"> Core22</label>' +
+      '</div>' : '';
+
+  box.innerHTML =
+    '<div class="ed__head">' +
+      (firstImage(p) ? '<img class="ed__thumb" src="' + escapeAttr(firstImage(p)) + '" alt="">'
+                     : '<span class="ed__thumb"></span>') +
+      '<div><div class="ed__title">' + escapeHtml(p.name || 'без названия') + '</div>' +
+      '<div class="ed__id">' + STORES[store].title + ' · id ' + escapeHtml(String(p.id)) +
+      ' · ' + escapeHtml(STATUS_RU[p.status] || p.status || '') + '</div></div>' +
+    '</div>' +
+
+    '<div class="grid2">' +
+      '<label class="f"><span>Цена</span>' +
+        '<input type="number" step="0.01" id="e-price" value="' +
+          (p.price != null ? escapeAttr(String(p.price)) : '') + '"></label>' +
+      '<label class="f"><span>Артикул</span>' +
+        '<input type="text" id="e-sku" value="' + escapeAttr(p.sku || '') + '"></label>' +
+    '</div>' +
+
+    siblingsBox +
+    discountBox +
+
+    '<label class="f"><span>Название</span>' +
+      '<input type="text" id="e-name" value="' + escapeAttr(p.name || '') + '"></label>' +
+
+    '<div class="grid2">' +
+      '<label class="f"><span>Наличие</span><select id="e-presence">' + presenceOpts + '</select></label>' +
+      '<label class="f"><span>Видимость</span><select id="e-status">' +
+        '<option value="on_display"' + (p.status === 'on_display' ? ' selected' : '') + '>Опубликован</option>' +
+        '<option value="not_on_display"' + (p.status === 'not_on_display' ? ' selected' : '') + '>Не показывается</option>' +
+        extraStatus + '</select></label>' +
+    '</div>' +
+
+    '<label class="f"><span>Описание</span>' +
+      '<textarea id="e-desc" rows="5">' + escapeHtml(p.description || '') + '</textarea></label>' +
+
+    '<div class="f"><span class="flabel">Фото</span><div id="photos"></div></div>' +
+
+    '<label class="f" style="margin-top:16px;"><span>Заметка — только в приложении, на Prom не уходит</span>' +
+      '<textarea id="e-note" rows="2">' + escapeHtml(notes[noteKey] || '') + '</textarea></label>' +
+
+    spread +
+
+    '<div class="bar">' +
+      '<button class="btn" id="save">Сохранить на Prom</button>' +
+      '<button class="btn btn--ghost btn--sm" id="save-note">Только заметку</button>' +
+      '<button class="btn btn--ghost btn--sm" id="raw-btn">Что прислал Prom</button>' +
+    '</div>' +
+    '<pre id="raw" class="raw hidden"></pre>' +
+    '<div id="ed-msg"></div>';
+
+  $('raw-btn').addEventListener('click', function () {
+    const el = $('raw');
+    el.classList.toggle('hidden');
+    if (!el.classList.contains('hidden')) {
+      el.textContent = JSON.stringify(p, null, 2);
+    }
+  });
+
+  $('save-note').addEventListener('click', function () {
+    const v = $('e-note').value;
+    if (v) notes[noteKey] = v; else delete notes[noteKey];
+    saveJSON(NOTE_KEY, notes);
+    showMsg($('ed-msg'), 'ok', 'Заметка сохранена в приложении.');
+  });
+  $('save').addEventListener('click', saveProduct);
+
+  // --- фото ---
+  editImages = imgs.map(i => i.url || i.thumbnail_url || '').filter(Boolean);
+  renderPhotos();
+
+  // --- скидка ---
+  $('disc-clear').addEventListener('click', function () {
+    $('e-disc').value = '';
+    updateDiscHint();
+  });
+  $('e-disc').addEventListener('input', updateDiscHint);
+  $('e-disc-type').addEventListener('change', updateDiscHint);
+  $('e-price').addEventListener('input', updateDiscHint);
+  updateDiscHint();
+}
+
+/* Все разновидности того же товара в том же магазине (кроме самого) */
+function siblingsOf(store, p) {
+  const base = baseSku(p.sku, store);
+  if (!base) return [];
+  return (byStore[store] || []).filter(x => x.id !== p.id && baseSku(x.sku, store) === base);
+}
+
+/* Показ итоговой цены со скидкой */
+function updateDiscHint() {
+  const el = $('disc-now');
+  if (!el) return;
+  const price = Number($('e-price').value);
+  const val = $('e-disc').value.trim();
+  if (!val || !price) { el.textContent = ''; return; }
+  const n = Number(val);
+  const type = $('e-disc-type').value;
+  const final = type === 'percent' ? price * (1 - n / 100) : price - n;
+  el.textContent = 'Покупатель увидит: ' + Math.max(0, Math.round(final * 100) / 100) +
+                   ' (было ' + price + ')';
+}
+
+/* --- Управление фото ------------------------------------------------- */
+let editImages = [];
+
+function renderPhotos() {
+  const box = $('photos');
+  if (!box) return;
+  const rows = editImages.map(function (url, i) {
+    return '<div class="ph">' +
+      '<img class="ph__img" src="' + escapeAttr(url) + '" alt="" loading="lazy">' +
+      '<span class="ph__n">' + (i === 0 ? 'главное' : (i + 1)) + '</span>' +
+      '<span class="ph__url">' + escapeHtml(url) + '</span>' +
+      '<button class="ph__b" data-act="up" data-i="' + i + '" title="Выше">↑</button>' +
+      '<button class="ph__b" data-act="down" data-i="' + i + '" title="Ниже">↓</button>' +
+      '<button class="ph__b ph__b--del" data-act="del" data-i="' + i + '" title="Удалить">✕</button>' +
+    '</div>';
+  }).join('');
+
+  box.innerHTML =
+    (rows || '<div class="ph__empty">Фото нет</div>') +
+    '<div class="ph__add">' +
+      '<input type="text" id="ph-new" placeholder="Ссылка на фото — https://…">' +
+      '<button class="btn btn--ghost btn--sm" id="ph-add">Добавить</button>' +
+    '</div>';
+
+  Array.from(box.querySelectorAll('.ph__b')).forEach(function (b) {
+    b.addEventListener('click', function () {
+      const i = Number(b.dataset.i), act = b.dataset.act;
+      if (act === 'del') editImages.splice(i, 1);
+      if (act === 'up' && i > 0) {
+        const t = editImages[i - 1]; editImages[i - 1] = editImages[i]; editImages[i] = t;
+      }
+      if (act === 'down' && i < editImages.length - 1) {
+        const t = editImages[i + 1]; editImages[i + 1] = editImages[i]; editImages[i] = t;
+      }
+      renderPhotos();
+    });
+  });
+  $('ph-add').addEventListener('click', function () {
+    const v = $('ph-new').value.trim();
+    if (!v) return;
+    if (!/^https?:\/\//i.test(v)) { alert('Ссылка должна начинаться с http:// или https://'); return; }
+    editImages.push(v);
+    renderPhotos();
+  });
 }
 
 /* ---- Сохранение ------------------------------------------------------ */
 async function saveProduct() {
-  const p = current;
-  const box = $('ed-msg');
-  const btn = $('save');
+  const store = current.store, p = current.product;
+  const box = $('ed-msg'), btn = $('save');
 
-  // заметка — всегда локально
-  const noteKey = currentStore + ':' + p.id;
-  const noteVal = $('e-note').value;
-  if (noteVal) notes[noteKey] = noteVal; else delete notes[noteKey];
+  const noteKey = store + ':' + p.id;
+  const nv = $('e-note').value;
+  if (nv) notes[noteKey] = nv; else delete notes[noteKey];
   saveJSON(NOTE_KEY, notes);
 
-  // собираем только изменённое
   const upd = { id: p.id };
-  let changes = [];
+  const changes = [];
 
   const price = $('e-price').value.trim();
   if (price !== '' && Number(price) !== Number(p.price)) { upd.price = Number(price); changes.push('цена'); }
-
   const sku = $('e-sku').value.trim();
   if (sku !== (p.sku || '')) { upd.sku = sku; changes.push('артикул'); }
-
   const name = $('e-name').value.trim();
   if (name !== (p.name || '')) { upd.name = name; changes.push('название'); }
-
   const presence = $('e-presence').value;
   if (presence !== p.presence) { upd.presence = presence; changes.push('наличие'); }
-
   const status = $('e-status').value;
   if (status !== (p.status || '')) { upd.status = status; changes.push('видимость'); }
-
   const desc = $('e-desc').value;
   if (desc !== (p.description || '')) { upd.description = desc; changes.push('описание'); }
 
-  const imgsNow = (Array.isArray(p.images) ? p.images : []).map(i => i.url || i.thumbnail_url || '').filter(Boolean);
-  const imgsNew = $('e-images').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (imgsNew.join('|') !== imgsNow.join('|')) { upd.images_urls = imgsNew; changes.push('фото'); }
-
-  if (!changes.length) {
-    showMsg(box, 'warn', 'Изменений нет. Заметка сохранена.');
-    return;
+  // скидка
+  const dRaw = $('e-disc').value.trim();
+  const dType = $('e-disc-type').value;
+  const dOld = p.discount || null;
+  const dOldVal = dOld ? (dOld.value != null ? dOld.value : dOld.amount) : null;
+  const dOldType = dOld && (dOld.type === 'percent' || dOld.type === '%') ? 'percent' : 'amount';
+  if (dRaw === '') {
+    if (dOldVal != null) { upd.discount = null; changes.push('скидка убрана'); }
+  } else if (Number(dRaw) !== Number(dOldVal) || dType !== dOldType) {
+    upd.discount = { value: Number(dRaw), type: dType };
+    changes.push('скидка');
   }
+
+  // фото — из списка редактора
+  const nowImgs = (Array.isArray(p.images) ? p.images : [])
+    .map(i => i.url || i.thumbnail_url || '').filter(Boolean);
+  if (editImages.join('|') !== nowImgs.join('|')) {
+    upd.images_urls = editImages.slice();
+    changes.push('фото');
+  }
+
+  if (!changes.length) { showMsg(box, 'warn', 'Изменений нет. Заметка сохранена.'); return; }
+
+  const applySibs = document.getElementById('apply-sibs');
+  const spreadToSibs = !!(applySibs && applySibs.checked);
+  const origName = p.name || '';   // запоминаем до изменения
 
   btn.disabled = true;
   showMsg(box, 'warn', 'Отправляю на Prom…');
-
   const report = [];
-  try {
-    // 1) главный магазин / текущий
-    const r = await api('/edit', { store: currentStore, products: [upd] });
-    report.push(`${STORES[currentStore].title}: отправлено (${changes.join(', ')})`);
-    Object.assign(p, upd);   // обновляем локально
 
-    // 2) дубль на другие магазины — только из Black Street
-    if (currentStore === 'blackstreet') {
-      for (const key of ['bonna', 'core22']) {
-        const chk = document.getElementById('sp-' + key);
-        if (!chk || !chk.checked) continue;
+  try {
+    await api('/edit', { store: store, products: [upd] });
+    report.push(STORES[store].title + ': отправлено (' + changes.join(', ') + ')');
+    Object.assign(p, upd);
+
+    // все изменения на разновидности этого же магазина
+    if (spreadToSibs) {
+      const sibs = siblingsOf(store, p);
+      const batch = sibs.map(function (s) {
+        const o = { id: s.id };
+        if ('price' in upd)       o.price = upd.price;
+        if ('discount' in upd)    o.discount = upd.discount;
+        if ('presence' in upd)    o.presence = upd.presence;
+        if ('status' in upd)      o.status = upd.status;
+        if ('description' in upd) o.description = upd.description;
+        if ('images_urls' in upd) o.images_urls = upd.images_urls;
+        if ('sku' in upd)         o.sku = upd.sku;   // у разновидностей артикул общий
+        if ('name' in upd) {
+          // сохраняем хвост с размером: «Костюм M» -> «Новый костюм M»
+          const sn = s.name || '';
+          const tail = (origName && sn.indexOf(origName) === 0) ? sn.slice(origName.length) : '';
+          o.name = upd.name + tail;
+        }
+        return o;
+      });
+      if (batch.length) {
         try {
-          const found = await findBySku(key, (upd.sku ?? p.sku) || '', STORES[key].suffix);
-          if (!found) { report.push(`${STORES[key].title}: товар с таким артикулом не найден`); continue; }
-          const copy = { id: found.id };
-          if ('price' in upd)       copy.price = upd.price;
-          if ('presence' in upd)    copy.presence = upd.presence;
-          if ('status' in upd)      copy.status = upd.status;
-          if ('description' in upd) copy.description = upd.description;
-          if ('images_urls' in upd) copy.images_urls = upd.images_urls;
-          if ('sku' in upd)         copy.sku  = upd.sku  + STORES[key].suffix;
-          if ('name' in upd)        copy.name = upd.name + STORES[key].suffix;
-          await api('/edit', { store: key, products: [copy] });
-          report.push(`${STORES[key].title}: отправлено`);
+          await api('/edit', { store: store, products: batch });
+          batch.forEach(function (o, i) { Object.assign(sibs[i], o); });
+          report.push('Разновидности: обновлено ' + batch.length + ' шт.');
         } catch (e) {
-          report.push(`${STORES[key].title}: ошибка — ${e.message}`);
+          report.push('Разновидности: ошибка — ' + e.message);
         }
       }
     }
+
+    if (store === 'blackstreet') {
+      for (const key of ['bonna', 'core22']) {
+        const chk = document.getElementById('sp-' + key);
+        if (!chk || !chk.checked) continue;
+        const twin = findTwin(key, p);
+        if (!twin) { report.push(STORES[key].title + ': пара не найдена'); continue; }
+        const copy = { id: twin.id };
+        if ('price' in upd)       copy.price = upd.price;
+        if ('presence' in upd)    copy.presence = upd.presence;
+        if ('status' in upd)      copy.status = upd.status;
+        if ('description' in upd) copy.description = upd.description;
+        if ('images_urls' in upd) copy.images_urls = upd.images_urls;
+        if ('sku' in upd)         copy.sku  = upd.sku + STORES[key].suffix;
+        if ('name' in upd)        copy.name = upd.name + STORES[key].suffix;
+        try {
+          await api('/edit', { store: key, products: [copy] });
+          Object.assign(twin, copy);
+          report.push(STORES[key].title + ': отправлено');
+        } catch (e) {
+          report.push(STORES[key].title + ': ошибка — ' + e.message);
+        }
+      }
+    }
+
     showMsg(box, 'ok', report.map(escapeHtml).join('<br>') +
-      '<br><span style="opacity:.7">Prom применяет изменения не мгновенно — обновите карточку в кабинете через пару минут.</span>');
-    renderList();
+      '<br><span style="opacity:.7">Prom применяет изменения не мгновенно.</span>');
+    buildGroups(); applyFilter();
   } catch (e) {
     showMsg(box, 'err', 'Prom не принял изменения.<pre>' + escapeHtml(e.message) + '</pre>' +
-      '<span style="opacity:.8">Если ругается на конкретное поле — значит его нельзя менять этим способом. Уберите его и сохраните остальное.</span>');
+      '<span style="opacity:.8">Если ругается на конкретное поле — уберите его и сохраните остальное.</span>');
   } finally {
     btn.disabled = false;
   }
 }
 
-/* Ищем товар в другом магазине по артикулу с суффиксом */
-async function findBySku(store, baseSku, suffix) {
-  const target = (baseSku + suffix).trim().toLowerCase();
-  let lastId = null, guard = 0;
-  while (guard++ < 2000) {
-    const data = await api('/list', { store, limit: 100, last_id: lastId });
-    const batch = data.products || [];
-    if (!batch.length) return null;
-    const hit = batch.find(x => (x.sku || '').trim().toLowerCase() === target);
-    if (hit) return hit;
-    const nextId = batch[batch.length - 1].id;
-    if (nextId === lastId) return null;
-    lastId = nextId;
-  }
-  return null;
+/* Пара в другом магазине: тот же базовый артикул, затем совпадение по названию */
+function findTwin(store, src) {
+  const base = baseSku(src.sku, 'blackstreet');
+  const arr = (byStore[store] || []).filter(p => baseSku(p.sku, store) === base);
+  if (!arr.length) return null;
+  if (arr.length === 1) return arr[0];
+  const withSuf = ((src.name || '') + STORES[store].suffix).trim().toLowerCase();
+  const plain = (src.name || '').trim().toLowerCase();
+  return arr.find(p => (p.name || '').trim().toLowerCase() === withSuf)
+      || arr.find(p => (p.name || '').trim().toLowerCase() === plain)
+      || null;
 }
 
 /* ===================================================================== */
-/*  Мелочи                                                                */
-/* ===================================================================== */
 function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
 }
-function escapeAttr(s) { return escapeHtml(s); }
+const escapeAttr = escapeHtml;
 </script>
 
 </body>

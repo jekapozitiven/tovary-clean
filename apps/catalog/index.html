@@ -254,6 +254,7 @@
         <option value="no">Только без заметки</option>
       </select>
       <button class="btn btn--sm hidden" id="uk-file">Файл для Prom (0)</button>
+      <button class="btn btn--ghost btn--sm" id="check-stores">Проверить магазины</button>
       <button class="btn btn--ghost btn--sm" id="cfg-open">Настройки</button>
       <button class="btn btn--ghost btn--sm" id="wipe" title="Стереть сохранённые данные">Очистить</button>
     </div>
@@ -1305,6 +1306,33 @@ async function probeUk() {
     '<br><br>Пришлите этот список — настрою рабочий способ.');
 }
 
+/* Быстрая проверка: что отвечает Prom по каждому магазину */
+async function checkStores() {
+  const out = [];
+  $('stats').innerHTML = '<div class="msg msg--warn">Проверяю магазины…</div>';
+
+  for (const k of STORE_KEYS) {
+    try {
+      const res = await api('/list', { store: k, limit: 1 });
+      const n = (res.products || []).length;
+      if (n) {
+        const p = res.products[0];
+        out.push('<b style="color:#6ee7b7">✓ ' + STORES[k].title + '</b> — связь есть, первый товар: ' +
+                 escapeHtml((p.name || '').slice(0, 40)));
+      } else {
+        out.push('<b style="color:#fca5a5">✗ ' + STORES[k].title + '</b> — Prom ответил, но товаров не прислал');
+      }
+    } catch (e) {
+      out.push('<b style="color:#fca5a5">✗ ' + STORES[k].title + '</b> — ' + escapeHtml(e.message.slice(0, 300)));
+    }
+  }
+
+  $('stats').innerHTML = '<div class="msg msg--warn"><b>Проверка магазинов:</b><br>' +
+    out.join('<br>') +
+    '<br><br><span style="opacity:.75">401 или Unauthorized — токен неверный или удалён, ' +
+    'обновите секрет в Cloudflare. 403 — у токена нет прав на товары.</span></div>';
+}
+
 /* Все разновидности того же товара в том же магазине (кроме самого) */
 function siblingsOf(store, p) {
   const arr = byStore[store] || [];
@@ -1658,6 +1686,8 @@ function escapeHtml(s) {
 const escapeAttr = escapeHtml;
 
 /* Кнопка выгрузки украинских правок */
+if ($('check-stores')) $('check-stores').addEventListener('click', checkStores);
+
 if ($('uk-file')) {
   $('uk-file').addEventListener('click', function () {
     const n = Object.keys(ukQueue).length;

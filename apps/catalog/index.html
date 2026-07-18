@@ -305,16 +305,31 @@ async function loadProducts() {
   items = [];
 
   try {
-    let lastId = null, guard = 0;
-    while (guard++ < 500) {                       // предохранитель
+    let lastId = null, guard = 0, seen = new Set();
+    while (guard++ < 2000) {                      // предохранитель
       const data = await api('/list', { store: currentStore, limit: 100, last_id: lastId });
       const batch = data.products || [];
+
+      // конец — только когда Prom вернул совсем пусто
       if (!batch.length) break;
-      items = items.concat(batch);
-      lastId = batch[batch.length - 1].id;
+
+      // отсекаем повторы, если Prom вдруг зациклится
+      let added = 0;
+      for (const p of batch) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        items.push(p);
+        added++;
+      }
+
+      const nextId = batch[batch.length - 1].id;
+      if (nextId === lastId) break;               // указатель не двигается — выходим
+      lastId = nextId;
+
       $('count').textContent = `загружено ${items.length}`;
-      prog.firstElementChild.style.width = Math.min(95, items.length / 90) + '%';
-      if (batch.length < 100) break;
+      prog.firstElementChild.style.width = Math.min(95, items.length / 300) + '%';
+
+      if (added === 0 && batch.length < 100) break;
     }
     prog.firstElementChild.style.width = '100%';
     $('count').textContent = `${items.length} товаров`;
@@ -335,33 +350,44 @@ $('search').addEventListener('input', applyFilter);
 $('fstatus').addEventListener('change', applyFilter);
 
 /* Что реально пришло от Prom — по статусам */
+const STATUS_RU = {
+  on_display: 'опубликовано',
+  not_on_display: 'не показывается',
+  draft: 'черновик',
+  deleted: 'удалено',
+  approved: 'одобрено',
+  editing_required: 'требует правки',
+  waiting_for_moderation: 'на модерации',
+};
+
 function showStats() {
   const by = {};
-  let withVariants = 0;
   for (const p of items) {
     const s = p.status || 'без статуса';
     by[s] = (by[s] || 0) + 1;
-    if (Array.isArray(p.variations) && p.variations.length) withVariants++;
-    else if (Array.isArray(p.variants) && p.variants.length) withVariants++;
   }
-  const nice = { on_display: 'опубликовано', draft: 'скрыто', deleted: 'удалено',
-                 not_on_display: 'не показывается', approved: 'одобрено' };
-  const parts = Object.entries(by)
-    .sort((a, b) => b[1] - a[1])
-    .map(([k, v]) => `${nice[k] || k}: <b>${v}</b>`);
+  const entries = Object.entries(by).sort((a, b) => b[1] - a[1]);
 
   $('stats').innerHTML = `
     <div class="msg msg--warn">
-      Пришло от Prom: <b>${items.length}</b> — ${parts.join(' · ')}
-      ${withVariants ? `<br>Товаров с вариантами внутри ответа: <b>${withVariants}</b>` : ''}
+      ${STORES[currentStore].title} — пришло от Prom: <b>${items.length}</b><br>
+      ${entries.map(([k, v]) => `${STATUS_RU[k] || k}: <b>${v}</b>`).join(' · ')}
     </div>`;
+
+  // фильтр строим по тем статусам, что реально есть
+  const sel = $('fstatus');
+  const prev = sel.value;
+  sel.innerHTML = `<option value="">Все статусы (${items.length})</option>` +
+    entries.map(([k, v]) =>
+      `<option value="${escapeAttr(k)}">${STATUS_RU[k] || k} (${v})</option>`).join('');
+  sel.value = [...sel.options].some(o => o.value === prev) ? prev : '';
 }
 
 function applyFilter() {
   const q = $('search').value.trim().toLowerCase();
   const st = $('fstatus').value;
   filtered = items.filter(p => {
-    if (st && (p.status || '') !== st) return false;
+    if (st && (p.status || 'без статуса') !== st) return false;
     if (!q) return true;
     return (p.name || '').toLowerCase().includes(q) ||
            (p.sku  || '').toLowerCase().includes(q);
@@ -454,8 +480,11 @@ function renderEditor() {
         </select></label>
       <label class="f"><span>Видимость</span>
         <select id="e-status">
-          <option value="on_display" ${isVisible(p) ? 'selected' : ''}>Опубликован</option>
-          <option value="draft" ${!isVisible(p) ? 'selected' : ''}>Скрыт</option>
+          <option value="on_display" ${p.status === 'on_display' ? 'selected' : ''}>Опубликован</option>
+          <option value="not_on_display" ${p.status === 'not_on_display' ? 'selected' : ''}>Не показывается</option>
+          ${!['on_display','not_on_display'].includes(p.status || '')
+            ? `<option value="${escapeAttr(p.status || '')}" selected>${escapeHtml(STATUS_RU[p.status] || p.status || 'без статуса')}</option>`
+            : ''}
         </select></label>
     </div>
 
@@ -598,14 +627,15 @@ async function saveProduct() {
 async function findBySku(store, baseSku, suffix) {
   const target = (baseSku + suffix).trim().toLowerCase();
   let lastId = null, guard = 0;
-  while (guard++ < 500) {
+  while (guard++ < 2000) {
     const data = await api('/list', { store, limit: 100, last_id: lastId });
     const batch = data.products || [];
     if (!batch.length) return null;
     const hit = batch.find(x => (x.sku || '').trim().toLowerCase() === target);
     if (hit) return hit;
-    lastId = batch[batch.length - 1].id;
-    if (batch.length < 100) return null;
+    const nextId = batch[batch.length - 1].id;
+    if (nextId === lastId) return null;
+    lastId = nextId;
   }
   return null;
 }

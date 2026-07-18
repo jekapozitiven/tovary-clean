@@ -181,6 +181,11 @@
   .disc__row input { flex: 1; }
   .disc__row select { width: 70px; flex: none; }
   .disc__now { font-size: 12px; color: var(--green); margin-top: 8px; min-height: 15px; }
+  .disc__dates { display: flex; gap: 10px; margin-top: 10px; }
+  .disc__dates label { flex: 1; }
+  .disc__dates span { display: block; font-size: 11.5px; color: var(--text-faint); margin-bottom: 4px; }
+  .disc__dates input { width: 100%; }
+  input[readonly], textarea[readonly] { opacity: .55; cursor: not-allowed; }
 
   /* Разновидности */
   .sibs { padding: 12px 14px; margin-bottom: 14px; border-radius: var(--radius-sm);
@@ -913,6 +918,21 @@ function renderEditor() {
   const d = p.discount || null;
   const dVal = d ? (d.value != null ? d.value : (d.amount != null ? d.amount : '')) : '';
   const dType = d && (d.type === 'percent' || d.type === '%') ? 'percent' : 'amount';
+
+  // даты скидки: берём имеющиеся, иначе сегодня и через месяц
+  function ymd(v) {
+    if (!v) return '';
+    const s = String(v);
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? (m[1] + '-' + m[2] + '-' + m[3]) : '';
+  }
+  function plusDays(n) {
+    const t = new Date(Date.now() + n * 86400000);
+    const p = (x) => (x < 10 ? '0' + x : '' + x);
+    return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate());
+  }
+  const dFrom = (d && ymd(d.date_start)) || plusDays(0);
+  const dTo   = (d && ymd(d.date_end))   || plusDays(30);
   const discountBox =
     '<div class="disc">' +
       '<div class="disc__t">Скидка</div>' +
@@ -924,6 +944,12 @@ function renderEditor() {
           '<option value="percent"' + (dType === 'percent' ? ' selected' : '') + '>%</option>' +
         '</select>' +
         '<button class="btn btn--ghost btn--sm" id="disc-clear">Убрать</button>' +
+      '</div>' +
+      '<div class="disc__dates">' +
+        '<label><span>Начало</span>' +
+          '<input type="date" id="e-disc-from" value="' + escapeAttr(dFrom) + '"></label>' +
+        '<label><span>Конец</span>' +
+          '<input type="date" id="e-disc-to" value="' + escapeAttr(dTo) + '"></label>' +
       '</div>' +
       '<div class="disc__now" id="disc-now"></div>' +
     '</div>';
@@ -958,8 +984,8 @@ function renderEditor() {
 
     '<label class="f"><span>Название (русский)</span>' +
       '<input type="text" id="e-name" value="' + escapeAttr(nameRu) + '"></label>' +
-    (hasML ? '<label class="f"><span>Назва (українська)</span>' +
-      '<input type="text" id="e-name-uk" value="' + escapeAttr(nameUk) + '"></label>' : '') +
+    (hasML ? '<label class="f"><span>Назва (українська) — Prom не даёт менять через API</span>' +
+      '<input type="text" id="e-name-uk" value="' + escapeAttr(nameUk) + '" readonly></label>' : '') +
 
     '<div class="grid2">' +
       '<label class="f"><span>Наличие</span><select id="e-presence">' + presenceOpts + '</select></label>' +
@@ -971,13 +997,13 @@ function renderEditor() {
 
     '<label class="f"><span>Описание (русский)</span>' +
       '<textarea id="e-desc" rows="5">' + escapeHtml(descRu) + '</textarea></label>' +
-    (hasML ? '<label class="f"><span>Опис (українська)</span>' +
-      '<textarea id="e-desc-uk" rows="5">' + escapeHtml(descUk) + '</textarea></label>' : '') +
+    (hasML ? '<label class="f"><span>Опис (українська) — Prom не даёт менять через API</span>' +
+      '<textarea id="e-desc-uk" rows="5" readonly>' + escapeHtml(descUk) + '</textarea></label>' : '') +
 
     '<label class="f"><span>Ключевые слова (русский) — через запятую</span>' +
       '<textarea id="e-kw" rows="3">' + escapeHtml(kwRu) + '</textarea></label>' +
-    (hasKwML ? '<label class="f"><span>Ключові слова (українська)</span>' +
-      '<textarea id="e-kw-uk" rows="3">' + escapeHtml(kwUk) + '</textarea></label>' : '') +
+    (hasKwML ? '<label class="f"><span>Ключові слова (українська) — Prom не даёт менять через API</span>' +
+      '<textarea id="e-kw-uk" rows="3" readonly>' + escapeHtml(kwUk) + '</textarea></label>' : '') +
 
     '<div class="f"><span class="flabel">Фото</span><div id="photos"></div></div>' +
 
@@ -1129,11 +1155,7 @@ async function saveProduct() {
   const nameUkOld = nmlOld && nmlOld.uk != null ? nmlOld.uk : null;
 
   if (nameRuNew !== nameRuOld || (nameUkNew !== null && nameUkNew !== nameUkOld)) {
-    upd.name = nameRuNew;
-    if (nmlOld) {
-      upd.name_multilang = { ru: nameRuNew };
-      if (nameUkNew !== null) upd.name_multilang.uk = nameUkNew;
-    }
+    upd.name = nameRuNew;   // Prom принимает только основное поле
     changes.push('название');
   }
 
@@ -1144,11 +1166,7 @@ async function saveProduct() {
   const descUkOld = dmlOld && dmlOld.uk != null ? dmlOld.uk : null;
 
   if (descRuNew !== descRuOld || (descUkNew !== null && descUkNew !== descUkOld)) {
-    upd.description = descRuNew;
-    if (dmlOld) {
-      upd.description_multilang = { ru: descRuNew };
-      if (descUkNew !== null) upd.description_multilang.uk = descUkNew;
-    }
+    upd.description = descRuNew;   // Prom принимает только основное поле
     changes.push('описание');
   }
 
@@ -1161,10 +1179,7 @@ async function saveProduct() {
   const kwUkOld = kmlOld && kmlOld.uk != null ? kmlOld.uk : null;
 
   if (kwRuNew !== kwRuOld || (kwUkNew !== null && kwUkNew !== kwUkOld)) {
-    upd.keywords = kwRuNew;
-    if (kwUkNew !== null && kwUkNew !== '') {
-      upd.keywords_multilang = { ru: kwRuNew, uk: kwUkNew };
-    }
+    upd.keywords = kwRuNew;   // Prom принимает только основное поле
     changes.push('ключевые слова');
   }
 
@@ -1176,8 +1191,19 @@ async function saveProduct() {
   const dOldType = dOld && (dOld.type === 'percent' || dOld.type === '%') ? 'percent' : 'amount';
   if (dRaw === '') {
     if (dOldVal != null) { upd.discount = null; changes.push('скидка убрана'); }
-  } else if (Number(dRaw) !== Number(dOldVal) || dType !== dOldType) {
-    upd.discount = { value: Number(dRaw), type: dType };
+  } else {
+    const dFromV = ($('e-disc-from') || {}).value || '';
+    const dToV   = ($('e-disc-to')   || {}).value || '';
+    if (!dFromV || !dToV) {
+      showMsg(box, 'err', 'Для скидки нужны даты начала и конца.');
+      return;
+    }
+    upd.discount = {
+      value: Number(dRaw),
+      type: dType,
+      date_start: dFromV + ' 00:00:00',
+      date_end:   dToV   + ' 23:59:59',
+    };
     changes.push('скидка');
   }
 
@@ -1246,19 +1272,8 @@ async function saveProduct() {
           const sn = s.name || '';
           const tail = (origName && sn.indexOf(origName) === 0) ? sn.slice(origName.length) : '';
           o.name = upd.name + tail;
-          if (upd.name_multilang) {
-            o.name_multilang = {};
-            if (upd.name_multilang.ru != null) o.name_multilang.ru = upd.name_multilang.ru + tail;
-            if (upd.name_multilang.uk != null) {
-              const su = (s.name_multilang && s.name_multilang.uk) || '';
-              const tu = (origNameUk && su.indexOf(origNameUk) === 0) ? su.slice(origNameUk.length) : tail;
-              o.name_multilang.uk = upd.name_multilang.uk + tu;
-            }
-          }
         }
-        if ('description_multilang' in upd) o.description_multilang = upd.description_multilang;
         if ('keywords' in upd) o.keywords = upd.keywords;
-        if ('keywords_multilang' in upd) o.keywords_multilang = upd.keywords_multilang;
         return o;
       });
       if (batch.length) {
@@ -1283,19 +1298,12 @@ async function saveProduct() {
         if ('presence' in upd)    copy.presence = upd.presence;
         if ('status' in upd)      copy.status = upd.status;
         if ('description' in upd) copy.description = upd.description;
-        if ('description_multilang' in upd) copy.description_multilang = upd.description_multilang;
         if ('keywords' in upd) copy.keywords = upd.keywords;
-        if ('keywords_multilang' in upd) copy.keywords_multilang = upd.keywords_multilang;
         if ('discount' in upd)    copy.discount = upd.discount;
         if ('images_urls' in upd) copy.images_urls = upd.images_urls;
         if ('sku' in upd)         copy.sku  = upd.sku + STORES[key].suffix;
         if ('name' in upd) {
           copy.name = upd.name + STORES[key].suffix;
-          if (upd.name_multilang) {
-            copy.name_multilang = {};
-            if (upd.name_multilang.ru != null) copy.name_multilang.ru = upd.name_multilang.ru + STORES[key].suffix;
-            if (upd.name_multilang.uk != null) copy.name_multilang.uk = upd.name_multilang.uk + STORES[key].suffix;
-          }
         }
         try {
           await api('/edit', { store: key, products: [copy] });

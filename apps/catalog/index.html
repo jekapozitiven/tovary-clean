@@ -1,589 +1,84 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a0a0b">
-<title>Каталог товаров — Товары</title>
-
-<link rel="icon" href="../../favicon.ico" sizes="any">
-<link rel="icon" type="image/png" href="../../favicon-32.png" sizes="32x32">
-<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
-<link rel="stylesheet" href="../../assets/portal.css">
-
-<style>
-  .wrap { max-width: 1400px; }
-
-  .panel {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: clamp(18px, 3vw, 26px);
-    margin-bottom: 16px;
-  }
-  .panel h2 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
-  .panel .sub { margin: 0 0 18px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
-
-  label.f { display: block; margin-bottom: 14px; }
-  label.f span { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
-
-  input[type=text], input[type=password], input[type=number], select, textarea {
-    width: 100%; font-family: var(--font); font-size: 14px; color: var(--text);
-    background: #0e0e10; border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 10px 12px;
-  }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--border-hover); }
-  textarea { resize: vertical; line-height: 1.55; }
-
-  .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-    padding: 10px 18px; font-size: 14px; font-weight: 700; font-family: var(--font);
-    color: #0a0a0b; background: var(--accent);
-    border: none; border-radius: 999px; cursor: pointer; transition: opacity .15s, transform .1s;
-  }
-  .btn:hover { opacity: .9; }
-  .btn:active { transform: translateY(1px); }
-  .btn:disabled { opacity: .4; cursor: not-allowed; }
-  .btn--ghost { color: var(--text); background: transparent; border: 1px solid var(--border); }
-  .btn--sm { padding: 7px 13px; font-size: 13px; }
-
-  /* Панель управления */
-  .toolbar {
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-    margin-bottom: 16px;
-  }
-  .toolbar select, .toolbar input[type=text] { width: auto; flex: none; }
-  .toolbar .search { flex: 1; min-width: 200px; }
-  .muted { font-size: 12.5px; color: var(--text-faint); }
-
-  .progress { height: 3px; background: #1e1e22; border-radius: 999px; overflow: hidden; margin-top: 10px; }
-  .progress i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
-
-  /* Две колонки */
-  .cols { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.15fr); gap: 16px; align-items: start; }
-  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
-
-  /* Список */
-  .list { max-height: 70vh; overflow-y: auto; }
-  .item {
-    display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
-    padding: 11px 12px; background: transparent; border: 1px solid transparent;
-    border-radius: var(--radius-sm); cursor: pointer; font-family: var(--font);
-    border-bottom: 1px solid var(--border);
-  }
-  .item:hover { background: var(--panel-hover); }
-  .item.is-active { background: var(--panel-hover); border-color: var(--border-hover); }
-  .item__img {
-    width: 42px; height: 42px; flex: none; border-radius: 6px; object-fit: cover;
-    background: #17171a; border: 1px solid var(--border);
-  }
-  .item__body { min-width: 0; flex: 1; }
-  .item__name {
-    font-size: 13.5px; color: var(--text); font-weight: 600;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .item__meta { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
-  .item__price { font-size: 13px; color: var(--text-dim); white-space: nowrap; }
-
-  .dot-status { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; }
-  .dot-on  { background: var(--green); }
-  .dot-off { background: #6b6b66; }
-
-  /* Редактор */
-  .ed__head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px; }
-  .ed__thumb { width: 64px; height: 64px; border-radius: 8px; object-fit: cover;
-               background: #17171a; border: 1px solid var(--border); flex: none; }
-  .ed__title { font-size: 15px; font-weight: 700; line-height: 1.35; }
-  .ed__id { font-size: 12px; color: var(--text-faint); margin-top: 3px; }
-
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
-
-  .changed { border-color: var(--accent) !important; }
-
-  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-  .thumbs img { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); }
-
-  .spread {
-    margin-top: 16px; padding: 14px; border-radius: var(--radius-sm);
-    background: rgba(214,242,74,0.05); border: 1px solid rgba(214,242,74,0.16);
-  }
-  .spread .t { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
-  .spread .d { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; margin-bottom: 10px; }
-  .chk { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-bottom: 7px; cursor: pointer; }
-  .chk input { width: 16px; height: 16px; accent-color: var(--accent); }
-
-  .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 18px;
-         padding-top: 16px; border-top: 1px solid var(--border); }
-
-  .msg { padding: 11px 14px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.5; margin-top: 12px; }
-  .msg--ok   { background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.25); color: #6ee7b7; }
-  .msg--err  { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.25); color: #fca5a5; }
-  .msg--warn { background: rgba(214,242,74,.06); border: 1px solid rgba(214,242,74,.2); color: var(--text-dim); }
-  .msg pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; opacity: .85; }
-
-  .empty { padding: 40px 20px; text-align: center; color: var(--text-faint); font-size: 13.5px; }
-  .hidden { display: none !important; }
-  code { background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0b">
+  <title>Товары — портал приложений</title>
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="assets/portal.css">
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">
-    <div class="brand__name">ТОВАРЫ<span class="slash">//</span></div>
-    <div class="brand__sub">Каталог товаров</div>
-  </div>
-  <a class="home-btn" href="../../index.html"><span class="home-btn__arrow">←</span> Главная</a>
-</header>
-
-<main class="wrap">
-
-  <!-- ================= НАСТРОЙКА ================= -->
-  <div class="panel" id="setup">
-    <h2>Подключение</h2>
-    <p class="sub">Адрес посредника и пароль приложения. Вводится один раз — дальше сохраняется в этом браузере. Токены Prom сюда не вводятся, они лежат в посреднике.</p>
-    <div class="grid2">
-      <label class="f">
-        <span>Адрес посредника</span>
-        <input type="text" id="cfg-url" placeholder="https://tovary.ваше-имя.workers.dev">
-      </label>
-      <label class="f">
-        <span>Пароль приложения</span>
-        <input type="password" id="cfg-pass" placeholder="тот, что задали в секрете APP_PASSWORD">
-      </label>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand__name">ТОВАРЫ<span class="slash">//</span></div>
+      <div class="brand__sub">Внутренний портал приложений</div>
     </div>
-    <div class="bar" style="border:none; padding-top:0; margin-top:0;">
-      <button class="btn" id="cfg-save">Проверить и сохранить</button>
-      <button class="btn btn--ghost btn--sm hidden" id="cfg-hide">Свернуть</button>
-    </div>
-    <div id="cfg-msg"></div>
-  </div>
+  </header>
 
-  <!-- ================= РАБОТА ================= -->
-  <div id="work" class="hidden">
+  <main class="wrap">
+    <p class="eyebrow">Выберите приложение</p>
+    <div class="grid" id="grid"></div>
+  </main>
 
-    <div class="toolbar">
-      <select id="store">
-        <option value="blackstreet">Black Street — главный</option>
-        <option value="bonna">Bonna-shop</option>
-        <option value="core22">Core22</option>
-      </select>
-      <button class="btn btn--sm" id="load">Загрузить товары</button>
-      <input type="text" class="search" id="search" placeholder="Поиск по названию или артикулу…">
-      <span class="muted" id="count"></span>
-      <button class="btn btn--ghost btn--sm" id="cfg-open">Настройки</button>
-    </div>
-    <div class="progress hidden" id="prog"><i></i></div>
-
-    <div class="cols">
-      <!-- Список -->
-      <div class="panel" style="padding:8px;">
-        <div class="list" id="list">
-          <div class="empty">Нажмите «Загрузить товары»</div>
-        </div>
-      </div>
-
-      <!-- Редактор -->
-      <div class="panel" id="editor">
-        <div class="empty">Выберите товар слева</div>
-      </div>
-    </div>
-  </div>
-
-</main>
-
-<script>
-/* ===================================================================== */
-/*  Хранилище настроек и заметок                                          */
-/* ===================================================================== */
-const CFG_KEY  = 'tovary:catalog:cfg';
-const NOTE_KEY = 'tovary:catalog:notes';
-
-const loadJSON = (k, def) => { try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } };
-const saveJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-
-let cfg   = loadJSON(CFG_KEY, { url: '', pass: '' });
-let notes = loadJSON(NOTE_KEY, {});          // ключ: "store:id" -> текст
-
-/* Суффиксы магазинов. Black Street — главный, без суффикса. */
-const STORES = {
-  blackstreet: { title: 'Black Street', suffix: ''    },
-  bonna:       { title: 'Bonna-shop',   suffix: ' (B)' },
-  core22:      { title: 'Core22',       suffix: ' (С)' },
-};
-
-/* Состояние */
-let items = [];        // загруженные товары текущего магазина
-let filtered = [];
-let current = null;    // выбранный товар
-let currentStore = 'blackstreet';
-
-/* ===================================================================== */
-/*  Связь с посредником                                                   */
-/* ===================================================================== */
-async function api(route, payload) {
-  if (!cfg.url) throw new Error('Не задан адрес посредника');
-  const base = cfg.url.replace(/\/+$/, '');
-  const res = await fetch(base + route, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-App-Password': cfg.pass },
-    body: JSON.stringify(payload || {}),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const d = data.detail ? '\n' + JSON.stringify(data.detail, null, 2) : '';
-    throw new Error((data.error || ('Ошибка ' + res.status)) + d);
-  }
-  return data;
-}
-
-/* ===================================================================== */
-/*  Настройка                                                             */
-/* ===================================================================== */
-const $ = (id) => document.getElementById(id);
-
-$('cfg-url').value  = cfg.url;
-$('cfg-pass').value = cfg.pass;
-
-function showMsg(el, kind, html) {
-  el.innerHTML = `<div class="msg msg--${kind}">${html}</div>`;
-}
-
-$('cfg-save').addEventListener('click', async () => {
-  cfg.url  = $('cfg-url').value.trim();
-  cfg.pass = $('cfg-pass').value;
-  const box = $('cfg-msg');
-  showMsg(box, 'warn', 'Проверяю связь…');
-  try {
-    await api('/ping', {});
-    saveJSON(CFG_KEY, cfg);
-    showMsg(box, 'ok', 'Связь есть, настройки сохранены.');
-    $('work').classList.remove('hidden');
-    $('cfg-hide').classList.remove('hidden');
-    setTimeout(() => $('setup').classList.add('hidden'), 700);
-  } catch (e) {
-    showMsg(box, 'err', 'Не получилось.<pre>' + escapeHtml(e.message) + '</pre>');
-  }
-});
-
-$('cfg-open').addEventListener('click', () => {
-  $('setup').classList.remove('hidden');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-});
-$('cfg-hide').addEventListener('click', () => $('setup').classList.add('hidden'));
-
-/* Если уже настроено — сразу к работе */
-if (cfg.url && cfg.pass) {
-  $('setup').classList.add('hidden');
-  $('cfg-hide').classList.remove('hidden');
-  $('work').classList.remove('hidden');
-}
-
-/* ===================================================================== */
-/*  Загрузка товаров                                                      */
-/* ===================================================================== */
-$('store').addEventListener('change', () => {
-  currentStore = $('store').value;
-  items = []; filtered = []; current = null;
-  renderList(); renderEditor();
-  $('count').textContent = '';
-});
-
-$('load').addEventListener('click', loadProducts);
-
-async function loadProducts() {
-  const btn = $('load');
-  const prog = $('prog');
-  btn.disabled = true;
-  prog.classList.remove('hidden');
-  prog.firstElementChild.style.width = '0%';
-  items = [];
-
-  try {
-    let lastId = null, guard = 0;
-    while (guard++ < 500) {                       // предохранитель
-      const data = await api('/list', { store: currentStore, limit: 100, last_id: lastId });
-      const batch = data.products || [];
-      if (!batch.length) break;
-      items = items.concat(batch);
-      lastId = batch[batch.length - 1].id;
-      $('count').textContent = `загружено ${items.length}`;
-      prog.firstElementChild.style.width = Math.min(95, items.length / 90) + '%';
-      if (batch.length < 100) break;
-    }
-    prog.firstElementChild.style.width = '100%';
-    $('count').textContent = `${items.length} товаров`;
-    applyFilter();
-  } catch (e) {
-    $('list').innerHTML = `<div class="msg msg--err" style="margin:12px">Не удалось загрузить.<pre>${escapeHtml(e.message)}</pre></div>`;
-  } finally {
-    btn.disabled = false;
-    setTimeout(() => prog.classList.add('hidden'), 600);
-  }
-}
-
-/* ===================================================================== */
-/*  Список и поиск                                                        */
-/* ===================================================================== */
-$('search').addEventListener('input', applyFilter);
-
-function applyFilter() {
-  const q = $('search').value.trim().toLowerCase();
-  filtered = !q ? items : items.filter(p =>
-    (p.name || '').toLowerCase().includes(q) ||
-    (p.sku  || '').toLowerCase().includes(q)
-  );
-  renderList();
-}
-
-function firstImage(p) {
-  if (Array.isArray(p.images) && p.images.length) {
-    return p.images[0].thumbnail_url || p.images[0].url || '';
-  }
-  return p.main_image || '';
-}
-
-function isVisible(p) {
-  return (p.status || '').toLowerCase() === 'on_display';
-}
-
-function renderList() {
-  const box = $('list');
-  if (!filtered.length) {
-    box.innerHTML = `<div class="empty">${items.length ? 'Ничего не найдено' : 'Нажмите «Загрузить товары»'}</div>`;
-    return;
-  }
-  const slice = filtered.slice(0, 300);          // рисуем первые 300, чтобы не тормозило
-  box.innerHTML = slice.map((p, i) => `
-    <button class="item ${current && current.id === p.id ? 'is-active' : ''}" data-i="${i}">
-      ${firstImage(p)
-        ? `<img class="item__img" src="${escapeAttr(firstImage(p))}" loading="lazy" alt="">`
-        : `<span class="item__img"></span>`}
-      <span class="item__body">
-        <span class="item__name">${escapeHtml(p.name || 'без названия')}</span>
-        <span class="item__meta">
-          <span class="dot-status ${isVisible(p) ? 'dot-on' : 'dot-off'}"></span>
-          ${escapeHtml(p.sku || '—')}
-          ${notes[currentStore + ':' + p.id] ? ' · 📝' : ''}
-        </span>
-      </span>
-      <span class="item__price">${p.price != null ? escapeHtml(String(p.price)) : ''}</span>
-    </button>
-  `).join('') + (filtered.length > 300
-      ? `<div class="empty">Показано 300 из ${filtered.length}. Уточните поиск.</div>` : '');
-
-  [...box.querySelectorAll('.item')].forEach(el => {
-    el.addEventListener('click', () => {
-      current = slice[Number(el.dataset.i)];
-      renderList(); renderEditor();
-    });
-  });
-}
-
-/* ===================================================================== */
-/*  Редактор товара                                                       */
-/* ===================================================================== */
-function renderEditor() {
-  const box = $('editor');
-  if (!current) {
-    box.innerHTML = '<div class="empty">Выберите товар слева</div>';
-    return;
-  }
-  const p = current;
-  const noteKey = currentStore + ':' + p.id;
-  const isMain = currentStore === 'blackstreet';
-  const imgs = Array.isArray(p.images) ? p.images : [];
-
-  box.innerHTML = `
-    <div class="ed__head">
-      ${firstImage(p) ? `<img class="ed__thumb" src="${escapeAttr(firstImage(p))}" alt="">` : `<span class="ed__thumb"></span>`}
-      <div>
-        <div class="ed__title">${escapeHtml(p.name || 'без названия')}</div>
-        <div class="ed__id">${STORES[currentStore].title} · id ${escapeHtml(String(p.id))}</div>
-      </div>
-    </div>
-
-    <div class="grid2">
-      <label class="f"><span>Цена</span>
-        <input type="number" step="0.01" id="e-price" value="${p.price != null ? escapeAttr(String(p.price)) : ''}"></label>
-      <label class="f"><span>Артикул</span>
-        <input type="text" id="e-sku" value="${escapeAttr(p.sku || '')}"></label>
-    </div>
-
-    <label class="f"><span>Название</span>
-      <input type="text" id="e-name" value="${escapeAttr(p.name || '')}"></label>
-
-    <div class="grid2">
-      <label class="f"><span>Наличие</span>
-        <select id="e-presence">
-          ${['available','not_available','order','service','waiting_for_supply']
-            .map(v => `<option value="${v}" ${p.presence === v ? 'selected' : ''}>${presenceLabel(v)}</option>`).join('')}
-        </select></label>
-      <label class="f"><span>Видимость</span>
-        <select id="e-status">
-          <option value="on_display" ${isVisible(p) ? 'selected' : ''}>Опубликован</option>
-          <option value="draft" ${!isVisible(p) ? 'selected' : ''}>Скрыт</option>
-        </select></label>
-    </div>
-
-    <label class="f"><span>Описание</span>
-      <textarea id="e-desc" rows="5">${escapeHtml(p.description || '')}</textarea></label>
-
-    <label class="f"><span>Фото — по одной ссылке в строке</span>
-      <textarea id="e-images" rows="3">${escapeHtml(imgs.map(i => i.url || i.thumbnail_url || '').filter(Boolean).join('\n'))}</textarea></label>
-    ${imgs.length ? `<div class="thumbs">${imgs.slice(0,6).map(i =>
-        `<img src="${escapeAttr(i.thumbnail_url || i.url)}" alt="">`).join('')}</div>` : ''}
-
-    <label class="f" style="margin-top:16px;"><span>Заметка — только в приложении, на Prom не уходит</span>
-      <textarea id="e-note" rows="2" placeholder="Например: уточнить остаток у поставщика">${escapeHtml(notes[noteKey] || '')}</textarea></label>
-
-    ${isMain ? `
-      <div class="spread">
-        <div class="t">Продублировать на другие магазины</div>
-        <div class="d">Артикул и название уйдут с суффиксом: <code>${escapeHtml((document.getElementById('e-sku')?.value) || p.sku || 'Мой-102')}</code> → <code>${escapeHtml(((p.sku||'Мой-102')) + ' (B)')}</code>. Товар ищется там по артикулу.</div>
-        <label class="chk"><input type="checkbox" id="sp-bonna"> Bonna-shop</label>
-        <label class="chk"><input type="checkbox" id="sp-core22"> Core22</label>
-      </div>` : ''}
-
-    <div class="bar">
-      <button class="btn" id="save">Сохранить на Prom</button>
-      <button class="btn btn--ghost btn--sm" id="save-note">Сохранить только заметку</button>
-      <span class="muted">Поля, которые вы не трогали, не отправляются.</span>
-    </div>
-    <div id="ed-msg"></div>
-  `;
-
-  $('save-note').addEventListener('click', () => {
-    notes[noteKey] = $('e-note').value;
-    if (!notes[noteKey]) delete notes[noteKey];
-    saveJSON(NOTE_KEY, notes);
-    showMsg($('ed-msg'), 'ok', 'Заметка сохранена в приложении.');
-    renderList();
-  });
-
-  $('save').addEventListener('click', saveProduct);
-}
-
-function presenceLabel(v) {
-  return ({
-    available: 'В наличии',
-    not_available: 'Нет в наличии',
-    order: 'Под заказ',
-    service: 'Услуга',
-    waiting_for_supply: 'Ожидается поставка',
-  })[v] || v;
-}
-
-/* ---- Сохранение ------------------------------------------------------ */
-async function saveProduct() {
-  const p = current;
-  const box = $('ed-msg');
-  const btn = $('save');
-
-  // заметка — всегда локально
-  const noteKey = currentStore + ':' + p.id;
-  const noteVal = $('e-note').value;
-  if (noteVal) notes[noteKey] = noteVal; else delete notes[noteKey];
-  saveJSON(NOTE_KEY, notes);
-
-  // собираем только изменённое
-  const upd = { id: p.id };
-  let changes = [];
-
-  const price = $('e-price').value.trim();
-  if (price !== '' && Number(price) !== Number(p.price)) { upd.price = Number(price); changes.push('цена'); }
-
-  const sku = $('e-sku').value.trim();
-  if (sku !== (p.sku || '')) { upd.sku = sku; changes.push('артикул'); }
-
-  const name = $('e-name').value.trim();
-  if (name !== (p.name || '')) { upd.name = name; changes.push('название'); }
-
-  const presence = $('e-presence').value;
-  if (presence !== p.presence) { upd.presence = presence; changes.push('наличие'); }
-
-  const status = $('e-status').value;
-  if (status !== (p.status || '')) { upd.status = status; changes.push('видимость'); }
-
-  const desc = $('e-desc').value;
-  if (desc !== (p.description || '')) { upd.description = desc; changes.push('описание'); }
-
-  const imgsNow = (Array.isArray(p.images) ? p.images : []).map(i => i.url || i.thumbnail_url || '').filter(Boolean);
-  const imgsNew = $('e-images').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (imgsNew.join('|') !== imgsNow.join('|')) { upd.images_urls = imgsNew; changes.push('фото'); }
-
-  if (!changes.length) {
-    showMsg(box, 'warn', 'Изменений нет. Заметка сохранена.');
-    return;
-  }
-
-  btn.disabled = true;
-  showMsg(box, 'warn', 'Отправляю на Prom…');
-
-  const report = [];
-  try {
-    // 1) главный магазин / текущий
-    const r = await api('/edit', { store: currentStore, products: [upd] });
-    report.push(`${STORES[currentStore].title}: отправлено (${changes.join(', ')})`);
-    Object.assign(p, upd);   // обновляем локально
-
-    // 2) дубль на другие магазины — только из Black Street
-    if (currentStore === 'blackstreet') {
-      for (const key of ['bonna', 'core22']) {
-        const chk = document.getElementById('sp-' + key);
-        if (!chk || !chk.checked) continue;
-        try {
-          const found = await findBySku(key, (upd.sku ?? p.sku) || '', STORES[key].suffix);
-          if (!found) { report.push(`${STORES[key].title}: товар с таким артикулом не найден`); continue; }
-          const copy = { id: found.id };
-          if ('price' in upd)       copy.price = upd.price;
-          if ('presence' in upd)    copy.presence = upd.presence;
-          if ('status' in upd)      copy.status = upd.status;
-          if ('description' in upd) copy.description = upd.description;
-          if ('images_urls' in upd) copy.images_urls = upd.images_urls;
-          if ('sku' in upd)         copy.sku  = upd.sku  + STORES[key].suffix;
-          if ('name' in upd)        copy.name = upd.name + STORES[key].suffix;
-          await api('/edit', { store: key, products: [copy] });
-          report.push(`${STORES[key].title}: отправлено`);
-        } catch (e) {
-          report.push(`${STORES[key].title}: ошибка — ${e.message}`);
-        }
+  <script>
+    /* =====================================================================
+       СПИСОК ПРИЛОЖЕНИЙ
+       ---------------------------------------------------------------------
+       Чтобы добавить новое приложение — допишите объект в массив APPS.
+         icon   — эмодзи или символ
+         title  — название
+         desc   — короткое описание
+         href   — путь к приложению (папка внутри /apps/…)
+         status — 'active' (кликабельно) или 'soon' (серым, «Скоро»)
+       ===================================================================== */
+    const APPS = [
+      {
+        icon:   '📦',
+        title:  'Каталог товаров',
+        desc:   'Все товары трёх магазинов в одном месте. Правка цены, артикула, названия, фото, описания, видимости. Заметки.',
+        href:   'apps/catalog/index.html',
+        status: 'active'
+      },
+      {
+        icon:   '🧩',
+        title:  'Пример приложения',
+        desc:   'Шаблон-образец: кнопка «Главная» сверху и сохранение настроек при обновлении страницы. Скопируйте его под своё приложение.',
+        href:   'apps/example/index.html',
+        status: 'active'
       }
-    }
-    showMsg(box, 'ok', report.map(escapeHtml).join('<br>') +
-      '<br><span style="opacity:.7">Prom применяет изменения не мгновенно — обновите карточку в кабинете через пару минут.</span>');
-    renderList();
-  } catch (e) {
-    showMsg(box, 'err', 'Prom не принял изменения.<pre>' + escapeHtml(e.message) + '</pre>' +
-      '<span style="opacity:.8">Если ругается на конкретное поле — значит его нельзя менять этим способом. Уберите его и сохраните остальное.</span>');
-  } finally {
-    btn.disabled = false;
-  }
-}
+    ];
 
-/* Ищем товар в другом магазине по артикулу с суффиксом */
-async function findBySku(store, baseSku, suffix) {
-  const target = (baseSku + suffix).trim().toLowerCase();
-  let lastId = null, guard = 0;
-  while (guard++ < 500) {
-    const data = await api('/list', { store, limit: 100, last_id: lastId });
-    const batch = data.products || [];
-    if (!batch.length) return null;
-    const hit = batch.find(x => (x.sku || '').trim().toLowerCase() === target);
-    if (hit) return hit;
-    lastId = batch[batch.length - 1].id;
-    if (batch.length < 100) return null;
-  }
-  return null;
-}
+    /* ---- Отрисовка карточек (менять обычно не нужно) -------------------- */
+    const grid = document.getElementById('grid');
 
-/* ===================================================================== */
-/*  Мелочи                                                                */
-/* ===================================================================== */
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
-}
-function escapeAttr(s) { return escapeHtml(s); }
-</script>
+    const esc = (s) => String(s).replace(/[&<>"]/g, c => (
+      { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]
+    ));
+
+    grid.innerHTML = APPS.map(app => {
+      const active = app.status === 'active';
+      const tag = active ? 'a' : 'div';
+      const hrefAttr = active ? ` href="${esc(app.href)}"` : '';
+      const cls = active ? 'card' : 'card card--soon';
+      const arrow = active ? '<span class="card__arrow">↗</span>' : '';
+      const badge = active
+        ? '<span class="badge badge--active"><span class="dot"></span>Активно</span>'
+        : '<span class="badge badge--soon">Скоро</span>';
+
+      return `
+        <${tag} class="${cls}"${hrefAttr}>
+          <div class="card__icon">${esc(app.icon)}</div>
+          ${arrow}
+          <h2 class="card__title">${esc(app.title)}</h2>
+          <p class="card__desc">${esc(app.desc)}</p>
+          <div class="card__foot">${badge}</div>
+        </${tag}>`;
+    }).join('');
+  </script>
 
 </body>
 </html>

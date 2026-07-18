@@ -253,6 +253,7 @@
         <option value="has">Только с заметкой</option>
         <option value="no">Только без заметки</option>
       </select>
+      <button class="btn btn--sm hidden" id="uk-file">Файл для Prom (0)</button>
       <button class="btn btn--ghost btn--sm" id="cfg-open">Настройки</button>
       <button class="btn btn--ghost btn--sm" id="wipe" title="Стереть сохранённые данные">Очистить</button>
     </div>
@@ -1074,8 +1075,8 @@ function renderEditor() {
 
     '<label class="f"><span>Название (русский)</span>' +
       '<input type="text" id="e-name" value="' + escapeAttr(nameRu) + '"></label>' +
-    (hasML ? '<label class="f"><span>Назва (українська) — Prom не даёт менять через API</span>' +
-      '<input type="text" id="e-name-uk" value="' + escapeAttr(nameUk) + '" readonly></label>' : '') +
+    (hasML ? '<label class="f"><span>Назва (українська)</span>' +
+      '<input type="text" id="e-name-uk" value="' + escapeAttr(nameUk) + '"></label>' : '') +
 
     '<div class="grid2">' +
       '<label class="f"><span>Наличие</span><select id="e-presence">' + presenceOpts + '</select></label>' +
@@ -1087,13 +1088,13 @@ function renderEditor() {
 
     '<label class="f"><span>Описание (русский)</span>' +
       '<textarea id="e-desc" rows="5">' + escapeHtml(descRu) + '</textarea></label>' +
-    (hasML ? '<label class="f"><span>Опис (українська) — Prom не даёт менять через API</span>' +
-      '<textarea id="e-desc-uk" rows="5" readonly>' + escapeHtml(descUk) + '</textarea></label>' : '') +
+    (hasML ? '<label class="f"><span>Опис (українська)</span>' +
+      '<textarea id="e-desc-uk" rows="5">' + escapeHtml(descUk) + '</textarea></label>' : '') +
 
     '<label class="f"><span>Ключевые слова (русский) — через запятую</span>' +
       '<textarea id="e-kw" rows="3">' + escapeHtml(kwRu) + '</textarea></label>' +
-    (hasKwML ? '<label class="f"><span>Ключові слова (українська) — Prom не даёт менять через API</span>' +
-      '<textarea id="e-kw-uk" rows="3" readonly>' + escapeHtml(kwUk) + '</textarea></label>' : '') +
+    (hasKwML ? '<label class="f"><span>Ключові слова (українська)</span>' +
+      '<textarea id="e-kw-uk" rows="3">' + escapeHtml(kwUk) + '</textarea></label>' : '') +
 
     '<div class="f"><span class="flabel">Фото</span><div id="photos"></div></div>' +
 
@@ -1106,6 +1107,7 @@ function renderEditor() {
       '<button class="btn" id="save">Сохранить на Prom</button>' +
       '<button class="btn btn--ghost btn--sm" id="save-note">Только заметку</button>' +
       '<button class="btn btn--ghost btn--sm" id="raw-btn">Что прислал Prom</button>' +
+      '<button class="btn btn--ghost btn--sm" id="probe-uk">Подобрать способ для укр</button>' +
     '</div>' +
     '<pre id="raw" class="raw hidden"></pre>' +
     '<div id="ed-msg"></div>';
@@ -1125,6 +1127,7 @@ function renderEditor() {
     showMsg($('ed-msg'), 'ok', 'Заметка сохранена в приложении.');
   });
   $('save').addEventListener('click', saveProduct);
+  if ($('probe-uk')) $('probe-uk').addEventListener('click', probeUk);
 
   // --- фото ---
   editImages = imgs.map(i => i.url || i.thumbnail_url || '').filter(Boolean);
@@ -1139,6 +1142,167 @@ function renderEditor() {
   $('e-disc-type').addEventListener('change', updateDiscHint);
   $('e-price').addEventListener('input', updateDiscHint);
   updateDiscHint();
+}
+
+/* Prom привередлив к формату дат — держим несколько вариантов и перебираем */
+let discountDraft = null;
+
+const DATE_FORMATS = [
+  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00') + '+00:00'; },
+  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00'); },
+  function (d, end) { return d; },
+  function (d, end) {
+    const p = d.split('-');
+    return p[2] + '.' + p[1] + '.' + p[0] + ' ' + (end ? '23:59:59' : '00:00:00');
+  },
+  function (d, end) { return d + ' ' + (end ? '23:59:59' : '00:00:00'); },
+];
+
+function makeDiscount(draft, fmtIndex) {
+  const f = DATE_FORMATS[fmtIndex] || DATE_FORMATS[0];
+  return {
+    value: draft.value,
+    type: draft.type,
+    date_start: f(draft.from, false),
+    date_end:   f(draft.to,   true),
+  };
+}
+
+/* ===================================================================== */
+/*  Украинские тексты: копим и отдаём файлом для импорта в кабинет Prom    */
+/*  API их не принимает, но импорт файла — принимает.                     */
+/* ===================================================================== */
+const UK_KEY = 'tovary:catalog:uk-queue';
+let ukQueue = loadJSON(UK_KEY, {});     // "store:id" -> { id, store, name_uk, description_uk, ... }
+
+function queueUk(store, p, patch) {
+  const k = store + ':' + p.id;
+  const cur = ukQueue[k] || {
+    store: store,
+    id: p.id,
+    sku: p.sku || '',
+    name_ru: p.name || '',
+  };
+  ukQueue[k] = Object.assign(cur, patch, { name_ru: p.name || '' });
+  saveJSON(UK_KEY, ukQueue);
+  updateUkButton();
+}
+
+function updateUkButton() {
+  const b = $('uk-file');
+  if (!b) return;
+  const n = Object.keys(ukQueue).length;
+  b.textContent = 'Файл для Prom (' + n + ')';
+  b.classList.toggle('hidden', n === 0);
+}
+
+/* Экранирование значения для CSV */
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+
+function buildUkFile() {
+  const rows = Object.keys(ukQueue).map(k => ukQueue[k]);
+  if (!rows.length) { alert('Очередь пуста'); return; }
+
+  // по магазинам — файл импорта заливается в каждый кабинет отдельно
+  const byShop = {};
+  rows.forEach(function (r) { (byShop[r.store] = byShop[r.store] || []).push(r); });
+
+  Object.keys(byShop).forEach(function (store) {
+    const list = byShop[store];
+    const head = [
+      'Унікальний_ідентифікатор',
+      'Ідентифікатор_товару',
+      'Назва_позиції',
+      'Назва_укр',
+      'Опис_укр',
+    ];
+    const lines = [head.map(csvCell).join(',')];
+    list.forEach(function (r) {
+      lines.push([
+        r.id,
+        r.sku || '',
+        r.name_ru || '',
+        r.name_uk == null ? '' : r.name_uk,
+        r.description_uk == null ? '' : r.description_uk,
+      ].map(csvCell).join(','));
+    });
+
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'prom-ukr-' + store + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
+/* ===================================================================== */
+/*  Подбор способа править украинский текст                               */
+/*  Prom отвечает «Unknown field» на неверные имена — этим и пользуемся.  */
+/*  Отправляем текущее значение, чтобы ничего не изменилось по сути,      */
+/*  а русское название сразу восстанавливаем.                            */
+/* ===================================================================== */
+const UK_CANDIDATES = [
+  { note: 'поле name_uk',            build: (v) => ({ name_uk: v }) },
+  { note: 'поле name_ua',            build: (v) => ({ name_ua: v }) },
+  { note: 'поле nameUk',             build: (v) => ({ nameUk: v }) },
+  { note: 'поле name_uk_ua',         build: (v) => ({ name_uk_ua: v }) },
+  { note: 'поле translations',       build: (v) => ({ translations: { uk: { name: v } } }) },
+  { note: 'поле name_translations',  build: (v) => ({ name_translations: { uk: v } }) },
+  { note: 'name + параметр lang=uk', build: (v) => ({ name: v }), lang: 'uk' },
+  { note: 'name + параметр lang=ua', build: (v) => ({ name: v }), lang: 'ua' },
+];
+
+async function probeUk() {
+  if (!current) return;
+  const store = current.store, p = current.product;
+  const box = $('ed-msg');
+
+  const ukVal = (p.name_multilang && p.name_multilang.uk) || '';
+  const ruVal = p.name || '';
+  if (!ukVal) {
+    showMsg(box, 'warn', 'У товара нет украинского названия — не с чем сравнивать. Возьмите другой.');
+    return;
+  }
+
+  const lines = [];
+  showMsg(box, 'warn', 'Подбираю способ… это займёт полминуты.');
+
+  for (const c of UK_CANDIDATES) {
+    const payload = Object.assign({ id: p.id }, c.build(ukVal));
+    try {
+      const res = await api('/edit',
+        Object.assign({ store: store, products: [payload] }, c.lang ? { lang: c.lang } : {}));
+      const errs = res && res.errors;
+      const txt = errs ? JSON.stringify(errs) : '';
+
+      if (txt.indexOf('Unknown field') !== -1) {
+        lines.push('✗ ' + c.note + ' — Prom не знает такого поля');
+      } else if (errs && Object.keys(errs).length) {
+        lines.push('✗ ' + c.note + ' — ' + escapeHtml(txt.slice(0, 160)));
+      } else {
+        lines.push('<b style="color:#6ee7b7">✓ ' + c.note + ' — ПРИНЯТО</b>');
+      }
+    } catch (e) {
+      lines.push('✗ ' + c.note + ' — ' + escapeHtml(e.message.slice(0, 120)));
+    }
+    await sleep(400);
+  }
+
+  // на всякий случай возвращаем русское название как было
+  try {
+    await api('/edit', { store: store, products: [{ id: p.id, name: ruVal }] });
+    lines.push('<span style="opacity:.7">Русское название восстановлено.</span>');
+  } catch (e) {
+    lines.push('<b style="color:#fca5a5">Не удалось восстановить русское название — проверьте товар!</b>');
+  }
+
+  showMsg(box, 'warn',
+    '<b>Что ответил Prom на каждый вариант:</b><br>' + lines.join('<br>') +
+    '<br><br>Пришлите этот список — настрою рабочий способ.');
 }
 
 /* Все разновидности того же товара в том же магазине (кроме самого) */
@@ -1245,8 +1409,13 @@ async function saveProduct() {
   const nameUkOld = nmlOld && nmlOld.uk != null ? nmlOld.uk : null;
 
   if (nameRuNew !== nameRuOld || (nameUkNew !== null && nameUkNew !== nameUkOld)) {
-    upd.name = nameRuNew;   // Prom принимает только основное поле
+    upd.name = nameRuNew;   // Prom принимает через API только основное поле
     changes.push('название');
+  }
+  // украинские тексты API не принимает — копим их в файл импорта
+  if (nameUkNew !== null && nameUkNew !== nameUkOld) {
+    queueUk(store, p, { name_uk: nameUkNew });
+    changes.push('назва укр → в файл');
   }
 
   const descRuNew = $('e-desc').value;
@@ -1256,8 +1425,12 @@ async function saveProduct() {
   const descUkOld = dmlOld && dmlOld.uk != null ? dmlOld.uk : null;
 
   if (descRuNew !== descRuOld || (descUkNew !== null && descUkNew !== descUkOld)) {
-    upd.description = descRuNew;   // Prom принимает только основное поле
+    upd.description = descRuNew;   // Prom принимает через API только основное поле
     changes.push('описание');
+  }
+  if (descUkNew !== null && descUkNew !== descUkOld) {
+    queueUk(store, p, { description_uk: descUkNew });
+    changes.push('опис укр → в файл');
   }
 
   // ключевые слова
@@ -1273,35 +1446,55 @@ async function saveProduct() {
     changes.push('ключевые слова');
   }
 
-  // скидка
+  // скидка — трогаем только если её действительно меняли
   const dRaw = $('e-disc').value.trim();
   const dType = $('e-disc-type').value;
   const dOld = p.discount || null;
   const dOldVal = dOld ? (dOld.value != null ? dOld.value : dOld.amount) : null;
   const dOldType = dOld && (dOld.type === 'percent' || dOld.type === '%') ? 'percent' : 'amount';
-  if (dRaw === '') {
-    if (dOldVal != null) { upd.discount = null; changes.push('скидка убрана'); }
-  } else {
-    const dFromV = ($('e-disc-from') || {}).value || '';
-    const dToV   = ($('e-disc-to')   || {}).value || '';
-    if (!dFromV || !dToV) {
-      showMsg(box, 'err', 'Для скидки нужны даты начала и конца.');
-      return;
+
+  const dFromV = ($('e-disc-from') || {}).value || '';
+  const dToV   = ($('e-disc-to')   || {}).value || '';
+  const onlyDate = (v) => {
+    const m = String(v || '').match(/^(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1] : '';
+  };
+  const dOldFrom = dOld ? onlyDate(dOld.date_start) : '';
+  const dOldTo   = dOld ? onlyDate(dOld.date_end)   : '';
+
+  const discChanged =
+    (dRaw === '' ? dOldVal != null
+                 : (Number(dRaw) !== Number(dOldVal) ||
+                    dType !== dOldType ||
+                    dFromV !== dOldFrom ||
+                    dToV !== dOldTo));
+
+  if (discChanged) {
+    if (dRaw === '') {
+      upd.discount = null;
+      changes.push('скидка убрана');
+    } else {
+      if (!dFromV || !dToV) {
+        showMsg(box, 'err', 'Для скидки нужны даты начала и конца.');
+        return;
+      }
+      discountDraft = { value: Number(dRaw), type: dType, from: dFromV, to: dToV };
+      upd.discount = makeDiscount(discountDraft, 0);
+      changes.push('скидка');
     }
-    upd.discount = {
-      value: Number(dRaw),
-      type: dType,
-      date_start: dFromV + ' 00:00:00',
-      date_end:   dToV   + ' 23:59:59',
-    };
-    changes.push('скидка');
+  } else {
+    discountDraft = null;   // скидку не трогаем
   }
 
   // фото — из списка редактора
+  // Prom отдаёт ссылки на уменьшенные копии (_w200_h200) — возвращаем полный размер
+  function fullSize(u) {
+    return String(u || '').replace(/_w\d+_h\d+/, '');
+  }
   const nowImgs = (Array.isArray(p.images) ? p.images : [])
     .map(i => i.url || i.thumbnail_url || '').filter(Boolean);
   if (editImages.join('|') !== nowImgs.join('|')) {
-    upd.images_urls = editImages.slice();
+    upd.images_urls = editImages.map(fullSize);
     changes.push('фото');
   }
 
@@ -1317,7 +1510,23 @@ async function saveProduct() {
   const report = [];
 
   try {
-    const res = await api('/edit', { store: store, products: [upd] });
+    let res = null;
+    let fmt = 0;
+
+    // если Prom ругается на формат даты — пробуем следующий вариант
+    while (true) {
+      res = await api('/edit', { store: store, products: [upd] });
+      const errs = (res && res.errors) || null;
+      const txt = errs ? JSON.stringify(errs) : '';
+      const dateProblem = txt.indexOf('дат') !== -1 || txt.toLowerCase().indexOf('date') !== -1;
+
+      if (dateProblem && discountDraft && fmt < DATE_FORMATS.length - 1) {
+        fmt++;
+        upd.discount = makeDiscount(discountDraft, fmt);
+        continue;
+      }
+      break;
+    }
 
     // Prom отвечает 200, даже если товар не принят — смотрим, что внутри
     const okIds = (res && (res.processed_ids || res.processed || [])) || [];
@@ -1447,6 +1656,20 @@ function escapeHtml(s) {
   });
 }
 const escapeAttr = escapeHtml;
+
+/* Кнопка выгрузки украинских правок */
+if ($('uk-file')) {
+  $('uk-file').addEventListener('click', function () {
+    const n = Object.keys(ukQueue).length;
+    if (!confirm('Скачать файл с украинскими правками (' + n + ' поз.)?\n\n' +
+                 'После заливки в кабинет Prom очередь можно очистить.')) return;
+    buildUkFile();
+    if (confirm('Файл скачан. Очистить очередь?')) {
+      ukQueue = {}; saveJSON(UK_KEY, ukQueue); updateUkButton();
+    }
+  });
+  updateUkButton();
+}
 </script>
 
 </body>

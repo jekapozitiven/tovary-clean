@@ -299,6 +299,7 @@ let shown   = [];      // отфильтрованные
 let current = null;    // { store, product }
 let openBase = null;   // какая группа раскрыта
 let picked = new Set();// выделенные позиции для массовых заметок
+let lastResponse = null; // последний ответ Prom — для разбора
 
 const $ = (id) => document.getElementById(id);
 
@@ -427,20 +428,63 @@ function firstImage(p) {
 const isVisible = (p) => (p.status || '') === 'on_display';
 
 function buildGroups() {
+  // указатель id -> товар по каждому магазину
+  const byId = {};
+  for (const store of STORE_KEYS) {
+    byId[store] = new Map();
+    for (const p of (byStore[store] || [])) byId[store].set(String(p.id), p);
+  }
+
+  // ключ группы внутри магазина: сначала variation_group_id, потом артикул
+  function localKey(p, store) {
+    if (p.variation_group_id != null) return 'v' + p.variation_group_id;
+    const s = baseSku(p.sku, store);
+    return s ? ('s' + s) : ('p' + p.id);
+  }
+
+  // артикул Black Street -> ключ его карточки (для запасной связи)
+  const skuToKey = new Map();
+  for (const p of (byStore.blackstreet || [])) {
+    const s = baseSku(p.sku, 'blackstreet');
+    if (s && !skuToKey.has(s)) skuToKey.set(s, localKey(p, 'blackstreet'));
+  }
+
+  // общий ключ по всем магазинам: приводим к товару Black Street
+  function globalKey(p, store) {
+    if (store === 'blackstreet') return localKey(p, store);
+
+    // 1) точно: external_id указывает на товар Black Street
+    const ext = p.external_id != null ? String(p.external_id) : '';
+    if (ext) {
+      const src = byId.blackstreet.get(ext);
+      if (src) return localKey(src, 'blackstreet');
+    }
+    // 2) запасной путь: тот же артикул есть на Black Street
+    const s = baseSku(p.sku, store);
+    if (s && skuToKey.has(s)) return skuToKey.get(s);
+
+    // 3) совсем нет пары — своя карточка
+    return s ? ('s' + s) : localKey(p, store);
+  }
+
   const map = new Map();
   for (const store of STORE_KEYS) {
     for (const p of (byStore[store] || [])) {
-      const base = baseSku(p.sku, store) || ('#' + p.id);
-      if (!map.has(base)) map.set(base, { base: base, stores: {} });
-      const g = map.get(base);
+      const key = globalKey(p, store);
+      if (!map.has(key)) map.set(key, { base: '', key: key, stores: {}, linked: false });
+      const g = map.get(key);
       if (!g.stores[store]) g.stores[store] = [];
       g.stores[store].push(p);
+      if (store !== 'blackstreet' && p.external_id && byId.blackstreet.get(String(p.external_id))) {
+        g.linked = true;                              // связь нашлась по external_id
+      }
     }
   }
+
   groups = Array.from(map.values());
 
   for (const g of groups) {
-    let best = null, img = '';
+    let best = null, img = '', sku = '';
     for (const store of STORE_KEYS) {
       const arr = g.stores[store];
       if (!arr) continue;
@@ -449,9 +493,12 @@ function buildGroups() {
         const n = p.name || '';
         if (best === null || n.length < best.length) best = n;
         if (!img) img = firstImage(p);
+        if (!sku && store === 'blackstreet') sku = baseSku(p.sku, store);
+        if (!sku) sku = baseSku(p.sku, store);
       }
     }
-    g.name = best || g.base;
+    g.name = best || '(без названия)';
+    g.base = sku || g.key;
     g.image = img;
   }
   groups.sort((a, b) => a.name.localeCompare(b.name));
@@ -466,9 +513,21 @@ function showStats() {
     const on = arr.filter(isVisible).length;
     return STORES[k].title + ': <b>' + arr.length + '</b> (виден ' + on + ')';
   });
+
+  // сколько товаров приёмников связаны с Black Street точно (по external_id)
+  const srcIds = new Set((byStore.blackstreet || []).map(p => String(p.id)));
+  const linkInfo = ['bonna', 'core22'].map(function (k) {
+    const arr = byStore[k] || [];
+    if (!arr.length) return null;
+    const ok = arr.filter(p => p.external_id != null && srcIds.has(String(p.external_id))).length;
+    return STORES[k].title + ': <b>' + ok + '</b> из ' + arr.length;
+  }).filter(Boolean);
+
   $('stats').innerHTML =
     '<div class="msg msg--warn">' + parts.join(' · ') +
-    '<br>Уникальных артикулов: <b>' + groups.length + '</b></div>';
+    '<br>Карточек всего: <b>' + groups.length + '</b>' +
+    (linkInfo.length ? '<br>Связано с Black Street точно — ' + linkInfo.join(' · ') : '') +
+    '</div>';
 
   const by = {};
   for (const k of STORE_KEYS) {
@@ -663,8 +722,10 @@ function renderEditor() {
   const imgs = Array.isArray(p.images) ? p.images : [];
   const isMain = store === 'blackstreet';
 
-  const presenceOpts = ['available', 'not_available', 'order', 'service', 'waiting_for_supply']
-    .map(v => '<option value="' + v + '"' + (p.presence === v ? ' selected' : '') + '>' +
+  const presenceVals = ['available', 'not_available', 'order', 'service', 'waiting_for_supply'];
+  if (p.presence && presenceVals.indexOf(p.presence) === -1) presenceVals.push(p.presence);
+  const presenceOpts = presenceVals
+    .map(v => '<option value="' + escapeAttr(v) + '"' + (p.presence === v ? ' selected' : '') + '>' +
       presenceLabel(v) + '</option>').join('');
 
   const extraStatus = (['on_display', 'not_on_display'].indexOf(p.status || '') === -1)
@@ -672,6 +733,21 @@ function renderEditor() {
       escapeHtml(STATUS_RU[p.status] || p.status || '—') + '</option>' : '';
 
   const thumbs = '';
+
+  // два языка: русский и украинский
+  const nml = p.name_multilang || null;
+  const dml = p.description_multilang || null;
+  const hasML = !!(nml || dml);
+  const nameRu = nml && nml.ru != null ? nml.ru : (p.name || '');
+  const nameUk = nml && nml.uk != null ? nml.uk : '';
+  const descRu = dml && dml.ru != null ? dml.ru : (p.description || '');
+  const descUk = dml && dml.uk != null ? dml.uk : '';
+
+  // ключевые слова
+  const kml = p.keywords_multilang || null;
+  const hasKwML = !!kml || hasML;   // если товар вообще двуязычный — показываем оба поля
+  const kwRu = kml && kml.ru != null ? kml.ru : (p.keywords || '');
+  const kwUk = kml && kml.uk != null ? kml.uk : '';
 
   // все разновидности этого товара в этом же магазине
   const sibs = siblingsOf(store, p);
@@ -735,8 +811,10 @@ function renderEditor() {
     siblingsBox +
     discountBox +
 
-    '<label class="f"><span>Название</span>' +
-      '<input type="text" id="e-name" value="' + escapeAttr(p.name || '') + '"></label>' +
+    '<label class="f"><span>Название (русский)</span>' +
+      '<input type="text" id="e-name" value="' + escapeAttr(nameRu) + '"></label>' +
+    (hasML ? '<label class="f"><span>Назва (українська)</span>' +
+      '<input type="text" id="e-name-uk" value="' + escapeAttr(nameUk) + '"></label>' : '') +
 
     '<div class="grid2">' +
       '<label class="f"><span>Наличие</span><select id="e-presence">' + presenceOpts + '</select></label>' +
@@ -746,8 +824,15 @@ function renderEditor() {
         extraStatus + '</select></label>' +
     '</div>' +
 
-    '<label class="f"><span>Описание</span>' +
-      '<textarea id="e-desc" rows="5">' + escapeHtml(p.description || '') + '</textarea></label>' +
+    '<label class="f"><span>Описание (русский)</span>' +
+      '<textarea id="e-desc" rows="5">' + escapeHtml(descRu) + '</textarea></label>' +
+    (hasML ? '<label class="f"><span>Опис (українська)</span>' +
+      '<textarea id="e-desc-uk" rows="5">' + escapeHtml(descUk) + '</textarea></label>' : '') +
+
+    '<label class="f"><span>Ключевые слова (русский) — через запятую</span>' +
+      '<textarea id="e-kw" rows="3">' + escapeHtml(kwRu) + '</textarea></label>' +
+    (hasKwML ? '<label class="f"><span>Ключові слова (українська)</span>' +
+      '<textarea id="e-kw-uk" rows="3">' + escapeHtml(kwUk) + '</textarea></label>' : '') +
 
     '<div class="f"><span class="flabel">Фото</span><div id="photos"></div></div>' +
 
@@ -797,9 +882,13 @@ function renderEditor() {
 
 /* Все разновидности того же товара в том же магазине (кроме самого) */
 function siblingsOf(store, p) {
+  const arr = byStore[store] || [];
+  if (p.variation_group_id != null) {
+    return arr.filter(x => x.id !== p.id && x.variation_group_id === p.variation_group_id);
+  }
   const base = baseSku(p.sku, store);
   if (!base) return [];
-  return (byStore[store] || []).filter(x => x.id !== p.id && baseSku(x.sku, store) === base);
+  return arr.filter(x => x.id !== p.id && baseSku(x.sku, store) === base);
 }
 
 /* Показ итоговой цены со скидкой */
@@ -879,14 +968,60 @@ async function saveProduct() {
   if (price !== '' && Number(price) !== Number(p.price)) { upd.price = Number(price); changes.push('цена'); }
   const sku = $('e-sku').value.trim();
   if (sku !== (p.sku || '')) { upd.sku = sku; changes.push('артикул'); }
-  const name = $('e-name').value.trim();
-  if (name !== (p.name || '')) { upd.name = name; changes.push('название'); }
   const presence = $('e-presence').value;
   if (presence !== p.presence) { upd.presence = presence; changes.push('наличие'); }
   const status = $('e-status').value;
   if (status !== (p.status || '')) { upd.status = status; changes.push('видимость'); }
-  const desc = $('e-desc').value;
-  if (desc !== (p.description || '')) { upd.description = desc; changes.push('описание'); }
+
+  // название и описание — с учётом двух языков
+  const nmlOld = p.name_multilang || null;
+  const dmlOld = p.description_multilang || null;
+
+  const nameRuNew = $('e-name').value.trim();
+  const nameUkEl = document.getElementById('e-name-uk');
+  const nameUkNew = nameUkEl ? nameUkEl.value.trim() : null;
+  const nameRuOld = nmlOld && nmlOld.ru != null ? nmlOld.ru : (p.name || '');
+  const nameUkOld = nmlOld && nmlOld.uk != null ? nmlOld.uk : null;
+
+  if (nameRuNew !== nameRuOld || (nameUkNew !== null && nameUkNew !== nameUkOld)) {
+    upd.name = nameRuNew;
+    if (nmlOld) {
+      upd.name_multilang = { ru: nameRuNew };
+      if (nameUkNew !== null) upd.name_multilang.uk = nameUkNew;
+    }
+    changes.push('название');
+  }
+
+  const descRuNew = $('e-desc').value;
+  const descUkEl = document.getElementById('e-desc-uk');
+  const descUkNew = descUkEl ? descUkEl.value : null;
+  const descRuOld = dmlOld && dmlOld.ru != null ? dmlOld.ru : (p.description || '');
+  const descUkOld = dmlOld && dmlOld.uk != null ? dmlOld.uk : null;
+
+  if (descRuNew !== descRuOld || (descUkNew !== null && descUkNew !== descUkOld)) {
+    upd.description = descRuNew;
+    if (dmlOld) {
+      upd.description_multilang = { ru: descRuNew };
+      if (descUkNew !== null) upd.description_multilang.uk = descUkNew;
+    }
+    changes.push('описание');
+  }
+
+  // ключевые слова
+  const kmlOld = p.keywords_multilang || null;
+  const kwRuNew = $('e-kw').value.trim();
+  const kwUkEl = document.getElementById('e-kw-uk');
+  const kwUkNew = kwUkEl ? kwUkEl.value.trim() : null;
+  const kwRuOld = kmlOld && kmlOld.ru != null ? kmlOld.ru : (p.keywords || '');
+  const kwUkOld = kmlOld && kmlOld.uk != null ? kmlOld.uk : null;
+
+  if (kwRuNew !== kwRuOld || (kwUkNew !== null && kwUkNew !== kwUkOld)) {
+    upd.keywords = kwRuNew;
+    if (kwUkNew !== null && kwUkNew !== '') {
+      upd.keywords_multilang = { ru: kwRuNew, uk: kwUkNew };
+    }
+    changes.push('ключевые слова');
+  }
 
   // скидка
   const dRaw = $('e-disc').value.trim();
@@ -914,14 +1049,39 @@ async function saveProduct() {
   const applySibs = document.getElementById('apply-sibs');
   const spreadToSibs = !!(applySibs && applySibs.checked);
   const origName = p.name || '';   // запоминаем до изменения
+  const origNameUk = (p.name_multilang && p.name_multilang.uk) || '';
 
   btn.disabled = true;
   showMsg(box, 'warn', 'Отправляю на Prom…');
   const report = [];
 
   try {
-    await api('/edit', { store: store, products: [upd] });
-    report.push(STORES[store].title + ': отправлено (' + changes.join(', ') + ')');
+    const res = await api('/edit', { store: store, products: [upd] });
+
+    // Prom отвечает 200, даже если товар не принят — смотрим, что внутри
+    const okIds = (res && (res.processed_ids || res.processed || [])) || [];
+    const errs  = (res && res.errors) || null;
+    const wasOk = Array.isArray(okIds) && okIds.map(String).indexOf(String(p.id)) !== -1;
+
+    if (errs && Object.keys(errs).length) {
+      lastResponse = res;
+      showMsg(box, 'err',
+        'Prom вернул ошибку по товару.<pre>' + escapeHtml(JSON.stringify(errs, null, 2)) + '</pre>');
+      btn.disabled = false;
+      return;
+    }
+    if (!wasOk && Array.isArray(okIds)) {
+      lastResponse = res;
+      showMsg(box, 'err',
+        'Prom не подтвердил изменение. Его полный ответ:<pre>' +
+        escapeHtml(JSON.stringify(res, null, 2)) + '</pre>' +
+        'Отправляли:<pre>' + escapeHtml(JSON.stringify(upd, null, 2)) + '</pre>');
+      btn.disabled = false;
+      return;
+    }
+
+    lastResponse = res;
+    report.push(STORES[store].title + ': принято (' + changes.join(', ') + ')');
     Object.assign(p, upd);
 
     // все изменения на разновидности этого же магазина
@@ -941,7 +1101,19 @@ async function saveProduct() {
           const sn = s.name || '';
           const tail = (origName && sn.indexOf(origName) === 0) ? sn.slice(origName.length) : '';
           o.name = upd.name + tail;
+          if (upd.name_multilang) {
+            o.name_multilang = {};
+            if (upd.name_multilang.ru != null) o.name_multilang.ru = upd.name_multilang.ru + tail;
+            if (upd.name_multilang.uk != null) {
+              const su = (s.name_multilang && s.name_multilang.uk) || '';
+              const tu = (origNameUk && su.indexOf(origNameUk) === 0) ? su.slice(origNameUk.length) : tail;
+              o.name_multilang.uk = upd.name_multilang.uk + tu;
+            }
+          }
         }
+        if ('description_multilang' in upd) o.description_multilang = upd.description_multilang;
+        if ('keywords' in upd) o.keywords = upd.keywords;
+        if ('keywords_multilang' in upd) o.keywords_multilang = upd.keywords_multilang;
         return o;
       });
       if (batch.length) {
@@ -966,9 +1138,20 @@ async function saveProduct() {
         if ('presence' in upd)    copy.presence = upd.presence;
         if ('status' in upd)      copy.status = upd.status;
         if ('description' in upd) copy.description = upd.description;
+        if ('description_multilang' in upd) copy.description_multilang = upd.description_multilang;
+        if ('keywords' in upd) copy.keywords = upd.keywords;
+        if ('keywords_multilang' in upd) copy.keywords_multilang = upd.keywords_multilang;
+        if ('discount' in upd)    copy.discount = upd.discount;
         if ('images_urls' in upd) copy.images_urls = upd.images_urls;
         if ('sku' in upd)         copy.sku  = upd.sku + STORES[key].suffix;
-        if ('name' in upd)        copy.name = upd.name + STORES[key].suffix;
+        if ('name' in upd) {
+          copy.name = upd.name + STORES[key].suffix;
+          if (upd.name_multilang) {
+            copy.name_multilang = {};
+            if (upd.name_multilang.ru != null) copy.name_multilang.ru = upd.name_multilang.ru + STORES[key].suffix;
+            if (upd.name_multilang.uk != null) copy.name_multilang.uk = upd.name_multilang.uk + STORES[key].suffix;
+          }
+        }
         try {
           await api('/edit', { store: key, products: [copy] });
           Object.assign(twin, copy);
@@ -980,7 +1163,9 @@ async function saveProduct() {
     }
 
     showMsg(box, 'ok', report.map(escapeHtml).join('<br>') +
-      '<br><span style="opacity:.7">Prom применяет изменения не мгновенно.</span>');
+      '<br><span style="opacity:.7">Prom применяет изменения не мгновенно.</span>' +
+      '<br><br><b>Ответ Prom:</b><pre>' + escapeHtml(JSON.stringify(lastResponse, null, 2)) + '</pre>' +
+      '<b>Что отправляли:</b><pre>' + escapeHtml(JSON.stringify(upd, null, 2)) + '</pre>');
     buildGroups(); applyFilter();
   } catch (e) {
     showMsg(box, 'err', 'Prom не принял изменения.<pre>' + escapeHtml(e.message) + '</pre>' +
@@ -990,16 +1175,23 @@ async function saveProduct() {
   }
 }
 
-/* Пара в другом магазине: тот же базовый артикул, затем совпадение по названию */
+/* Пара в другом магазине: сначала точно по external_id, потом по артикулу и названию */
 function findTwin(store, src) {
+  const arr = byStore[store] || [];
+
+  // 1) точная связь: у товара-приёмника external_id = id товара Black Street
+  const exact = arr.find(p => p.external_id != null && String(p.external_id) === String(src.id));
+  if (exact) return exact;
+
+  // 2) запасной вариант — по артикулу и названию
   const base = baseSku(src.sku, 'blackstreet');
-  const arr = (byStore[store] || []).filter(p => baseSku(p.sku, store) === base);
-  if (!arr.length) return null;
-  if (arr.length === 1) return arr[0];
+  const same = arr.filter(p => baseSku(p.sku, store) === base);
+  if (!same.length) return null;
+  if (same.length === 1) return same[0];
   const withSuf = ((src.name || '') + STORES[store].suffix).trim().toLowerCase();
   const plain = (src.name || '').trim().toLowerCase();
-  return arr.find(p => (p.name || '').trim().toLowerCase() === withSuf)
-      || arr.find(p => (p.name || '').trim().toLowerCase() === plain)
+  return same.find(p => (p.name || '').trim().toLowerCase() === withSuf)
+      || same.find(p => (p.name || '').trim().toLowerCase() === plain)
       || null;
 }
 

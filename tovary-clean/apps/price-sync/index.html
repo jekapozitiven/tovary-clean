@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0b">
+  <title>Актуализация цен — Товары</title>
+
+  <link rel="icon" href="../../favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="../../favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+  <link rel="stylesheet" href="../../assets/portal.css">
+
+  <style>
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: clamp(20px, 4vw, 30px);
+      margin-bottom: 16px;
+    }
+    .panel h2 {
+      margin: 0 0 4px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+    }
+    .panel .sub { margin: 0 0 20px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+           padding: 13px 0; border-bottom: 1px solid var(--border); }
+    .row:last-child { border-bottom: none; }
+    .row__text { font-size: 15px; }
+    .row__note { display: block; font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+
+    .switch { position: relative; width: 46px; height: 26px; flex: none; }
+    .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+    .switch__track { position: absolute; inset: 0; background: #2a2a2e; border-radius: 999px; transition: background .18s; }
+    .switch__track::after { content:""; position:absolute; top:3px; left:3px; width:20px; height:20px;
+      background:#f4f4f2; border-radius:50%; transition: transform .18s; }
+    .switch input:checked + .switch__track { background: var(--green); }
+    .switch input:checked + .switch__track::after { transform: translateX(20px); }
+    .switch input:focus-visible + .switch__track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .store { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .store:last-child { border-bottom: none; }
+    .store__name { flex: 1; font-size: 15px; }
+    .store__tag { font-size: 12px; color: var(--text-faint); }
+    .suffix-input {
+      width: 90px; font-family: var(--font); font-size: 14px; color: var(--text); text-align: center;
+      background: #0e0e10; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+    }
+    .suffix-input:focus { outline: none; border-color: var(--border-hover); }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px;
+      font-size: 14px; font-weight: 700; color: #0a0a0b; background: var(--accent);
+      border: none; border-radius: 999px; cursor: pointer; transition: transform .15s, opacity .15s;
+    }
+    .btn:hover { opacity: .9; }
+    .btn:active { transform: translateY(1px); }
+    .btn--ghost { color: var(--text); background: var(--panel); border: 1px solid var(--border); }
+
+    .note {
+      display: flex; gap: 10px; padding: 14px 16px; border-radius: var(--radius-sm);
+      background: rgba(214,242,74,0.06); border: 1px solid rgba(214,242,74,0.18);
+      font-size: 13px; line-height: 1.55; color: var(--text-dim);
+    }
+    .note b { color: var(--text); font-weight: 600; }
+    .speed { font-size: 12px; color: var(--text-faint); margin-top: 8px; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+    code { background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+    a.link { color: var(--accent); }
+    .saved { font-size: 12px; color: var(--green); opacity: 0; transition: opacity .25s; }
+    .saved.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand__name">ТОВАРЫ<span class="slash">//</span></div>
+      <div class="brand__sub">Актуализация цен</div>
+    </div>
+    <a class="home-btn" href="../../index.html"><span class="home-btn__arrow">←</span> Главная</a>
+  </header>
+
+  <main class="wrap">
+    <p class="eyebrow">Что переносить с Black Street на другие промы <span class="saved" id="saved">● сохранено</span></p>
+
+    <!-- Поля -->
+    <div class="panel">
+      <h2>Поля для синхронизации</h2>
+      <p class="sub">Включи то, что должно автоматически переноситься. Выключенное движок не трогает.</p>
+
+      <div class="row">
+        <span class="row__text">Цена<span class="row__note">быстро, ~10 минут</span></span>
+        <label class="switch"><input type="checkbox" data-field="price" checked><span class="switch__track"></span></label>
+      </div>
+      <div class="row">
+        <span class="row__text">Наличие<span class="row__note">быстро, ~10 минут</span></span>
+        <label class="switch"><input type="checkbox" data-field="presence" checked><span class="switch__track"></span></label>
+      </div>
+      <div class="row">
+        <span class="row__text">Количество на складе<span class="row__note">быстро, ~10 минут</span></span>
+        <label class="switch"><input type="checkbox" data-field="quantity" checked><span class="switch__track"></span></label>
+      </div>
+      <div class="row">
+        <span class="row__text">Скидка / публикация со скидкой<span class="row__note">быстро, ~10 минут</span></span>
+        <label class="switch"><input type="checkbox" data-field="discount"><span class="switch__track"></span></label>
+      </div>
+      <div class="row">
+        <span class="row__text">Скрыть / показать позицию<span class="row__note">быстро, ~10 минут</span></span>
+        <label class="switch"><input type="checkbox" data-field="visibility" checked><span class="switch__track"></span></label>
+      </div>
+      <div class="row">
+        <span class="row__text">Название<span class="row__note">через импорт, медленнее</span></span>
+        <label class="switch"><input type="checkbox" data-field="name"><span class="switch__track"></span></label>
+      </div>
+      <div class="row">
+        <span class="row__text">Артикул<span class="row__note">через импорт, медленнее</span></span>
+        <label class="switch"><input type="checkbox" data-field="sku"><span class="switch__track"></span></label>
+      </div>
+      <div class="row">
+        <span class="row__text">Описание<span class="row__note">через импорт, медленнее</span></span>
+        <label class="switch"><input type="checkbox" data-field="description"><span class="switch__track"></span></label>
+      </div>
+      <div class="row">
+        <span class="row__text">Фото<span class="row__note">через импорт, медленнее</span></span>
+        <label class="switch"><input type="checkbox" data-field="images"><span class="switch__track"></span></label>
+      </div>
+    </div>
+
+    <!-- Магазины и суффиксы -->
+    <div class="panel">
+      <h2>Магазины</h2>
+      <p class="sub">Источник — Black Street. К артикулу и названию на других промах добавляется суффикс, чтобы Prom не схлопывал карточки.</p>
+
+      <div class="store">
+        <span class="store__name">Black Street <span class="store__tag">— источник</span></span>
+        <span class="store__tag">без суффикса</span>
+      </div>
+      <div class="store">
+        <span class="store__name">Bonna-shop</span>
+        <input class="suffix-input" data-suffix="bonna" value=" (B)">
+      </div>
+      <div class="store">
+        <span class="store__name">Core22</span>
+        <input class="suffix-input" data-suffix="core22" value=" (С)">
+      </div>
+      <p class="speed">Пример: артикул <code>Мой-102</code> → на Bonna-shop <code>Мой-102 (B)</code>, на Core22 <code>Мой-102 (С)</code>.</p>
+    </div>
+
+    <!-- Конфиг + запуск -->
+    <div class="panel">
+      <h2>Настройка движка</h2>
+      <p class="sub">Скачай файл настроек и положи его в репозиторий (папка <code>sync/</code>). Движок в GitHub Actions читает именно его. Токены сюда не вписываются — они хранятся в GitHub Secrets.</p>
+      <div class="actions">
+        <button class="btn" id="download">↓ Скачать config.json</button>
+        <a class="btn btn--ghost" id="actions-link" href="#" target="_blank" rel="noopener">Открыть журнал запусков</a>
+      </div>
+    </div>
+
+    <div class="note">
+      <span>ⓘ</span>
+      <span><b>Как это работает.</b> Робот в GitHub Actions раз в ~10 минут читает товары Black Street и переносит отмеченные поля на Bonna-shop и Core22. Цена, наличие и видимость — почти сразу. Название, артикул, описание и фото — через импорт Prom, поэтому доезжают медленнее. Полная инструкция по запуску — в файле <code>sync/README-sync.md</code>.</span>
+    </div>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'tovary:price-sync';
+    const load = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } };
+    let state = load();
+
+    const savedEl = document.getElementById('saved');
+    let t;
+    const save = () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      savedEl.classList.add('show'); clearTimeout(t);
+      t = setTimeout(() => savedEl.classList.remove('show'), 1200);
+    };
+
+    const fields  = [...document.querySelectorAll('[data-field]')];
+    const suffixes = [...document.querySelectorAll('[data-suffix]')];
+
+    // восстановление
+    state.fields = state.fields || {};
+    state.suffix = state.suffix || {};
+    fields.forEach(el => { if (state.fields[el.dataset.field] !== undefined) el.checked = state.fields[el.dataset.field]; });
+    suffixes.forEach(el => { if (state.suffix[el.dataset.suffix] !== undefined) el.value = state.suffix[el.dataset.suffix]; });
+
+    fields.forEach(el => el.addEventListener('change', () => { state.fields[el.dataset.field] = el.checked; save(); }));
+    suffixes.forEach(el => el.addEventListener('input', () => { state.suffix[el.dataset.suffix] = el.value; save(); }));
+
+    // ссылка на журнал запусков (Actions) — определяем адрес репозитория из URL страницы
+    (function () {
+      const host = location.hostname;            // jekapozitiven.github.io
+      const user = host.split('.')[0];
+      const repo = location.pathname.split('/').filter(Boolean)[0] || '';
+      const link = document.getElementById('actions-link');
+      if (user && repo) link.href = `https://github.com/${user}/${repo}/actions`;
+    })();
+
+    // генерация config.json из галочек
+    document.getElementById('download').addEventListener('click', () => {
+      const cfg = {
+        source: { name: "Black Street", env_token: "TOKEN_BLACKSTREET" },
+        targets: [
+          { name: "Bonna-shop", env_token: "TOKEN_BONNA",  suffix: (state.suffix.bonna  ?? " (B)") },
+          { name: "Core22",     env_token: "TOKEN_CORE22", suffix: (state.suffix.core22 ?? " (С)") }
+        ],
+        match_by: "external_id",
+        interval_minutes: 10,
+        sync_fields: {
+          price:       fields.find(f=>f.dataset.field==='price').checked,
+          presence:    fields.find(f=>f.dataset.field==='presence').checked,
+          quantity:    fields.find(f=>f.dataset.field==='quantity').checked,
+          discount:    fields.find(f=>f.dataset.field==='discount').checked,
+          visibility:  fields.find(f=>f.dataset.field==='visibility').checked,
+          name:        fields.find(f=>f.dataset.field==='name').checked,
+          sku:         fields.find(f=>f.dataset.field==='sku').checked,
+          description: fields.find(f=>f.dataset.field==='description').checked,
+          images:      fields.find(f=>f.dataset.field==='images').checked
+        }
+      };
+      const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "config.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  </script>
+
+</body>
+</html>

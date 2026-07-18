@@ -1,0 +1,20 @@
+{
+  "source":  { "name": "Black Street", "env_token": "TOKEN_BLACKSTREET" },
+  "targets": [
+    { "name": "Bonna-shop", "env_token": "TOKEN_BONNA",  "suffix": " (B)" },
+    { "name": "Core22",     "env_token": "TOKEN_CORE22", "suffix": " (С)" }
+  ],
+  "match_by": "external_id",
+  "interval_minutes": 10,
+  "sync_fields": {
+    "price":       true,
+    "presence":    true,
+    "quantity":    true,
+    "discount":    false,
+    "visibility":  true,
+    "name":        false,
+    "sku":         false,
+    "description": false,
+    "images":      false
+  }
+}

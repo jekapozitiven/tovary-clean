@@ -48,6 +48,11 @@
   .toolbar .search { flex: 1; min-width: 220px; }
   .toolbar select, .toolbar input[type=text] { width: auto; }
   .muted { font-size: 12.5px; color: var(--text-faint); }
+  .uk-status {
+    font-size: 12.5px; font-weight: 600; color: var(--accent);
+    padding: 6px 12px; border: 1px solid rgba(214,242,74,.3);
+    border-radius: 999px; white-space: nowrap;
+  }
 
   .progress { height: 3px; background: #1e1e22; border-radius: 999px; overflow: hidden; margin-bottom: 12px; }
   .progress i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
@@ -254,6 +259,7 @@
         <option value="has">Только с заметкой</option>
         <option value="no">Только без заметки</option>
       </select>
+      <span class="uk-status hidden" id="uk-status"></span>
       <button class="btn btn--sm hidden" id="uk-file">Файл для Prom (0)</button>
       <button class="btn btn--ghost btn--sm hidden" id="uk-send">Отправить файл в Prom</button>
       <button class="btn btn--sm" id="find-prom">Искать в Prom</button>
@@ -1335,6 +1341,7 @@ function queueUk(store, p, patch) {
   ukQueue[k] = Object.assign(cur, patch, { sku: p.sku || '', name_ru: p.name || '' });
   saveJSON(UK_KEY, ukQueue);
   updateUkButton();
+  if (typeof setUkStatus === 'function') setUkStatus('');
 }
 
 function updateUkButton() {
@@ -1628,61 +1635,68 @@ async function sendUkFile() {
     out.join('<br>') + '<br><br>Пришлите этот список.</div>';
 }
 
-/* Отправляем украинские поля через импорт.
-   Prom выполняет только один импорт за раз — если занят, ждём и повторяем. */
-async function sendUkNow(store, p, onNote) {
-  const k = store + ':' + p.id;
-  const row = ukQueue[k];
-  if (!row) return null;
+/* ===================================================================== */
+/*  Фоновая досылка украинских полей                                      */
+/*  Сохранение отвечает сразу, отправка идёт сама, пачками.               */
+/* ===================================================================== */
+let ukSending = false;
+let ukStatus = '';
 
-  const csv = buildUkRows([row]);
-  const say = onNote || function () {};
+function setUkStatus(text) {
+  ukStatus = text || '';
+  const el = $('uk-status');
+  if (!el) return;
+  const n = Object.keys(ukQueue).length;
+  if (!n && !ukStatus) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.textContent = ukStatus || ('укр: в очереди ' + n);
+}
 
-  let importId = '';
-  for (let attempt = 1; attempt <= 8; attempt++) {
-    const res = await api('/import', { store: store, csv: csv });
-    const ans = res.answer || {};
+/* Раз в несколько секунд смотрим, есть ли что отправить */
+function startUkSender() {
+  setInterval(function () {
+    if (ukSending) return;
+    if (!Object.keys(ukQueue).length) { setUkStatus(''); return; }
+    ukSending = true;
+    flushUkQueue().catch(function () {}).then(function () { ukSending = false; });
+  }, 4000);
+}
 
-    if (res.ok) {
-      importId = ans.id || '';
-      break;
-    }
+async function flushUkQueue() {
+  const rows = Object.keys(ukQueue).map(k => ukQueue[k]);
+  if (!rows.length) return;
 
-    const msg = JSON.stringify(ans);
-    const busy = msg.indexOf('момент') !== -1 || msg.indexOf('импорт') !== -1 ||
-                 msg.indexOf('імпорт') !== -1 || res.status === 429;
-    if (busy && attempt < 8) {
-      say('Prom занят другим импортом, жду ' + (attempt * 10) + ' сек… (попытка ' + attempt + ')');
-      await sleep(attempt * 10000);
-      continue;
-    }
-    throw new Error('Prom не принял импорт (' + res.status + '): ' +
-      decodeMsg(msg).slice(0, 200));
-  }
+  // группируем по магазинам — один импорт на магазин
+  const byShop = {};
+  rows.forEach(function (r) { (byShop[r.store] = byShop[r.store] || []).push(r); });
 
-  if (!importId) throw new Error('Prom не вернул номер импорта');
+  for (const store of Object.keys(byShop)) {
+    const list = byShop[store];
+    const csv = buildUkRows(list);
+    setUkStatus('укр: отправляю ' + list.length + ' поз. в ' + STORES[store].title + '…');
 
-  // ждём, пока импорт отработает
-  say('Импорт принят, номер ' + importId + '. Жду обработки…');
-  let finalNote = '';
-  for (let i = 0; i < 12; i++) {
-    await sleep(5000);
     try {
-      const st = await api('/import_status', { store: store, import_id: importId });
-      if (st.found) {
-        const a = JSON.stringify(st.answer);
-        finalNote = decodeMsg(a).slice(0, 300);
-        if (a.indexOf('progress') === -1 && a.indexOf('in_work') === -1) break;
+      const res = await api('/import', { store: store, csv: csv });
+      if (res.ok) {
+        list.forEach(function (r) { delete ukQueue[r.store + ':' + r.id]; });
+        saveJSON(UK_KEY, ukQueue);
+        setUkStatus('укр: отправлено ' + list.length + ' поз.');
+        setTimeout(function () { setUkStatus(''); }, 4000);
       } else {
-        break;   // такого запроса у Prom нет — просто подождём
+        const msg = decodeMsg(JSON.stringify(res.answer || {}));
+        const busy = msg.indexOf('момент') !== -1 || msg.indexOf('импорт') !== -1 ||
+                     msg.indexOf('імпорт') !== -1 || res.status === 429;
+        setUkStatus(busy
+          ? 'укр: Prom занят, повторю через минуту (' + list.length + ' поз.)'
+          : 'укр: ошибка — ' + msg.slice(0, 120));
+        if (busy) await sleep(45000);      // подождём и попробуем снова
       }
-    } catch (e) { break; }
+    } catch (e) {
+      setUkStatus('укр: сбой связи, повторю');
+      await sleep(20000);
+    }
+    updateUkButton();
   }
-
-  delete ukQueue[k];
-  saveJSON(UK_KEY, ukQueue);
-  updateUkButton();
-  return { id: importId, note: finalNote };
 }
 
 /* Prom иногда шлёт текст в виде \u0412... — приводим к читаемому */
@@ -1970,6 +1984,30 @@ async function saveProduct() {
   showMsg(box, 'warn', 'Отправляю на Prom…');
   const report = [];
 
+  // Украинские поля отправляем ОДНОВРЕМЕННО с русскими.
+  // Prom принимает их другим методом, поэтому это два запроса, но идут они разом.
+  const ukKey = store + ':' + p.id;
+  const ukPromise = ukQueue[ukKey]
+    ? (async function () {
+        const row = ukQueue[ukKey];
+        const csv = buildUkRows([row]);
+        for (let attempt = 1; attempt <= 4; attempt++) {
+          const res = await api('/import', { store: store, csv: csv });
+          if (res.ok) {
+            delete ukQueue[ukKey];
+            saveJSON(UK_KEY, ukQueue);
+            updateUkButton();
+            return 'украинские поля приняты';
+          }
+          const msg = decodeMsg(JSON.stringify(res.answer || {}));
+          const busy = msg.indexOf('момент') !== -1 || msg.indexOf('импорт') !== -1 ||
+                       msg.indexOf('імпорт') !== -1 || res.status === 429;
+          if (busy && attempt < 4) { await sleep(4000); continue; }
+          return 'украинские: ' + msg.slice(0, 140);
+        }
+      })()
+    : null;
+
   const hasApiFields = Object.keys(upd).length > 1;   // кроме id есть что менять
 
   try {
@@ -2088,37 +2126,16 @@ async function saveProduct() {
       '<br><br><b>Ответ Prom:</b><pre>' + escapeHtml(JSON.stringify(lastResponse, null, 2)) + '</pre>' +
       '<b>Что отправляли:</b><pre>' + escapeHtml(JSON.stringify(upd, null, 2)) + '</pre>');
 
-    // украинские поля — отдельным механизмом, импортом
-    if (ukQueue[store + ':' + p.id]) {
+    // дожидаемся украинского запроса, он шёл параллельно
+    if (ukPromise) {
       try {
-        const say = function (note) {
-          showMsg(box, 'warn', report.map(escapeHtml).join('<br>') + '<br>' + escapeHtml(note));
-        };
-        say('Отправляю украинские поля…');
-        const r = await sendUkNow(store, p, say);
-        report.push('Украинские поля: импорт ' + (r && r.id ? r.id : '') +
-                    (r && r.note ? ' — ' + r.note : ' — принят'));
-
-        say('Проверяю, что применилось…');
-        await sleep(4000);
-        try {
-          const fresh = await api('/get', { store: store, id: p.id });
-          const f = (fresh && fresh.product) ? fresh.product : fresh;
-          const nowUk = (f && f.name_multilang && f.name_multilang.uk) || '';
-          if (f) {
-            p.name_multilang = f.name_multilang || p.name_multilang;
-            p.description_multilang = f.description_multilang || p.description_multilang;
-          }
-          report.push(nowUk ? 'Украинское название сейчас: ' + nowUk
-                            : 'Украинское название прочитать не удалось');
-        } catch (e) {
-          report.push('Проверить не удалось: ' + e.message);
-        }
+        const note = await ukPromise;
+        if (note) report.push(note);
       } catch (e) {
-        report.push('Украинские поля: ' + e.message + ' — остались в очереди');
+        report.push('украинские: ' + e.message);
       }
-      showMsg(box, 'ok', report.map(escapeHtml).join('<br>'));
     }
+    showMsg(box, 'ok', report.map(escapeHtml).join('<br>'));
     buildGroups(); applyFilter();
     // обновляем сохранённые данные, чтобы правка не пропала после перезагрузки
     cacheSet(store, { products: byStore[store].map(slim), savedAt: cacheAge || Date.now() });
@@ -2175,6 +2192,8 @@ $('search').addEventListener('keydown', function (e) {
 if ($('check-stores')) $('check-stores').addEventListener('click', checkStores);
 if ($('check-cache')) $('check-cache').addEventListener('click', checkCache);
 if ($('uk-send')) $('uk-send').addEventListener('click', sendUkFile);
+startUkSender();
+setUkStatus('');
 
 if ($('uk-file')) {
   $('uk-file').addEventListener('click', function () {

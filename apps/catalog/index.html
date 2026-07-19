@@ -255,6 +255,7 @@
         <option value="no">Только без заметки</option>
       </select>
       <button class="btn btn--sm hidden" id="uk-file">Файл для Prom (0)</button>
+      <button class="btn btn--ghost btn--sm hidden" id="uk-send">Отправить файл в Prom</button>
       <button class="btn btn--sm" id="find-prom">Искать в Prom</button>
       <button class="btn btn--ghost btn--sm" id="back-cache">Показать сохранённое</button>
       <button class="btn btn--ghost btn--sm" id="check-stores">Проверить магазины</button>
@@ -1318,13 +1319,20 @@ let ukQueue = loadJSON(UK_KEY, {});     // "store:id" -> { id, store, name_uk, d
 
 function queueUk(store, p, patch) {
   const k = store + ':' + p.id;
+  const nml = p.name_multilang || {};
+  const dml = p.description_multilang || {};
+  const kml = p.keywords_multilang || {};
   const cur = ukQueue[k] || {
     store: store,
-    id: p.id,
-    sku: p.sku || '',
+    id: p.id,                                   // Унікальний_ідентифікатор
+    sku: p.sku || '',                           // Код_товару
     name_ru: p.name || '',
+    // текущие украинские значения — чтобы не затереть пустотой то, что не меняли
+    name_uk: nml.uk != null ? nml.uk : '',
+    description_uk: dml.uk != null ? dml.uk : '',
+    keywords_uk: kml.uk != null ? kml.uk : '',
   };
-  ukQueue[k] = Object.assign(cur, patch, { name_ru: p.name || '' });
+  ukQueue[k] = Object.assign(cur, patch, { sku: p.sku || '', name_ru: p.name || '' });
   saveJSON(UK_KEY, ukQueue);
   updateUkButton();
 }
@@ -1335,6 +1343,8 @@ function updateUkButton() {
   const n = Object.keys(ukQueue).length;
   b.textContent = 'Файл для Prom (' + n + ')';
   b.classList.toggle('hidden', n === 0);
+  const b2 = $('uk-send');
+  if (b2) b2.classList.toggle('hidden', n === 0);
 }
 
 /* Экранирование значения для CSV */
@@ -1343,35 +1353,33 @@ function csvCell(v) {
   return '"' + s.replace(/"/g, '""') + '"';
 }
 
+/* Колонки — ровно как в выгрузке Prom */
+const UK_COLUMNS = [
+  ['Унікальний_ідентифікатор', r => r.id],
+  ['Код_товару',               r => r.sku || ''],
+  ['Назва_позиції_укр',        r => r.name_uk || ''],
+  ['Опис_укр',                 r => r.description_uk || ''],
+  ['Пошукові_запити_укр',      r => r.keywords_uk || ''],
+];
+
+function buildUkRows(list) {
+  const lines = [UK_COLUMNS.map(c => csvCell(c[0])).join(',')];
+  list.forEach(function (r) {
+    lines.push(UK_COLUMNS.map(c => csvCell(c[1](r))).join(','));
+  });
+  return '\ufeff' + lines.join('\r\n');
+}
+
 function buildUkFile() {
   const rows = Object.keys(ukQueue).map(k => ukQueue[k]);
   if (!rows.length) { alert('Очередь пуста'); return; }
 
-  // по магазинам — файл импорта заливается в каждый кабинет отдельно
   const byShop = {};
   rows.forEach(function (r) { (byShop[r.store] = byShop[r.store] || []).push(r); });
 
   Object.keys(byShop).forEach(function (store) {
-    const list = byShop[store];
-    const head = [
-      'Унікальний_ідентифікатор',
-      'Ідентифікатор_товару',
-      'Назва_позиції',
-      'Назва_укр',
-      'Опис_укр',
-    ];
-    const lines = [head.map(csvCell).join(',')];
-    list.forEach(function (r) {
-      lines.push([
-        r.id,
-        r.sku || '',
-        r.name_ru || '',
-        r.name_uk == null ? '' : r.name_uk,
-        r.description_uk == null ? '' : r.description_uk,
-      ].map(csvCell).join(','));
-    });
-
-    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const csv = buildUkRows(byShop[store]);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'prom-ukr-' + store + '.csv';
@@ -1585,6 +1593,37 @@ async function searchInProm() {
     'Кнопка «Показать сохранённое» вернёт прежний список.</span></div>';
 }
 
+/* Пробуем отдать файл импорта прямо через API */
+async function sendUkFile() {
+  const rows = Object.keys(ukQueue).map(k => ukQueue[k]);
+  if (!rows.length) { alert('Очередь пуста'); return; }
+
+  const byShop = {};
+  rows.forEach(function (r) { (byShop[r.store] = byShop[r.store] || []).push(r); });
+
+  const out = [];
+  $('stats').innerHTML = '<div class="msg msg--warn">Пробую отправить файл в Prom…</div>';
+
+  for (const store of Object.keys(byShop)) {
+    const csv = buildUkRows(byShop[store]);
+
+    try {
+      const res = await api('/import', { store: store, csv: csv });
+      (res.tried || []).forEach(function (t) {
+        const ok = t.status >= 200 && t.status < 300;
+        out.push((ok ? '<b style="color:#6ee7b7">✓</b> ' : '✗ ') +
+          STORES[store].title + ' ' + escapeHtml(t.path) + ' → ' + t.status +
+          ' ' + escapeHtml(String(t.answer).slice(0, 200)));
+      });
+    } catch (e) {
+      out.push('✗ ' + STORES[store].title + ' — ' + escapeHtml(e.message));
+    }
+  }
+
+  $('stats').innerHTML = '<div class="msg msg--warn"><b>Отправка файла импорта:</b><br>' +
+    out.join('<br>') + '<br><br>Пришлите этот список.</div>';
+}
+
 /* Что реально лежит на устройстве */
 async function checkCache() {
   const out = [];
@@ -1786,9 +1825,13 @@ async function saveProduct() {
   const kwRuOld = kmlOld && kmlOld.ru != null ? kmlOld.ru : (p.keywords || '');
   const kwUkOld = kmlOld && kmlOld.uk != null ? kmlOld.uk : null;
 
-  if (kwRuNew !== kwRuOld || (kwUkNew !== null && kwUkNew !== kwUkOld)) {
-    upd.keywords = kwRuNew;   // Prom принимает только основное поле
+  if (kwRuNew !== kwRuOld) {
+    upd.keywords = kwRuNew;   // Prom принимает через API только основное поле
     changes.push('ключевые слова');
+  }
+  if (kwUkNew !== null && kwUkNew !== kwUkOld) {
+    queueUk(store, p, { keywords_uk: kwUkNew });
+    changes.push('ключові слова укр → в файл');
   }
 
   // скидка — трогаем только если её действительно меняли
@@ -2022,6 +2065,7 @@ $('search').addEventListener('keydown', function (e) {
 });
 if ($('check-stores')) $('check-stores').addEventListener('click', checkStores);
 if ($('check-cache')) $('check-cache').addEventListener('click', checkCache);
+if ($('uk-send')) $('uk-send').addEventListener('click', sendUkFile);
 
 if ($('uk-file')) {
   $('uk-file').addEventListener('click', function () {

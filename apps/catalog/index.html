@@ -193,6 +193,7 @@
   .disc__row { display: flex; gap: 8px; align-items: center; }
   .disc__row input { flex: 1; }
   .disc__row select { width: 70px; flex: none; }
+  .disc__note { font-size: 11.5px; color: var(--text-faint); line-height: 1.5; margin-top: 8px; }
   .disc__now { font-size: 12px; color: var(--green); margin-top: 8px; min-height: 15px; }
   .disc__dates { display: flex; gap: 10px; margin-top: 10px; }
   .disc__dates label { flex: 1; }
@@ -1144,13 +1145,10 @@ function renderEditor() {
     if (m) return m[3] + '-' + m[2] + '-' + m[1];
     return '';
   }
-  function plusDays(n) {
-    const t = new Date(Date.now() + n * 86400000);
-    const p = (x) => (x < 10 ? '0' + x : '' + x);
-    return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate());
-  }
-  const dFrom = (d && ymd(d.date_start)) || plusDays(0);
-  const dTo   = (d && ymd(d.date_end))   || plusDays(30);
+  // Prom не присылает даты действующей скидки — не выдумываем их
+  const dFrom = (d && ymd(d.date_start)) || '';
+  const dTo   = (d && ymd(d.date_end))   || '';
+  const dNoDates = !!(d && (dVal !== '' && dVal != null) && (!dFrom || !dTo));
   const discountBox =
     '<div class="disc">' +
       '<div class="disc__t">Скидка</div>' +
@@ -1169,6 +1167,10 @@ function renderEditor() {
         '<label><span>Конец</span>' +
           '<input type="date" id="e-disc-to" value="' + escapeAttr(dTo) + '"></label>' +
       '</div>' +
+      (dNoDates
+        ? '<div class="disc__note">Prom не сообщает даты действующей скидки — они видны только в кабинете. ' +
+          'Пустые поля означают «не трогать». Заполните обе даты, только если меняете скидку.</div>'
+        : '') +
       '<div class="disc__now" id="disc-now"></div>' +
     '</div>';
 
@@ -1385,14 +1387,17 @@ function buildUkFile() {
 /*  а русское название сразу восстанавливаем.                            */
 /* ===================================================================== */
 const UK_CANDIDATES = [
-  { note: 'поле name_uk',            build: (v) => ({ name_uk: v }) },
-  { note: 'поле name_ua',            build: (v) => ({ name_ua: v }) },
-  { note: 'поле nameUk',             build: (v) => ({ nameUk: v }) },
-  { note: 'поле name_uk_ua',         build: (v) => ({ name_uk_ua: v }) },
-  { note: 'поле translations',       build: (v) => ({ translations: { uk: { name: v } } }) },
-  { note: 'поле name_translations',  build: (v) => ({ name_translations: { uk: v } }) },
-  { note: 'name + параметр lang=uk', build: (v) => ({ name: v }), lang: 'uk' },
-  { note: 'name + параметр lang=ua', build: (v) => ({ name: v }), lang: 'ua' },
+  { note: 'name_uk',             build: (v) => ({ name_uk: v }) },
+  { note: 'name_ua',             build: (v) => ({ name_ua: v }) },
+  { note: 'nameUk',              build: (v) => ({ nameUk: v }) },
+  { note: 'name_uk_ua',          build: (v) => ({ name_uk_ua: v }) },
+  { note: 'ukrainian_name',      build: (v) => ({ ukrainian_name: v }) },
+  { note: 'translations',        build: (v) => ({ translations: { uk: { name: v } } }) },
+  { note: 'name_translations',   build: (v) => ({ name_translations: { uk: v } }) },
+  { note: 'multilang только uk', build: (v) => ({ name_multilang: { uk: v } }) },
+  { note: 'name + lang=uk',      build: (v) => ({ name: v }), lang: 'uk' },
+  { note: 'name + lang=ua',      build: (v) => ({ name: v }), lang: 'ua' },
+  { note: 'name + lang=uk-UA',   build: (v) => ({ name: v }), lang: 'uk-UA' },
 ];
 
 /* Перебор форматов даты — покажет, какой Prom принимает */
@@ -1445,11 +1450,13 @@ async function probeUk() {
     return;
   }
 
+  const MARK = ' ✱';                 // метка: по ней увидим, что именно сменилось
   const lines = [];
-  showMsg(box, 'warn', 'Подбираю способ… это займёт полминуты.');
+  let winner = null;
+  showMsg(box, 'warn', 'Проверяю способы… примерно минуту.');
 
   for (const c of UK_CANDIDATES) {
-    const payload = Object.assign({ id: p.id }, c.build(ukVal));
+    const payload = Object.assign({ id: p.id }, c.build(ukVal + MARK));
     try {
       const res = await api('/edit',
         Object.assign({ store: store, products: [payload] }, c.lang ? { lang: c.lang } : {}));
@@ -1457,16 +1464,33 @@ async function probeUk() {
       const txt = errs ? JSON.stringify(errs) : '';
 
       if (txt.indexOf('Unknown field') !== -1) {
-        lines.push('✗ ' + c.note + ' — Prom не знает такого поля');
+        lines.push('✗ ' + c.note + ' — такого поля Prom не знает');
       } else if (errs && Object.keys(errs).length) {
-        lines.push('✗ ' + c.note + ' — ' + escapeHtml(txt.slice(0, 160)));
+        lines.push('✗ ' + c.note + ' — ' + escapeHtml(txt.slice(0, 140)));
       } else {
-        lines.push('<b style="color:#6ee7b7">✓ ' + c.note + ' — ПРИНЯТО</b>');
+        // Prom принял — но правда ли сменилось украинское?
+        await sleep(800);
+        let nowUk = '', nowRu = '';
+        try {
+          const fresh = await api('/get', { store: store, id: p.id });
+          const f = (fresh && fresh.product) ? fresh.product : fresh;
+          nowUk = (f && f.name_multilang && f.name_multilang.uk) || '';
+          nowRu = (f && f.name) || '';
+        } catch (e) {}
+
+        if (nowUk.indexOf(MARK) !== -1) {
+          lines.push('<b style="color:#6ee7b7">✓ ' + c.note + ' — УКРАИНСКОЕ ИЗМЕНИЛОСЬ</b>');
+          if (!winner) winner = c.note;
+        } else if (nowRu.indexOf(MARK) !== -1) {
+          lines.push('⚠ ' + c.note + ' — принято, но сменилось РУССКОЕ');
+        } else {
+          lines.push('✗ ' + c.note + ' — принято, но ничего не изменилось');
+        }
       }
     } catch (e) {
-      lines.push('✗ ' + c.note + ' — ' + escapeHtml(e.message.slice(0, 120)));
+      lines.push('✗ ' + c.note + ' — ' + escapeHtml(e.message.slice(0, 100)));
     }
-    await sleep(400);
+    await sleep(300);
   }
 
   // на всякий случай возвращаем русское название как было
@@ -1478,8 +1502,11 @@ async function probeUk() {
   }
 
   showMsg(box, 'warn',
-    '<b>Что ответил Prom на каждый вариант:</b><br>' + lines.join('<br>') +
-    '<br><br>Пришлите этот список — настрою рабочий способ.');
+    '<b>Способы правки украинского:</b><br>' + lines.join('<br>') +
+    (winner
+      ? '<br><br><b style="color:#6ee7b7">Рабочий способ: ' + escapeHtml(winner) + '</b>'
+      : '<br><br>Ни один не сработал.') +
+    '<br>Пришлите этот список.');
 }
 
 /* ===================================================================== */
@@ -1784,12 +1811,12 @@ async function saveProduct() {
   const dOldFrom = dOld ? onlyDate(dOld.date_start) : '';
   const dOldTo   = dOld ? onlyDate(dOld.date_end)   : '';
 
-  const discChanged =
-    (dRaw === '' ? dOldVal != null
-                 : (Number(dRaw) !== Number(dOldVal) ||
-                    dType !== dOldType ||
-                    dFromV !== dOldFrom ||
-                    dToV !== dOldTo));
+  // Скидку отправляем, только если её действительно меняли.
+  // Даты Prom не отдаёт, поэтому пустые поля = «не трогать».
+  const datesTouched = (dFromV !== '' || dToV !== '');
+  const valueTouched = (dRaw === '' ? dOldVal != null
+                                    : (Number(dRaw) !== Number(dOldVal) || dType !== dOldType));
+  const discChanged = valueTouched || (datesTouched && (dFromV !== dOldFrom || dToV !== dOldTo));
 
   if (discChanged) {
     if (dRaw === '') {

@@ -1609,12 +1609,16 @@ async function sendUkFile() {
 
     try {
       const res = await api('/import', { store: store, csv: csv });
-      (res.tried || []).forEach(function (t) {
-        const ok = t.status >= 200 && t.status < 300;
-        out.push((ok ? '<b style="color:#6ee7b7">✓</b> ' : '✗ ') +
-          STORES[store].title + ' ' + escapeHtml(t.path) + ' → ' + t.status +
-          ' ' + escapeHtml(String(t.answer).slice(0, 200)));
-      });
+      const ok = res.ok;
+      out.push((ok ? '<b style="color:#6ee7b7">✓</b> ' : '✗ ') + STORES[store].title +
+        ' → ' + res.status + ' ' + escapeHtml(decodeMsg(JSON.stringify(res.answer)).slice(0, 220)));
+      if (ok) {
+        byShop[store].forEach(function (r) {
+          delete ukQueue[r.store + ':' + r.id];
+        });
+        saveJSON(UK_KEY, ukQueue);
+        updateUkButton();
+      }
     } catch (e) {
       out.push('✗ ' + STORES[store].title + ' — ' + escapeHtml(e.message));
     }
@@ -1624,29 +1628,69 @@ async function sendUkFile() {
     out.join('<br>') + '<br><br>Пришлите этот список.</div>';
 }
 
-/* Отправляем украинские поля одного товара сразу — через импорт.
-   Prom принимает такой файл методом /products/import_file. */
-async function sendUkNow(store, p) {
+/* Отправляем украинские поля через импорт.
+   Prom выполняет только один импорт за раз — если занят, ждём и повторяем. */
+async function sendUkNow(store, p, onNote) {
   const k = store + ':' + p.id;
   const row = ukQueue[k];
   if (!row) return null;
 
   const csv = buildUkRows([row]);
-  const res = await api('/import', { store: store, csv: csv });
-  const ok = (res.tried || []).find(t => t.status >= 200 && t.status < 300);
-  if (!ok) {
-    const first = (res.tried || [])[0] || {};
-    throw new Error('Prom не принял импорт: ' + first.status + ' ' + String(first.answer).slice(0, 150));
+  const say = onNote || function () {};
+
+  let importId = '';
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    const res = await api('/import', { store: store, csv: csv });
+    const ans = res.answer || {};
+
+    if (res.ok) {
+      importId = ans.id || '';
+      break;
+    }
+
+    const msg = JSON.stringify(ans);
+    const busy = msg.indexOf('момент') !== -1 || msg.indexOf('импорт') !== -1 ||
+                 msg.indexOf('імпорт') !== -1 || res.status === 429;
+    if (busy && attempt < 8) {
+      say('Prom занят другим импортом, жду ' + (attempt * 10) + ' сек… (попытка ' + attempt + ')');
+      await sleep(attempt * 10000);
+      continue;
+    }
+    throw new Error('Prom не принял импорт (' + res.status + '): ' +
+      decodeMsg(msg).slice(0, 200));
   }
 
-  // приняли — из очереди убираем
+  if (!importId) throw new Error('Prom не вернул номер импорта');
+
+  // ждём, пока импорт отработает
+  say('Импорт принят, номер ' + importId + '. Жду обработки…');
+  let finalNote = '';
+  for (let i = 0; i < 12; i++) {
+    await sleep(5000);
+    try {
+      const st = await api('/import_status', { store: store, import_id: importId });
+      if (st.found) {
+        const a = JSON.stringify(st.answer);
+        finalNote = decodeMsg(a).slice(0, 300);
+        if (a.indexOf('progress') === -1 && a.indexOf('in_work') === -1) break;
+      } else {
+        break;   // такого запроса у Prom нет — просто подождём
+      }
+    } catch (e) { break; }
+  }
+
   delete ukQueue[k];
   saveJSON(UK_KEY, ukQueue);
   updateUkButton();
+  return { id: importId, note: finalNote };
+}
 
-  let importId = '';
-  try { importId = (JSON.parse(ok.answer) || {}).id || ''; } catch (e) {}
-  return importId;
+/* Prom иногда шлёт текст в виде \u0412... — приводим к читаемому */
+function decodeMsg(s) {
+  try {
+    return String(s).replace(/\\u([0-9a-fA-F]{4})/g,
+      function (m, h) { return String.fromCharCode(parseInt(h, 16)); });
+  } catch (e) { return String(s); }
 }
 
 /* Что реально лежит на устройстве */
@@ -2047,14 +2091,16 @@ async function saveProduct() {
     // украинские поля — отдельным механизмом, импортом
     if (ukQueue[store + ':' + p.id]) {
       try {
-        showMsg(box, 'warn', report.map(escapeHtml).join('<br>') +
-          '<br>Отправляю украинские поля…');
-        const importId = await sendUkNow(store, p);
-        report.push('Украинские поля: отправлены' + (importId ? ' (импорт ' + importId + ')' : ''));
+        const say = function (note) {
+          showMsg(box, 'warn', report.map(escapeHtml).join('<br>') + '<br>' + escapeHtml(note));
+        };
+        say('Отправляю украинские поля…');
+        const r = await sendUkNow(store, p, say);
+        report.push('Украинские поля: импорт ' + (r && r.id ? r.id : '') +
+                    (r && r.note ? ' — ' + r.note : ' — принят'));
 
-        // сверяем через несколько секунд, что применилось
-        showMsg(box, 'warn', report.map(escapeHtml).join('<br>') + '<br>Проверяю через 6 секунд…');
-        await sleep(6000);
+        say('Проверяю, что применилось…');
+        await sleep(4000);
         try {
           const fresh = await api('/get', { store: store, id: p.id });
           const f = (fresh && fresh.product) ? fresh.product : fresh;
@@ -2063,14 +2109,13 @@ async function saveProduct() {
             p.name_multilang = f.name_multilang || p.name_multilang;
             p.description_multilang = f.description_multilang || p.description_multilang;
           }
-          report.push(nowUk
-            ? 'Украинское название сейчас: ' + nowUk
-            : 'Украинское название прочитать не удалось');
+          report.push(nowUk ? 'Украинское название сейчас: ' + nowUk
+                            : 'Украинское название прочитать не удалось');
         } catch (e) {
           report.push('Проверить не удалось: ' + e.message);
         }
       } catch (e) {
-        report.push('Украинские поля: ' + e.message + ' — остались в очереди, можно скачать файлом');
+        report.push('Украинские поля: ' + e.message + ' — остались в очереди');
       }
       showMsg(box, 'ok', report.map(escapeHtml).join('<br>'));
     }

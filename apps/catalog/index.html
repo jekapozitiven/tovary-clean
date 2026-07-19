@@ -1138,8 +1138,11 @@ function renderEditor() {
   function ymd(v) {
     if (!v) return '';
     const s = String(v);
-    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    return m ? (m[1] + '-' + m[2] + '-' + m[3]) : '';
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);        // 2026-07-19
+    if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})/);          // 19.07.2026
+    if (m) return m[3] + '-' + m[2] + '-' + m[1];
+    return '';
   }
   function plusDays(n) {
     const t = new Date(Date.now() + n * 86400000);
@@ -1273,21 +1276,23 @@ function renderEditor() {
 /* Prom привередлив к формату дат — держим несколько вариантов и перебираем */
 let discountDraft = null;
 
+/* Prom принимает даты в виде 19.07.2026 — проверено опытом.
+   Остальные варианты оставлены как запасные, если Prom что-то поменяет. */
 const DATE_FORMATS = [
-  function (d, end) { return d + ' ' + (end ? '23:59:59' : '00:00:00'); },
-  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00'); },
-  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00') + '+00:00'; },
-  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00') + 'Z'; },
-  function (d, end) { return d; },
-  function (d, end) { return d + ' ' + (end ? '23:59' : '00:00'); },
   function (d, end) {
     const p = d.split('-');
-    return p[2] + '.' + p[1] + '.' + p[0];
+    return p[2] + '.' + p[1] + '.' + p[0];          // 19.07.2026 — рабочий
   },
   function (d, end) {
     const p = d.split('-');
     return p[2] + '.' + p[1] + '.' + p[0] + ' ' + (end ? '23:59:59' : '00:00:00');
   },
+  function (d, end) { return d; },
+  function (d, end) { return d + ' ' + (end ? '23:59:59' : '00:00:00'); },
+  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00'); },
+  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00') + '+00:00'; },
+  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00') + 'Z'; },
+  function (d, end) { return d + ' ' + (end ? '23:59' : '00:00'); },
   function (d, end) { return Math.floor(new Date(d + 'T00:00:00Z').getTime() / 1000); },
   function (d, end) { return new Date(d + 'T00:00:00Z').getTime(); },
 ];
@@ -1769,8 +1774,12 @@ async function saveProduct() {
   const dFromV = ($('e-disc-from') || {}).value || '';
   const dToV   = ($('e-disc-to')   || {}).value || '';
   const onlyDate = (v) => {
-    const m = String(v || '').match(/^(\d{4}-\d{2}-\d{2})/);
-    return m ? m[1] : '';
+    const s = String(v || '');
+    let m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (m) return m[1];
+    m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+    if (m) return m[3] + '-' + m[2] + '-' + m[1];
+    return '';
   };
   const dOldFrom = dOld ? onlyDate(dOld.date_start) : '';
   const dOldTo   = dOld ? onlyDate(dOld.date_end)   : '';

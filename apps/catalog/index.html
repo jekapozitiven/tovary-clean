@@ -324,6 +324,12 @@ let current = null;    // { store, product }
 let openBase = null;   // какая группа раскрыта
 let picked = new Set();// выделенные позиции для массовых заметок
 let lastResponse = null; // последний ответ Prom — для разбора
+let cacheReport = [];    // что прочиталось из хранилища при запуске
+
+/* Хранилище в браузере */
+const DB_NAME = 'tovary-catalog';
+const DB_STORE = 'stores';
+let dbPromise = null;
 let cacheAge = null;   // когда данные были загружены
 
 const $ = (id) => document.getElementById(id);
@@ -408,10 +414,6 @@ if (cfg.url && cfg.pass) {
 /*  Хранилище товаров в браузере (IndexedDB)                              */
 /*  Чтобы после обновления страницы не грузить всё заново.                */
 /* ===================================================================== */
-const DB_NAME = 'tovary-catalog';
-const DB_STORE = 'stores';
-let dbPromise = null;
-
 function db() {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise(function (resolve, reject) {
@@ -525,8 +527,6 @@ function ageText(ts) {
 
 /* Достаём сохранённые данные при открытии страницы.
    Не полагаемся на заголовок — просто сканируем куски подряд. */
-let cacheReport = [];
-
 async function loadFromCache() {
   let any = false, oldest = null;
   cacheReport = [];

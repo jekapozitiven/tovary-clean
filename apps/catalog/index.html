@@ -554,7 +554,23 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function loadStore(store, onProgress) {
   const out = [], seen = new Set();
-  let lastId = null, guard = 0;
+  let lastId = null, guard = 0, savedUpTo = 0;
+  const savedAt = Date.now();
+
+  // кладём на диск по мере загрузки, чтобы обрыв не терял всё
+  async function flush() {
+    const from = savedUpTo, to = out.length;
+    if (to <= from) return;
+    const idx = Math.floor(from / CHUNK);
+    for (let i = idx; i * CHUNK < to; i++) {
+      const slice = out.slice(i * CHUNK, (i + 1) * CHUNK);
+      if (!slice.length) continue;
+      await cachePut(store + ':' + i, { products: slice.map(slim), savedAt: savedAt });
+    }
+    await cachePut(store, { parts: Math.ceil(to / CHUNK), savedAt: savedAt, total: to });
+    savedUpTo = to;
+  }
+
   while (guard++ < 3000) {
     let data = null, tries = 0;
 
@@ -564,7 +580,7 @@ async function loadStore(store, onProgress) {
         break;
       } catch (e) {
         if (tries >= 4) {
-          // не теряем то, что уже успели загрузить
+          try { await flush(); } catch (x) {}
           const err = new Error(e.message);
           err.partial = out;
           throw err;
@@ -585,9 +601,17 @@ async function loadStore(store, onProgress) {
     if (next === lastId) break;
     lastId = next;
     onProgress(out.length, '');
+
+    if (out.length - savedUpTo >= CHUNK) {
+      try { await flush(); }
+      catch (e) { onProgress(out.length, 'не удаётся сохранить: ' + e.message); }
+    }
+
     if (added === 0 && batch.length < 100) break;
-    await sleep(120);
+    await sleep(30);
   }
+
+  await flush();
   return out;
 }
 
@@ -598,45 +622,54 @@ async function loadAll() {
   prog.firstElementChild.style.width = '2%';
 
   const problems = [];
-  let done = 0;
+  const counts = {};
+  const notes = {};
 
+  function paint() {
+    $('stats').innerHTML = '<div class="msg msg--warn">Загружаю все три магазина сразу…<br>' +
+      STORE_KEYS.map(k =>
+        STORES[k].title + ': <b>' + (counts[k] || 0) + '</b>' +
+        (notes[k] ? ' — ' + escapeHtml(notes[k]) : '')
+      ).join('<br>') + '</div>';
+    const total = STORE_KEYS.reduce((n, k) => n + (counts[k] || 0), 0);
+    prog.firstElementChild.style.width = Math.min(97, 2 + total / 700) + '%';
+  }
+
+  // чистим прежние куски
   for (const key of STORE_KEYS) {
+    try {
+      const old = await cacheGet(key);
+      const n = (old && old.parts) || 0;
+      for (let i = 0; i < Math.max(n, 60); i++) await cacheDel(key + ':' + i);
+      await cacheDel(key);
+    } catch (e) {}
+  }
+
+  // все магазины одновременно — втрое быстрее
+  await Promise.all(STORE_KEYS.map(async function (key) {
     let list = null;
     try {
       list = await loadStore(key, function (n, note) {
-        $('stats').innerHTML =
-          '<div class="msg msg--warn">Загружаю ' + STORES[key].title + '… <b>' + n + '</b>' +
-          (note ? ' — ' + escapeHtml(note) : '') + '</div>';
+        counts[key] = n; notes[key] = note || ''; paint();
       });
     } catch (e) {
       list = e.partial || null;
       problems.push(STORES[key].title + ': ' + e.message +
-        (list && list.length ? ' (успели загрузить ' + list.length + ')' : ''));
+        (list && list.length ? ' (успели ' + list.length + ')' : ''));
     }
+    if (list && list.length) byStore[key] = list;
+    else if (!list) problems.push(STORES[key].title + ': данные не получены');
+  }));
 
-    if (list && list.length) {
-      byStore[key] = list;
-      try {
-        await cacheSet(key, { products: list.map(slim), savedAt: Date.now() });
-      } catch (e) {
-        problems.push(STORES[key].title + ': загружен, но НЕ сохранился на устройстве — ' +
-          e.message + '. После обновления страницы пропадёт.');
-      }
-    } else if (!list) {
-      problems.push(STORES[key].title + ': оставил прежние данные');
-    }
-
-    done++;
-    prog.firstElementChild.style.width = (done / STORE_KEYS.length * 100) + '%';
-  }
-
+  prog.firstElementChild.style.width = '100%';
   cacheAge = Date.now();
   buildGroups();
-  showStats();
   applyFilter();
 
+  // сразу показываем, что реально легло на диск
+  await checkCache();
   if (problems.length) {
-    $('stats').innerHTML += '<div class="msg msg--err">Не всё гладко:<br>' +
+    $('stats').innerHTML += '<div class="msg msg--err">Замечания:<br>' +
       problems.map(escapeHtml).join('<br>') + '</div>';
   }
 

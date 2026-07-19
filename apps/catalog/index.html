@@ -254,6 +254,8 @@
         <option value="no">Только без заметки</option>
       </select>
       <button class="btn btn--sm hidden" id="uk-file">Файл для Prom (0)</button>
+      <button class="btn btn--sm" id="find-prom">Искать в Prom</button>
+      <button class="btn btn--ghost btn--sm" id="back-cache">Показать сохранённое</button>
       <button class="btn btn--ghost btn--sm" id="check-stores">Проверить магазины</button>
       <button class="btn btn--ghost btn--sm" id="check-cache">Что в хранилище</button>
       <button class="btn btn--ghost btn--sm" id="cfg-open">Настройки</button>
@@ -1366,6 +1368,82 @@ async function probeUk() {
     '<br><br>Пришлите этот список — настрою рабочий способ.');
 }
 
+/* ===================================================================== */
+/*  Поиск напрямую в Prom — без полной загрузки каталога                  */
+/* ===================================================================== */
+const SEARCH_PARAMS = ['search_term', 'q', 'search', 'query', 'keyword', 'sku'];
+
+/* Выясняем, какой параметр поиска понимает Prom.
+   Приём: сравниваем ответ с поиском и обычный первый десяток.
+   Если совпали — параметр Prom проигнорировал. */
+async function findSearchParam(sampleQuery) {
+  const store = 'blackstreet';
+  const plain = await api('/list', { store: store, limit: 10 });
+  const plainIds = (plain.products || []).map(p => p.id).join(',');
+
+  for (const name of SEARCH_PARAMS) {
+    try {
+      const res = await api('/list', {
+        store: store, limit: 10, params: { [name]: sampleQuery }
+      });
+      const ids = (res.products || []).map(p => p.id).join(',');
+      if (ids !== plainIds) return { name: name, sample: res.products || [] };
+    } catch (e) { /* пробуем следующий */ }
+    await sleep(250);
+  }
+  return null;
+}
+
+async function searchInProm() {
+  const q = $('search').value.trim();
+  if (!q) { showStats(); return; }
+
+  $('stats').innerHTML = '<div class="msg msg--warn">Ищу «' + escapeHtml(q) + '» в Prom…</div>';
+
+  // параметр запоминаем, чтобы не подбирать каждый раз
+  if (!cfg.searchParam) {
+    const found = await findSearchParam(q);
+    if (!found) {
+      $('stats').innerHTML =
+        '<div class="msg msg--err">Prom не поддерживает поиск через API — ' +
+        'ни один из вариантов не сработал (' + SEARCH_PARAMS.join(', ') + ').<br>' +
+        'Придётся пользоваться полной загрузкой: кнопка «Обновить из Prom».</div>';
+      return;
+    }
+    cfg.searchParam = found.name;
+    saveJSON(CFG_KEY, cfg);
+  }
+
+  const found = {};
+  const notes = [];
+  for (const k of STORE_KEYS) {
+    try {
+      const res = await api('/list', {
+        store: k, limit: 100, params: { [cfg.searchParam]: q }
+      });
+      found[k] = res.products || [];
+    } catch (e) {
+      found[k] = [];
+      notes.push(STORES[k].title + ': ' + e.message);
+    }
+    await sleep(150);
+  }
+
+  // подменяем данные только для показа результатов поиска
+  byStore = found;
+  buildGroups();
+  shown = groups;
+  renderList();
+
+  const total = STORE_KEYS.reduce((n, k) => n + (found[k] || []).length, 0);
+  $('stats').innerHTML =
+    '<div class="msg msg--warn">Найдено в Prom по запросу «' + escapeHtml(q) + '»: <b>' + total + '</b> — ' +
+    STORE_KEYS.map(k => STORES[k].title + ': ' + (found[k] || []).length).join(' · ') +
+    (notes.length ? '<br><span style="color:#fca5a5">' + notes.map(escapeHtml).join('<br>') + '</span>' : '') +
+    '<br><span style="opacity:.7">Поиск идёт прямо в Prom, полная загрузка не нужна. ' +
+    'Кнопка «Показать сохранённое» вернёт прежний список.</span></div>';
+}
+
 /* Что реально лежит на устройстве */
 async function checkCache() {
   const out = [];
@@ -1784,6 +1862,19 @@ function escapeHtml(s) {
 const escapeAttr = escapeHtml;
 
 /* Кнопка выгрузки украинских правок */
+if ($('find-prom')) $('find-prom').addEventListener('click', searchInProm);
+if ($('back-cache')) $('back-cache').addEventListener('click', function () {
+  byStore = {};
+  loadFromCache().then(function (ok) {
+    if (!ok) $('stats').innerHTML =
+      '<div class="msg msg--warn">Сохранённых данных нет. Ищите через «Искать в Prom» ' +
+      'или загрузите всё кнопкой «Обновить из Prom».</div>';
+  });
+});
+// Enter в поле поиска — искать в Prom
+$('search').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') searchInProm();
+});
 if ($('check-stores')) $('check-stores').addEventListener('click', checkStores);
 if ($('check-cache')) $('check-cache').addEventListener('click', checkCache);
 

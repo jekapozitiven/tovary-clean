@@ -388,8 +388,19 @@ if (cfg.url && cfg.pass) {
   // сразу показываем сохранённые данные, без обращения к Prom
   $('stats').innerHTML = '<div class="msg msg--warn">Открываю сохранённые данные…</div>';
   loadFromCache().then(function (ok) {
-    if (!ok) $('stats').innerHTML =
-      '<div class="msg msg--warn">Данных пока нет. Нажмите «Обновить из Prom».</div>';
+    if (!ok) {
+      $('stats').innerHTML =
+        '<div class="msg msg--err">Из хранилища ничего не прочиталось:<br>' +
+        cacheReport.map(escapeHtml).join('<br>') +
+        '<br>Нажмите «Обновить из Prom».</div>';
+    } else if (cacheReport.some(s => s.indexOf('✗') === 0)) {
+      $('stats').innerHTML +=
+        '<div class="msg msg--err">Прочитано из хранилища:<br>' +
+        cacheReport.map(escapeHtml).join('<br>') + '</div>';
+    }
+  }).catch(function (e) {
+    $('stats').innerHTML =
+      '<div class="msg msg--err">Сбой чтения хранилища: ' + escapeHtml(e.message) + '</div>';
   });
 }
 
@@ -440,21 +451,18 @@ async function cacheSet(key, value) {
   const savedAt = (value && value.savedAt) || Date.now();
   const parts = Math.max(1, Math.ceil(list.length / CHUNK));
 
-  // сначала убираем прежние куски этого магазина
-  await cacheDel(key);
-  for (let i = 0; i < 60; i++) await cacheDel(key + ':' + i);
-
+  // пишем поверх, ничего заранее не стирая — иначе обрыв оставит пустоту
   for (let i = 0; i < parts; i++) {
     const slice = list.slice(i * CHUNK, (i + 1) * CHUNK);
-    await cachePut(key + ':' + i, { products: slice, savedAt: savedAt, part: i, parts: parts });
+    await cachePut(key + ':' + i, { products: slice, savedAt: savedAt });
   }
   await cachePut(key, { parts: parts, savedAt: savedAt, total: list.length });
 
-  // проверяем, что реально записалось
+  // лишние куски от прежней, более длинной записи
+  for (let i = parts; i < parts + 10; i++) await cacheDel(key + ':' + i);
+
   const back = await cacheGet(key);
-  if (!back || back.total !== list.length) {
-    throw new Error('запись не подтвердилась');
-  }
+  if (!back || back.total !== list.length) throw new Error('запись не подтвердилась');
 }
 
 function cachePut(key, value) {
@@ -515,29 +523,51 @@ function ageText(ts) {
   return Math.round(h / 24) + ' дн назад';
 }
 
-/* Достаём сохранённые данные при открытии страницы */
+/* Достаём сохранённые данные при открытии страницы.
+   Не полагаемся на заголовок — просто сканируем куски подряд. */
+let cacheReport = [];
+
 async function loadFromCache() {
   let any = false, oldest = null;
-  for (const key of STORE_KEYS) {
-    const head = await cacheGet(key);
-    if (!head) continue;
+  cacheReport = [];
 
+  for (const key of STORE_KEYS) {
     let products = [];
-    if (Array.isArray(head.products)) {
-      products = head.products;                 // старый формат, одной записью
-    } else if (head.parts) {
-      for (let i = 0; i < head.parts; i++) {
-        const part = await cacheGet(key + ':' + i);
-        if (part && Array.isArray(part.products)) products = products.concat(part.products);
+    let err = '';
+
+    try {
+      const head = await cacheGet(key);
+
+      if (head && Array.isArray(head.products)) {
+        products = head.products;                       // старый формат
+      } else {
+        // сканируем куски, пока идут подряд
+        let miss = 0;
+        for (let i = 0; i < 200 && miss < 3; i++) {
+          const part = await cacheGet(key + ':' + i);
+          if (part && Array.isArray(part.products) && part.products.length) {
+            products = products.concat(part.products);
+            miss = 0;
+            if (!oldest || (part.savedAt && part.savedAt < oldest)) oldest = part.savedAt;
+          } else {
+            miss++;
+          }
+        }
       }
+      if (head && head.savedAt && (!oldest || head.savedAt < oldest)) oldest = head.savedAt;
+    } catch (e) {
+      err = e.message;
     }
 
     if (products.length) {
       byStore[key] = products;
       any = true;
-      if (!oldest || head.savedAt < oldest) oldest = head.savedAt;
+      cacheReport.push('✓ ' + STORES[key].title + ': ' + products.length);
+    } else {
+      cacheReport.push('✗ ' + STORES[key].title + ': пусто' + (err ? ' (' + err + ')' : ''));
     }
   }
+
   if (!any) return false;
   cacheAge = oldest;
   buildGroups();
@@ -635,15 +665,8 @@ async function loadAll() {
     prog.firstElementChild.style.width = Math.min(97, 2 + total / 700) + '%';
   }
 
-  // чистим прежние куски
-  for (const key of STORE_KEYS) {
-    try {
-      const old = await cacheGet(key);
-      const n = (old && old.parts) || 0;
-      for (let i = 0; i < Math.max(n, 60); i++) await cacheDel(key + ':' + i);
-      await cacheDel(key);
-    } catch (e) {}
-  }
+  // прежние куски не стираем заранее — они перезапишутся по ходу,
+  // а лишние хвосты уберём после успешной загрузки
 
   // все магазины одновременно — втрое быстрее
   await Promise.all(STORE_KEYS.map(async function (key) {
@@ -657,7 +680,12 @@ async function loadAll() {
       problems.push(STORES[key].title + ': ' + e.message +
         (list && list.length ? ' (успели ' + list.length + ')' : ''));
     }
-    if (list && list.length) byStore[key] = list;
+    if (list && list.length) {
+      byStore[key] = list;
+      // подчищаем хвосты от прежней, более длинной выгрузки
+      const parts = Math.ceil(list.length / CHUNK);
+      for (let i = parts; i < parts + 12; i++) { try { await cacheDel(key + ':' + i); } catch (e) {} }
+    }
     else if (!list) problems.push(STORES[key].title + ': данные не получены');
   }));
 
@@ -1204,6 +1232,7 @@ function renderEditor() {
       '<button class="btn btn--ghost btn--sm" id="save-note">Только заметку</button>' +
       '<button class="btn btn--ghost btn--sm" id="raw-btn">Что прислал Prom</button>' +
       '<button class="btn btn--ghost btn--sm" id="probe-uk">Подобрать способ для укр</button>' +
+      '<button class="btn btn--ghost btn--sm" id="probe-dates">Подобрать формат даты</button>' +
     '</div>' +
     '<pre id="raw" class="raw hidden"></pre>' +
     '<div id="ed-msg"></div>';
@@ -1224,6 +1253,7 @@ function renderEditor() {
   });
   $('save').addEventListener('click', saveProduct);
   if ($('probe-uk')) $('probe-uk').addEventListener('click', probeUk);
+  if ($('probe-dates')) $('probe-dates').addEventListener('click', probeDates);
 
   // --- фото ---
   editImages = imgs.map(i => i.url || i.thumbnail_url || '').filter(Boolean);
@@ -1244,14 +1274,22 @@ function renderEditor() {
 let discountDraft = null;
 
 const DATE_FORMATS = [
-  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00') + '+00:00'; },
+  function (d, end) { return d + ' ' + (end ? '23:59:59' : '00:00:00'); },
   function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00'); },
+  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00') + '+00:00'; },
+  function (d, end) { return d + 'T' + (end ? '23:59:59' : '00:00:00') + 'Z'; },
   function (d, end) { return d; },
+  function (d, end) { return d + ' ' + (end ? '23:59' : '00:00'); },
+  function (d, end) {
+    const p = d.split('-');
+    return p[2] + '.' + p[1] + '.' + p[0];
+  },
   function (d, end) {
     const p = d.split('-');
     return p[2] + '.' + p[1] + '.' + p[0] + ' ' + (end ? '23:59:59' : '00:00:00');
   },
-  function (d, end) { return d + ' ' + (end ? '23:59:59' : '00:00:00'); },
+  function (d, end) { return Math.floor(new Date(d + 'T00:00:00Z').getTime() / 1000); },
+  function (d, end) { return new Date(d + 'T00:00:00Z').getTime(); },
 ];
 
 function makeDiscount(draft, fmtIndex) {
@@ -1351,6 +1389,44 @@ const UK_CANDIDATES = [
   { note: 'name + параметр lang=uk', build: (v) => ({ name: v }), lang: 'uk' },
   { note: 'name + параметр lang=ua', build: (v) => ({ name: v }), lang: 'ua' },
 ];
+
+/* Перебор форматов даты — покажет, какой Prom принимает */
+async function probeDates() {
+  if (!current) return;
+  const store = current.store, p = current.product;
+  const box = $('ed-msg');
+  const val = Number(($('e-disc').value || '').trim()) || 100;
+  const from = ($('e-disc-from') || {}).value || '';
+  const to = ($('e-disc-to') || {}).value || '';
+  if (!from || !to) { showMsg(box, 'err', 'Заполните обе даты.'); return; }
+
+  const lines = [];
+  showMsg(box, 'warn', 'Проверяю форматы дат… примерно полминуты.');
+
+  for (let i = 0; i < DATE_FORMATS.length; i++) {
+    const draft = { value: val, type: $('e-disc-type').value, from: from, to: to };
+    const disc = makeDiscount(draft, i);
+    const shown = String(disc.date_start);
+    try {
+      const res = await api('/edit', { store: store, products: [{ id: p.id, discount: disc }] });
+      const errs = res && res.errors;
+      const txt = errs ? JSON.stringify(errs) : '';
+      if (!errs || !Object.keys(errs).length) {
+        lines.push('<b style="color:#6ee7b7">✓ ' + escapeHtml(shown) + ' — ПРИНЯТО</b>');
+      } else if (txt.indexOf('дат') !== -1 || txt.toLowerCase().indexOf('date') !== -1) {
+        lines.push('✗ ' + escapeHtml(shown) + ' — формат не тот');
+      } else {
+        lines.push('✗ ' + escapeHtml(shown) + ' — ' + escapeHtml(txt.slice(0, 120)));
+      }
+    } catch (e) {
+      lines.push('✗ ' + escapeHtml(shown) + ' — ' + escapeHtml(e.message.slice(0, 100)));
+    }
+    await sleep(350);
+  }
+
+  showMsg(box, 'warn', '<b>Форматы дат для скидки:</b><br>' + lines.join('<br>') +
+    '<br><br>Пришлите этот список — встрою рабочий.');
+}
 
 async function probeUk() {
   if (!current) return;

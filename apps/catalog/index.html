@@ -255,6 +255,7 @@
       </select>
       <button class="btn btn--sm hidden" id="uk-file">Файл для Prom (0)</button>
       <button class="btn btn--ghost btn--sm" id="check-stores">Проверить магазины</button>
+      <button class="btn btn--ghost btn--sm" id="check-cache">Что в хранилище</button>
       <button class="btn btn--ghost btn--sm" id="cfg-open">Настройки</button>
       <button class="btn btn--ghost btn--sm" id="wipe" title="Стереть сохранённые данные">Очистить</button>
     </div>
@@ -429,14 +430,52 @@ function slim(p) {
   return o;
 }
 
+/* Пишем по кускам — большой единой записью браузеры давятся */
+const CHUNK = 2000;
+
 async function cacheSet(key, value) {
-  const d = await db();
-  await new Promise(function (resolve, reject) {
-    const tx = d.transaction(DB_STORE, 'readwrite');
-    tx.objectStore(DB_STORE).put(value, key);
-    tx.oncomplete = resolve;
-    tx.onerror = function () { reject(tx.error); };
-    tx.onabort = function () { reject(tx.error || new Error('запись прервана')); };
+  const list = (value && value.products) || [];
+  const savedAt = (value && value.savedAt) || Date.now();
+  const parts = Math.max(1, Math.ceil(list.length / CHUNK));
+
+  // сначала убираем прежние куски этого магазина
+  await cacheDel(key);
+  for (let i = 0; i < 60; i++) await cacheDel(key + ':' + i);
+
+  for (let i = 0; i < parts; i++) {
+    const slice = list.slice(i * CHUNK, (i + 1) * CHUNK);
+    await cachePut(key + ':' + i, { products: slice, savedAt: savedAt, part: i, parts: parts });
+  }
+  await cachePut(key, { parts: parts, savedAt: savedAt, total: list.length });
+
+  // проверяем, что реально записалось
+  const back = await cacheGet(key);
+  if (!back || back.total !== list.length) {
+    throw new Error('запись не подтвердилась');
+  }
+}
+
+function cachePut(key, value) {
+  return db().then(function (d) {
+    return new Promise(function (resolve, reject) {
+      const tx = d.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(value, key);
+      tx.oncomplete = resolve;
+      tx.onerror = function () { reject(tx.error || new Error('ошибка записи')); };
+      tx.onabort = function () { reject(tx.error || new Error('запись прервана (нет места?)')); };
+    });
+  });
+}
+
+function cacheDel(key) {
+  return db().then(function (d) {
+    return new Promise(function (resolve) {
+      const tx = d.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).delete(key);
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+      tx.onabort = resolve;
+    });
   });
 }
 
@@ -478,11 +517,23 @@ function ageText(ts) {
 async function loadFromCache() {
   let any = false, oldest = null;
   for (const key of STORE_KEYS) {
-    const rec = await cacheGet(key);
-    if (rec && Array.isArray(rec.products) && rec.products.length) {
-      byStore[key] = rec.products;
+    const head = await cacheGet(key);
+    if (!head) continue;
+
+    let products = [];
+    if (Array.isArray(head.products)) {
+      products = head.products;                 // старый формат, одной записью
+    } else if (head.parts) {
+      for (let i = 0; i < head.parts; i++) {
+        const part = await cacheGet(key + ':' + i);
+        if (part && Array.isArray(part.products)) products = products.concat(part.products);
+      }
+    }
+
+    if (products.length) {
+      byStore[key] = products;
       any = true;
-      if (!oldest || rec.savedAt < oldest) oldest = rec.savedAt;
+      if (!oldest || head.savedAt < oldest) oldest = head.savedAt;
     }
   }
   if (!any) return false;
@@ -1315,6 +1366,44 @@ async function probeUk() {
     '<br><br>Пришлите этот список — настрою рабочий способ.');
 }
 
+/* Что реально лежит на устройстве */
+async function checkCache() {
+  const out = [];
+  for (const k of STORE_KEYS) {
+    try {
+      const head = await cacheGet(k);
+      if (!head) { out.push('✗ ' + STORES[k].title + ' — в хранилище пусто'); continue; }
+      let n = 0;
+      if (Array.isArray(head.products)) n = head.products.length;
+      else if (head.parts) {
+        for (let i = 0; i < head.parts; i++) {
+          const part = await cacheGet(k + ':' + i);
+          if (part && part.products) n += part.products.length;
+        }
+      }
+      const okMark = (head.total && n === head.total) ? '✓' : '⚠';
+      out.push(okMark + ' ' + STORES[k].title + ' — сохранено ' + n +
+        (head.total ? ' из ' + head.total : '') +
+        (head.savedAt ? ', ' + new Date(head.savedAt).toLocaleString() : ''));
+    } catch (e) {
+      out.push('✗ ' + STORES[k].title + ' — ошибка чтения: ' + escapeHtml(e.message));
+    }
+  }
+
+  // сколько места разрешил браузер
+  let quota = '';
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const q = await navigator.storage.estimate();
+      quota = 'Занято ' + (q.usage / 1048576).toFixed(1) + ' МБ из ' +
+              (q.quota / 1048576).toFixed(0) + ' МБ разрешённых.';
+    }
+  } catch (e) {}
+
+  $('stats').innerHTML = '<div class="msg msg--warn"><b>Хранилище на устройстве:</b><br>' +
+    out.join('<br>') + (quota ? '<br><br>' + quota : '') + '</div>';
+}
+
 /* Быстрая проверка: что отвечает Prom по каждому магазину */
 async function checkStores() {
   const out = [];
@@ -1696,6 +1785,7 @@ const escapeAttr = escapeHtml;
 
 /* Кнопка выгрузки украинских правок */
 if ($('check-stores')) $('check-stores').addEventListener('click', checkStores);
+if ($('check-cache')) $('check-cache').addEventListener('click', checkCache);
 
 if ($('uk-file')) {
   $('uk-file').addEventListener('click', function () {

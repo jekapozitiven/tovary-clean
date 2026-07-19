@@ -1624,6 +1624,31 @@ async function sendUkFile() {
     out.join('<br>') + '<br><br>Пришлите этот список.</div>';
 }
 
+/* Отправляем украинские поля одного товара сразу — через импорт.
+   Prom принимает такой файл методом /products/import_file. */
+async function sendUkNow(store, p) {
+  const k = store + ':' + p.id;
+  const row = ukQueue[k];
+  if (!row) return null;
+
+  const csv = buildUkRows([row]);
+  const res = await api('/import', { store: store, csv: csv });
+  const ok = (res.tried || []).find(t => t.status >= 200 && t.status < 300);
+  if (!ok) {
+    const first = (res.tried || [])[0] || {};
+    throw new Error('Prom не принял импорт: ' + first.status + ' ' + String(first.answer).slice(0, 150));
+  }
+
+  // приняли — из очереди убираем
+  delete ukQueue[k];
+  saveJSON(UK_KEY, ukQueue);
+  updateUkButton();
+
+  let importId = '';
+  try { importId = (JSON.parse(ok.answer) || {}).id || ''; } catch (e) {}
+  return importId;
+}
+
 /* Что реально лежит на устройстве */
 async function checkCache() {
   const out = [];
@@ -1799,7 +1824,7 @@ async function saveProduct() {
   // украинские тексты API не принимает — копим их в файл импорта
   if (nameUkNew !== null && nameUkNew !== nameUkOld) {
     queueUk(store, p, { name_uk: nameUkNew });
-    changes.push('назва укр → в файл');
+    changes.push('назва укр');
   }
 
   const descRuNew = $('e-desc').value;
@@ -1814,7 +1839,7 @@ async function saveProduct() {
   }
   if (descUkNew !== null && descUkNew !== descUkOld) {
     queueUk(store, p, { description_uk: descUkNew });
-    changes.push('опис укр → в файл');
+    changes.push('опис укр');
   }
 
   // ключевые слова
@@ -1831,7 +1856,7 @@ async function saveProduct() {
   }
   if (kwUkNew !== null && kwUkNew !== kwUkOld) {
     queueUk(store, p, { keywords_uk: kwUkNew });
-    changes.push('ключові слова укр → в файл');
+    changes.push('ключові слова укр');
   }
 
   // скидка — трогаем только если её действительно меняли
@@ -1901,10 +1926,18 @@ async function saveProduct() {
   showMsg(box, 'warn', 'Отправляю на Prom…');
   const report = [];
 
+  const hasApiFields = Object.keys(upd).length > 1;   // кроме id есть что менять
+
   try {
     let res = null;
     let fmt = 0;
 
+    if (!hasApiFields) {
+      // менялись только украинские поля — обычная правка не нужна
+      res = { processed_ids: [p.id], errors: {} };
+      lastResponse = res;
+      report.push(STORES[store].title + ': ' + changes.join(', '));
+    } else
     // если Prom ругается на формат даты — пробуем следующий вариант
     while (true) {
       res = await api('/edit', { store: store, products: [upd] });
@@ -1921,7 +1954,7 @@ async function saveProduct() {
     }
 
     // Prom отвечает 200, даже если товар не принят — смотрим, что внутри
-    const okIds = (res && (res.processed_ids || res.processed || [])) || [];
+    const okIds = hasApiFields ? ((res && (res.processed_ids || res.processed || [])) || []) : [p.id];
     const errs  = (res && res.errors) || null;
     const wasOk = Array.isArray(okIds) && okIds.map(String).indexOf(String(p.id)) !== -1;
 
@@ -2010,6 +2043,37 @@ async function saveProduct() {
       '<br><span style="opacity:.7">Prom применяет изменения не мгновенно.</span>' +
       '<br><br><b>Ответ Prom:</b><pre>' + escapeHtml(JSON.stringify(lastResponse, null, 2)) + '</pre>' +
       '<b>Что отправляли:</b><pre>' + escapeHtml(JSON.stringify(upd, null, 2)) + '</pre>');
+
+    // украинские поля — отдельным механизмом, импортом
+    if (ukQueue[store + ':' + p.id]) {
+      try {
+        showMsg(box, 'warn', report.map(escapeHtml).join('<br>') +
+          '<br>Отправляю украинские поля…');
+        const importId = await sendUkNow(store, p);
+        report.push('Украинские поля: отправлены' + (importId ? ' (импорт ' + importId + ')' : ''));
+
+        // сверяем через несколько секунд, что применилось
+        showMsg(box, 'warn', report.map(escapeHtml).join('<br>') + '<br>Проверяю через 6 секунд…');
+        await sleep(6000);
+        try {
+          const fresh = await api('/get', { store: store, id: p.id });
+          const f = (fresh && fresh.product) ? fresh.product : fresh;
+          const nowUk = (f && f.name_multilang && f.name_multilang.uk) || '';
+          if (f) {
+            p.name_multilang = f.name_multilang || p.name_multilang;
+            p.description_multilang = f.description_multilang || p.description_multilang;
+          }
+          report.push(nowUk
+            ? 'Украинское название сейчас: ' + nowUk
+            : 'Украинское название прочитать не удалось');
+        } catch (e) {
+          report.push('Проверить не удалось: ' + e.message);
+        }
+      } catch (e) {
+        report.push('Украинские поля: ' + e.message + ' — остались в очереди, можно скачать файлом');
+      }
+      showMsg(box, 'ok', report.map(escapeHtml).join('<br>'));
+    }
     buildGroups(); applyFilter();
     // обновляем сохранённые данные, чтобы правка не пропала после перезагрузки
     cacheSet(store, { products: byStore[store].map(slim), savedAt: cacheAge || Date.now() });

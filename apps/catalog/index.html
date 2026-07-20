@@ -193,9 +193,16 @@
       <span class="step">Core22: <input type="number" step="0.01" id="step-core22" value="0"> ₴</span>
       <span class="step">Blink: <input type="number" step="0.01" id="step-blink" value="0"> ₴</span>
       <span class="muted">шаг прибавляется к цене Black Street</span>
-      <span class="step">Даты скидки по умолчанию:
+      <span class="step">Обновлять:
+        <label class="chk"><input type="checkbox" id="up-blackstreet" checked> Black Street</label>
+        <label class="chk"><input type="checkbox" id="up-bonna" checked> Bonna</label>
+        <label class="chk"><input type="checkbox" id="up-core22" checked> Core22</label>
+        <label class="chk"><input type="checkbox" id="up-blink" checked> Blink</label>
+      </span>
+      <span class="step">Скидка: с
         <input type="date" id="def-from" style="width:150px">
-        <input type="date" id="def-to" style="width:150px"></span>
+        по <input type="date" id="def-to" style="width:150px">
+        <b id="def-until" style="color:var(--accent)"></b></span>
     </div>
 
     <!-- Массовая правка -->
@@ -457,7 +464,12 @@ $('step-bonna').value = opts.stepBonna || 0;
 $('step-core22').value = opts.stepCore22 || 0;
 $('step-blink').value = opts.stepBlink || 0;
 $('def-from').value = opts.defFrom || todayStr(0);
-$('def-to').value   = opts.defTo   || todayStr(365);
+$('def-to').value   = opts.defTo || '';
+showUntil();
+STORE_KEYS.forEach(function (k) {
+  const el = $('up-' + k);
+  if (el) el.checked = (opts.update && opts.update[k] !== undefined) ? opts.update[k] : true;
+});
 
 function saveOpts() {
   opts = {
@@ -468,11 +480,34 @@ function saveOpts() {
     stepBlink: Number($('step-blink').value) || 0,
     defFrom: $('def-from').value,
     defTo: $('def-to').value,
+    update: STORE_KEYS.reduce(function (o, k) {
+      const el = $('up-' + k); o[k] = el ? el.checked : true; return o;
+    }, {}),
   };
   saveJSON(OPT_KEY, opts);
 }
 ['opt-variants', 'opt-stores', 'step-bonna', 'step-core22', 'step-blink', 'def-from', 'def-to']
-  .forEach(id => $(id).addEventListener('change', saveOpts));
+  .concat(STORE_KEYS.map(k => 'up-' + k))
+  .forEach(function (id) { const el = $(id); if (el) el.addEventListener('change', saveOpts); });
+['def-from', 'def-to'].forEach(function (id) {
+  const el = $(id);
+  if (el) el.addEventListener('input', showUntil);
+});
+
+const MAX_DISCOUNT_DAYS = 365;   // предел Prom на длительность скидки
+
+/* Даты скидки — ровно те, что выбраны в панели */
+function defStart() { return $('def-from').value || ''; }
+function defEnd()   { return $('def-to').value   || ''; }
+
+function showUntil() {
+  const el = $('def-until');
+  if (!el) return;
+  const a = defStart(), b = defEnd();
+  if (!a || !b) { el.textContent = ''; return; }
+  const days = Math.round((new Date(b) - new Date(a)) / 86400000);
+  el.textContent = days >= 0 ? '(' + days + ' дн.)' : '(конец раньше начала)';
+}
 
 function todayStr(plusDays) {
   const t = new Date(Date.now() + (plusDays || 0) * 86400000);
@@ -508,8 +543,20 @@ async function loadStore(store, onProgress) {
   while (guard++ < 3000) {
     let data = null, tries = 0;
     while (tries++ < 4) {
-      try { data = await api('/list', { store: store, limit: 100, last_id: lastId, offset: out.length }); break; }
+      const lim = (store === 'blink') ? 500 : 100;
+      try { data = await api('/list', { store: store, limit: lim, last_id: lastId, offset: out.length }); break; }
       catch (e) {
+        // магазин упёрся в лимит обращений — прекращаем, но сохраняем загруженное
+        const m = String(e.message || '');
+        if (m.indexOf('429') !== -1 || m.indexOf('limit has been exceeded') !== -1) {
+          try { await flush(); } catch (x) {}
+          const sec = (m.match(/Retry after (\d+)/) || [])[1];
+          const err = new Error('лимит обращений исчерпан' +
+            (sec ? ', повторить через ' + Math.ceil(Number(sec) / 60) + ' мин' : ''));
+          err.partial = out;
+          err.rateLimited = true;
+          throw err;
+        }
         if (tries >= 4) { try { await flush(); } catch (x) {} const err = new Error(e.message); err.partial = out; throw err; }
         onProgress(out.length, 'нет ответа, жду ' + (tries * 5) + ' сек…');
         await sleep(tries * 5000);
@@ -532,7 +579,7 @@ async function loadStore(store, onProgress) {
     lastId = next;
     onProgress(out.length, '');
     if (out.length - savedUpTo >= CHUNK) { try { await flush(); } catch (e) {} }
-    if (added === 0 && batch.length < 100) break;   // конец — только когда новых нет
+    if (added === 0 && batch.length < ((store === 'blink') ? 500 : 100)) break;   // конец — когда новых нет
     await sleep(30);
   }
   await flush();
@@ -553,7 +600,15 @@ async function loadAll() {
     prog.firstElementChild.style.width = Math.min(97, 2 + total / 700) + '%';
   }
 
-  await Promise.all(STORE_KEYS.map(async function (key) {
+  const toUpdate = STORE_KEYS.filter(function (k) {
+    const el = $('up-' + k);
+    return !el || el.checked;
+  });
+  STORE_KEYS.forEach(function (k) {
+    if (toUpdate.indexOf(k) === -1) counts[k] = (byStore[k] || []).length;
+  });
+
+  await Promise.all(toUpdate.map(async function (key) {
     let list = null;
     try {
       list = await loadStore(key, function (n, note) { counts[key] = n; notes[key] = note; paint(); });
@@ -1010,8 +1065,18 @@ async function applyChanges(items, vals, msgBox) {
     if (vals.discount === 'clear') o.discount = null;
     else if (vals.discount && vals.discount.value) {
       // Prom требует даты всегда. Если их не задали — берём значения по умолчанию.
-      const from = vals.discount.from || $('def-from').value || todayStr(0);
-      const to   = vals.discount.to   || $('def-to').value   || todayStr(365);
+      const from = vals.discount.from || defStart();
+      const to   = vals.discount.to   || defEnd();
+      if (!from || !to) {
+        throw new Error('Укажите даты скидки — оба поля в панели сверху');
+      }
+      // Prom не принимает слишком длинный период скидки
+      const days = Math.round((new Date(to) - new Date(from)) / 86400000);
+      if (isNaN(days) || days < 0) throw new Error('Дата окончания скидки раньше начала');
+      if (days > MAX_DISCOUNT_DAYS) {
+        throw new Error('Скидка не может длиться дольше ' + MAX_DISCOUNT_DAYS +
+          ' дней. Сейчас задано ' + days + '. Поправьте «Даты скидки по умолчанию».');
+      }
       o.discount = {
         value: vals.discount.value, type: vals.discount.type,
         date_start: promDate(from), date_end: promDate(to),
@@ -1121,8 +1186,8 @@ function runMass(clearDiscount) {
   if (vals.price != null) what.push('цена ' + vals.price);
   if (clearDiscount) what.push('убрать скидку');
   else if (vals.discount) {
-    const f = vals.discount.from || $('def-from').value || todayStr(0);
-    const t = vals.discount.to   || $('def-to').value   || todayStr(365);
+    const f = vals.discount.from || defStart();
+    const t = vals.discount.to   || defEnd();
     what.push('скидка ' + vals.discount.value + ($('m-disc-type').value === 'percent' ? '%' : '₴') +
               ' (с ' + promDate(f) + ' по ' + promDate(t) + ')');
   }

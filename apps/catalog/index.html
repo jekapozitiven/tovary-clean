@@ -532,7 +532,7 @@ async function loadStore(store, onProgress) {
     lastId = next;
     onProgress(out.length, '');
     if (out.length - savedUpTo >= CHUNK) { try { await flush(); } catch (e) {} }
-    if (batch.length < 100) break;
+    if (added === 0 && batch.length < 100) break;   // конец — только когда новых нет
     await sleep(30);
   }
   await flush();

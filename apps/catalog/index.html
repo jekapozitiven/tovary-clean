@@ -508,8 +508,7 @@ async function loadStore(store, onProgress) {
   while (guard++ < 3000) {
     let data = null, tries = 0;
     while (tries++ < 4) {
-      const lim = (store === 'blink') ? 500 : 100;
-      try { data = await api('/list', { store: store, limit: lim, last_id: lastId, offset: out.length }); break; }
+      try { data = await api('/list', { store: store, limit: 100, last_id: lastId, offset: out.length }); break; }
       catch (e) {
         if (tries >= 4) { try { await flush(); } catch (x) {} const err = new Error(e.message); err.partial = out; throw err; }
         onProgress(out.length, 'нет ответа, жду ' + (tries * 5) + ' сек…');
@@ -517,7 +516,15 @@ async function loadStore(store, onProgress) {
       }
     }
     const batch = (data && data.products) || [];
-    if (!batch.length) break;
+    if (!batch.length) {
+      if (data && data.horoshop_answer && !out.length) {
+        const err = new Error('Хорошоп ответил: ' +
+          JSON.stringify(data.horoshop_answer).slice(0, 300));
+        err.partial = out;
+        throw err;
+      }
+      break;
+    }
     let added = 0;
     for (const p of batch) { if (seen.has(p.id)) continue; seen.add(p.id); out.push(p); added++; }
     const next = batch[batch.length - 1].id;
@@ -525,7 +532,7 @@ async function loadStore(store, onProgress) {
     lastId = next;
     onProgress(out.length, '');
     if (out.length - savedUpTo >= CHUNK) { try { await flush(); } catch (e) {} }
-    if (batch.length < ((store === 'blink') ? 500 : 100)) break;
+    if (batch.length < 100) break;
     await sleep(30);
   }
   await flush();

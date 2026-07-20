@@ -191,6 +191,7 @@
         Дублировать на другие магазины</label>
       <span class="step">Bonna-shop: <input type="number" step="0.01" id="step-bonna" value="0"> ₴</span>
       <span class="step">Core22: <input type="number" step="0.01" id="step-core22" value="0"> ₴</span>
+      <span class="step">Blink: <input type="number" step="0.01" id="step-blink" value="0"> ₴</span>
       <span class="muted">шаг прибавляется к цене Black Street</span>
     </div>
 
@@ -248,12 +249,13 @@ const loadJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ??
 const saveJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 let cfg  = loadJSON(CFG_KEY, { url: '', pass: '' });
-let opts = loadJSON(OPT_KEY, { variants: true, stores: true, stepBonna: 0, stepCore22: 0 });
+let opts = loadJSON(OPT_KEY, { variants: true, stores: true, stepBonna: 0, stepCore22: 0, stepBlink: 0 });
 
 const STORES = {
   blackstreet: { title: 'Black Street', suffix: ''     },
   bonna:       { title: 'Bonna-shop',   suffix: ' (B)' },
   core22:      { title: 'Core22',       suffix: ' (С)' },
+  blink:       { title: 'Blink',        suffix: ''     },   // сайт на Хорошопе
 };
 const STORE_KEYS = Object.keys(STORES);
 const MAIN = 'blackstreet';
@@ -450,6 +452,7 @@ $('opt-variants').checked = !!opts.variants;
 $('opt-stores').checked = !!opts.stores;
 $('step-bonna').value = opts.stepBonna || 0;
 $('step-core22').value = opts.stepCore22 || 0;
+$('step-blink').value = opts.stepBlink || 0;
 
 function saveOpts() {
   opts = {
@@ -457,14 +460,16 @@ function saveOpts() {
     stores: $('opt-stores').checked,
     stepBonna: Number($('step-bonna').value) || 0,
     stepCore22: Number($('step-core22').value) || 0,
+    stepBlink: Number($('step-blink').value) || 0,
   };
   saveJSON(OPT_KEY, opts);
 }
-['opt-variants', 'opt-stores', 'step-bonna', 'step-core22']
+['opt-variants', 'opt-stores', 'step-bonna', 'step-core22', 'step-blink']
   .forEach(id => $(id).addEventListener('change', saveOpts));
 
-const stepFor = (store) => store === 'bonna' ? (Number($('step-bonna').value) || 0)
-                        : store === 'core22' ? (Number($('step-core22').value) || 0) : 0;
+const stepFor = (store) => store === 'bonna'  ? (Number($('step-bonna').value)  || 0)
+                        : store === 'core22' ? (Number($('step-core22').value) || 0)
+                        : store === 'blink'  ? (Number($('step-blink').value)  || 0) : 0;
 
 /* ===================================================================== */
 /*  Загрузка из Prom                                                      */
@@ -964,7 +969,8 @@ async function applyChanges(items, vals, msgBox) {
   const useStores = $('opt-stores').checked;
 
   // собираем задания по магазинам
-  const jobs = { blackstreet: [], bonna: [], core22: [] };
+  const jobs = {};
+  STORE_KEYS.forEach(k => { jobs[k] = []; });
   const seen = new Set();
 
   function addJob(store, prod, price) {
@@ -992,7 +998,7 @@ async function applyChanges(items, vals, msgBox) {
     list.forEach(pr => addJob(it.store, pr, vals.price != null ? vals.price : null));
 
     if (useStores && it.store === MAIN) {
-      for (const st of ['bonna', 'core22']) {
+      for (const st of STORE_KEYS.filter(k => k !== MAIN)) {
         const step = stepFor(st);
         list.forEach(function (pr) {
           const twin = findTwin(st, pr);

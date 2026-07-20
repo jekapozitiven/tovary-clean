@@ -193,6 +193,9 @@
       <span class="step">Core22: <input type="number" step="0.01" id="step-core22" value="0"> ₴</span>
       <span class="step">Blink: <input type="number" step="0.01" id="step-blink" value="0"> ₴</span>
       <span class="muted">шаг прибавляется к цене Black Street</span>
+      <span class="step">Даты скидки по умолчанию:
+        <input type="date" id="def-from" style="width:150px">
+        <input type="date" id="def-to" style="width:150px"></span>
     </div>
 
     <!-- Массовая правка -->
@@ -453,6 +456,8 @@ $('opt-stores').checked = !!opts.stores;
 $('step-bonna').value = opts.stepBonna || 0;
 $('step-core22').value = opts.stepCore22 || 0;
 $('step-blink').value = opts.stepBlink || 0;
+$('def-from').value = opts.defFrom || todayStr(0);
+$('def-to').value   = opts.defTo   || todayStr(365);
 
 function saveOpts() {
   opts = {
@@ -461,11 +466,19 @@ function saveOpts() {
     stepBonna: Number($('step-bonna').value) || 0,
     stepCore22: Number($('step-core22').value) || 0,
     stepBlink: Number($('step-blink').value) || 0,
+    defFrom: $('def-from').value,
+    defTo: $('def-to').value,
   };
   saveJSON(OPT_KEY, opts);
 }
-['opt-variants', 'opt-stores', 'step-bonna', 'step-core22', 'step-blink']
+['opt-variants', 'opt-stores', 'step-bonna', 'step-core22', 'step-blink', 'def-from', 'def-to']
   .forEach(id => $(id).addEventListener('change', saveOpts));
+
+function todayStr(plusDays) {
+  const t = new Date(Date.now() + (plusDays || 0) * 86400000);
+  const p = (x) => (x < 10 ? '0' + x : '' + x);
+  return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate());
+}
 
 const stepFor = (store) => store === 'bonna'  ? (Number($('step-bonna').value)  || 0)
                         : store === 'core22' ? (Number($('step-core22').value) || 0)
@@ -495,7 +508,8 @@ async function loadStore(store, onProgress) {
   while (guard++ < 3000) {
     let data = null, tries = 0;
     while (tries++ < 4) {
-      try { data = await api('/list', { store: store, limit: 100, last_id: lastId, offset: out.length }); break; }
+      const lim = (store === 'blink') ? 500 : 100;
+      try { data = await api('/list', { store: store, limit: lim, last_id: lastId, offset: out.length }); break; }
       catch (e) {
         if (tries >= 4) { try { await flush(); } catch (x) {} const err = new Error(e.message); err.partial = out; throw err; }
         onProgress(out.length, 'нет ответа, жду ' + (tries * 5) + ' сек…');
@@ -511,7 +525,7 @@ async function loadStore(store, onProgress) {
     lastId = next;
     onProgress(out.length, '');
     if (out.length - savedUpTo >= CHUNK) { try { await flush(); } catch (e) {} }
-    if (added === 0 && batch.length < 100) break;
+    if (batch.length < ((store === 'blink') ? 500 : 100)) break;
     await sleep(30);
   }
   await flush();
@@ -686,7 +700,14 @@ function groupPickable(g) {
   const store = (g.stores[MAIN] && g.stores[MAIN].length) ? MAIN
               : STORE_KEYS.find(k => (g.stores[k] || []).length);
   if (!store) return [];
-  return g.stores[store].map(p => ({ store: store, p: p }));
+  const arr = g.stores[store];
+  // берём только главный товар — самый короткий по названию.
+  // Разновидности подхватит переключатель «Применять ко всем разновидностям».
+  let mainIdx = 0;
+  for (let i = 1; i < arr.length; i++) {
+    if ((arr[i].name || '').length < (arr[mainIdx].name || '').length) mainIdx = i;
+  }
+  return [{ store: store, p: arr[mainIdx] }];
 }
 
 function updateMass() {
@@ -981,10 +1002,12 @@ async function applyChanges(items, vals, msgBox) {
     if (price != null) o.price = Math.round(price * 100) / 100;
     if (vals.discount === 'clear') o.discount = null;
     else if (vals.discount && vals.discount.value) {
-      if (!vals.discount.from || !vals.discount.to) throw new Error('Для скидки нужны обе даты');
+      // Prom требует даты всегда. Если их не задали — берём значения по умолчанию.
+      const from = vals.discount.from || $('def-from').value || todayStr(0);
+      const to   = vals.discount.to   || $('def-to').value   || todayStr(365);
       o.discount = {
         value: vals.discount.value, type: vals.discount.type,
-        date_start: promDate(vals.discount.from), date_end: promDate(vals.discount.to),
+        date_start: promDate(from), date_end: promDate(to),
       };
     }
     if (vals.presence) o.presence = vals.presence;
@@ -1090,7 +1113,12 @@ function runMass(clearDiscount) {
   const what = [];
   if (vals.price != null) what.push('цена ' + vals.price);
   if (clearDiscount) what.push('убрать скидку');
-  else if (vals.discount) what.push('скидка ' + vals.discount.value + ($('m-disc-type').value === 'percent' ? '%' : '₴'));
+  else if (vals.discount) {
+    const f = vals.discount.from || $('def-from').value || todayStr(0);
+    const t = vals.discount.to   || $('def-to').value   || todayStr(365);
+    what.push('скидка ' + vals.discount.value + ($('m-disc-type').value === 'percent' ? '%' : '₴') +
+              ' (с ' + promDate(f) + ' по ' + promDate(t) + ')');
+  }
   if (vals.presence) what.push('наличие');
   if (vals.status) what.push($('m-status').value === 'draft' ? 'скрыть' : 'опубликовать');
   if (!what.length) { alert('Задайте, что менять'); return; }

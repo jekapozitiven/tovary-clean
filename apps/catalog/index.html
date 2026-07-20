@@ -495,7 +495,7 @@ async function loadStore(store, onProgress) {
   while (guard++ < 3000) {
     let data = null, tries = 0;
     while (tries++ < 4) {
-      try { data = await api('/list', { store: store, limit: 100, last_id: lastId }); break; }
+      try { data = await api('/list', { store: store, limit: 100, last_id: lastId, offset: out.length }); break; }
       catch (e) {
         if (tries >= 4) { try { await flush(); } catch (x) {} const err = new Error(e.message); err.partial = out; throw err; }
         onProgress(out.length, 'нет ответа, жду ' + (tries * 5) + ' сек…');

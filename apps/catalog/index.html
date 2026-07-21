@@ -230,7 +230,8 @@
         <select class="w-sel" id="m-status">
           <option value="">не менять</option>
           <option value="on_display">Опубликован</option>
-          <option value="draft">Скрыт</option>
+          <option value="hidden">Скрыт (приховані)</option>
+          <option value="draft">Черновик</option>
         </select></label>
       <button class="btn" id="m-apply">Применить к выбранным</button>
       <button class="btn btn--ghost btn--sm" id="m-clear-disc">Убрать скидку</button>
@@ -271,7 +272,7 @@ const STORE_KEYS = Object.keys(STORES);
 const MAIN = 'blackstreet';
 
 const STATUS_RU = {
-  on_display: 'опубликован', draft: 'скрыт', not_on_display: 'не показывается',
+  on_display: 'опубликован', hidden: 'скрыт', draft: 'черновик', hidden: 'скрыт', not_on_display: 'не показывается',
   deleted: 'удалён', approved: 'одобрен', editing_required: 'требует правки',
   waiting_for_moderation: 'на модерации',
 };
@@ -373,8 +374,8 @@ function cacheDel(key) {
 }
 
 /* В хранилище — только нужное для списка */
-const KEEP = ['id', 'external_id', 'name', 'sku', 'price', 'presence', 'status',
-              'discount', 'variation_group_id', 'quantity_in_stock'];
+const KEEP = ['id', 'external_id', 'name', 'sku', 'article', 'price', 'old_price',
+              'presence', 'status', 'discount', 'variation_group_id', 'quantity_in_stock'];
 function slim(p) {
   const o = {};
   for (const k of KEEP) if (p[k] !== undefined) o[k] = p[k];
@@ -826,28 +827,21 @@ function renderList() {
       for (let i = 1; i < arr.length; i++) if (clean(arr[i].name).length < clean(arr[mainIdx].name).length) mainIdx = i;
       const mainName = clean(arr[mainIdx].name);
 
-      const rows = arr.map(function (p, pi) {
-        const key = pickKey(k, p);
-        let size;
-        if (pi === mainIdx) size = 'основной';
-        else {
-          const c = clean(p.name);
-          size = (mainName && c.indexOf(mainName) === 0) ? (c.slice(mainName.length).trim() || '—') : c;
-          if (size.length > 10) size = size.slice(0, 10) + '…';
-        }
-        const active = (current && current.store === k && current.product.id === p.id) ? ' is-active' : '';
-        return '<div class="kid' + active + '">' +
-          '<input type="checkbox" class="kid__chk" data-key="' + escapeAttr(key) + '"' +
-            (picked.has(key) ? ' checked' : '') + '>' +
-          '<button class="kid__btn" data-g="' + gi + '" data-s="' + k + '" data-i="' + pi + '">' +
-            '<span class="dot ' + (isVisible(p) ? 'dot-on' : 'dot-off') + '"></span>' +
-            '<span class="kid__size">' + escapeHtml(size) + '</span>' +
-            '<span class="kid__name">' + escapeHtml(p.name || '') + '</span>' +
-            priceCell(p) +
-          '</button></div>';
-      }).join('');
+      // показываем только главный товар — разновидности меняются вместе с ним
+      const p = arr[mainIdx];
+      const key = pickKey(k, p);
+      const active = (current && current.store === k && current.product.id === p.id) ? ' is-active' : '';
+      const rows = '<div class="kid' + active + '">' +
+        '<input type="checkbox" class="kid__chk" data-key="' + escapeAttr(key) + '"' +
+          (picked.has(key) ? ' checked' : '') + '>' +
+        '<button class="kid__btn" data-g="' + gi + '" data-s="' + k + '" data-i="' + mainIdx + '">' +
+          '<span class="dot ' + (isVisible(p) ? 'dot-on' : 'dot-off') + '"></span>' +
+          '<span class="kid__name">' + escapeHtml(p.name || '') + '</span>' +
+          priceCell(p) +
+        '</button></div>';
 
-      return '<div class="sb"><div class="sb__t"><b>' + STORES[k].title + '</b> — ' + arr.length + ' шт.</div>' +
+      const more = arr.length > 1 ? ' <span style="opacity:.6">+ ' + (arr.length - 1) + ' размер.</span>' : '';
+      return '<div class="sb"><div class="sb__t"><b>' + STORES[k].title + '</b>' + more + '</div>' +
              rows + '</div>';
     }).join('');
 
@@ -914,14 +908,48 @@ function siblingsOf(store, p) {
   return arr.filter(x => x.id !== p.id && baseSku(x.sku, store) === base);
 }
 
+/* Метка разновидности: «L», «XL», «» для основной.
+   У Prom берём из названия, у Blink — из хвоста артикула. */
+function sizeToken(store, p) {
+  if (store === 'blink') {
+    const parent = p.sku || '';
+    const art = String(p.article || p.id || '');
+    const tail = (parent && art.indexOf(parent) === 0) ? art.slice(parent.length) : '';
+    return tail.replace(/^[-_. ]+/, '').trim().toUpperCase();
+  }
+  // Prom: отличие названия от самого короткого в группе
+  const family = [p].concat(siblingsOf(store, p));
+  const suf = (STORES[store].suffix || '').trim();
+  const clean = (n) => {
+    let x = (n || '').trim();
+    if (suf && x.endsWith(suf)) x = x.slice(0, -suf.length).trim();
+    return x;
+  };
+  let base = clean(family[0].name);
+  for (const x of family) { const c = clean(x.name); if (c.length < base.length) base = c; }
+  const me = clean(p.name);
+  return (base && me.indexOf(base) === 0 ? me.slice(base.length) : '').trim().toUpperCase();
+}
+
 function findTwin(store, src) {
   const arr = byStore[store] || [];
+
+  // 1) точная связь по внутреннему коду (для магазинов Prom)
   const exact = arr.find(p => p.external_id != null && String(p.external_id) === String(src.id));
   if (exact) return exact;
+
+  // 2) по общему артикулу
   const base = baseSku(src.sku, MAIN);
   const same = arr.filter(p => baseSku(p.sku, store) === base);
   if (!same.length) return null;
   if (same.length === 1) return same[0];
+
+  // 3) среди них — по размеру
+  const want = sizeToken(MAIN, src);
+  const byToken = same.find(p => sizeToken(store, p) === want);
+  if (byToken) return byToken;
+
+  // 4) запасной вариант — по названию
   const withSuf = ((src.name || '') + STORES[store].suffix).trim().toLowerCase();
   const plain = (src.name || '').trim().toLowerCase();
   return same.find(p => (p.name || '').trim().toLowerCase() === withSuf)
@@ -966,9 +994,11 @@ function renderEditor() {
 
   const presenceOpts = Object.keys(PRESENCE_RU)
     .map(v => '<option value="' + v + '"' + (p.presence === v ? ' selected' : '') + '>' + PRESENCE_RU[v] + '</option>').join('');
-  const extra = (['on_display', 'draft'].indexOf(p.status || '') === -1)
+  const extra = (['on_display', 'draft', 'not_on_display'].indexOf(p.status || '') === -1)
     ? '<option value="' + escapeAttr(p.status || '') + '" selected>' +
       escapeHtml(STATUS_RU[p.status] || p.status || '—') + ' (сейчас)</option>' : '';
+  // список известных статусов для проверки extra
+  void 0;
 
   const sibs = siblingsOf(store, p);
 
@@ -1001,7 +1031,8 @@ function renderEditor() {
       '<label class="f"><span>Наличие</span><select id="e-presence">' + presenceOpts + '</select></label>' +
       '<label class="f"><span>Видимость</span><select id="e-status">' +
         '<option value="on_display"' + (p.status === 'on_display' ? ' selected' : '') + '>Опубликован</option>' +
-        '<option value="draft"' + (p.status === 'draft' ? ' selected' : '') + '>Скрыт</option>' +
+        '<option value="hidden"' + (p.status === 'hidden' ? ' selected' : '') + '>Скрыт (приховані)</option>' +
+        '<option value="draft"' + (p.status === 'draft' ? ' selected' : '') + '>Черновик</option>' +
         extra + '</select></label>' +
     '</div>' +
 
@@ -1062,25 +1093,28 @@ async function applyChanges(items, vals, msgBox) {
     seen.add(key);
     const o = { id: prod.id };
     if (price != null) o.price = Math.round(price * 100) / 100;
-    if (vals.discount === 'clear') o.discount = null;
-    else if (vals.discount && vals.discount.value) {
-      // Prom требует даты всегда. Если их не задали — берём значения по умолчанию.
-      const from = vals.discount.from || defStart();
-      const to   = vals.discount.to   || defEnd();
-      if (!from || !to) {
-        throw new Error('Укажите даты скидки — оба поля в панели сверху');
+
+    // На Blink скидок нет — туда уходит только цена, наличие и видимость
+    if (store !== 'blink') {
+      if (vals.discount === 'clear') {
+        o.discount = null;
+      } else if (vals.discount && vals.discount.value) {
+        const from = vals.discount.from || defStart();
+        const to   = vals.discount.to   || defEnd();
+        if (!from || !to) {
+          throw new Error('Укажите даты скидки — оба поля в панели сверху');
+        }
+        const days = Math.round((new Date(to) - new Date(from)) / 86400000);
+        if (isNaN(days) || days < 0) throw new Error('Дата окончания скидки раньше начала');
+        if (days > MAX_DISCOUNT_DAYS) {
+          throw new Error('Скидка не может длиться дольше ' + MAX_DISCOUNT_DAYS +
+            ' дней. Сейчас задано ' + days + '.');
+        }
+        o.discount = {
+          value: vals.discount.value, type: vals.discount.type,
+          date_start: promDate(from), date_end: promDate(to),
+        };
       }
-      // Prom не принимает слишком длинный период скидки
-      const days = Math.round((new Date(to) - new Date(from)) / 86400000);
-      if (isNaN(days) || days < 0) throw new Error('Дата окончания скидки раньше начала');
-      if (days > MAX_DISCOUNT_DAYS) {
-        throw new Error('Скидка не может длиться дольше ' + MAX_DISCOUNT_DAYS +
-          ' дней. Сейчас задано ' + days + '. Поправьте «Даты скидки по умолчанию».');
-      }
-      o.discount = {
-        value: vals.discount.value, type: vals.discount.type,
-        date_start: promDate(from), date_end: promDate(to),
-      };
     }
     if (vals.presence) o.presence = vals.presence;
     if (vals.status) o.status = vals.status;
@@ -1128,18 +1162,25 @@ async function applyChanges(items, vals, msgBox) {
         });
         const errs = res && res.errors;
         if (errs && Object.keys(errs).length) {
-          report.push(STORES[store].title + ': ' + decodeMsg(JSON.stringify(errs)).slice(0, 200));
+          report.push(escapeHtml(STORES[store].title + ': ' +
+            decodeMsg(JSON.stringify(errs)).slice(0, 400)));
+        } else if (!ok.length) {
+          // отклонил всё, но причину не назвал — показываем ответ и запрос целиком
+          report.push(STORES[store].title + ': Prom ответил без объяснения.<br>' +
+            '<b>Его ответ:</b> ' + escapeHtml(decodeMsg(JSON.stringify(res)).slice(0, 400)) + '<br>' +
+            '<b>Отправляли:</b> ' + escapeHtml(JSON.stringify(chunk[0].upd).slice(0, 400)));
         }
       } catch (e) {
         failed += chunk.length;
-        report.push(STORES[store].title + ': ' + e.message);
+        report.push(escapeHtml(STORES[store].title + ': ' + e.message));
       }
       showMsg(msgBox, 'warn', 'Отправлено ' + (done + failed) + ' из ' + total + '…');
     }
-    report.unshift(STORES[store].title + ': принято ' + done + (failed ? ', отклонено ' + failed : ''));
+    report.unshift(escapeHtml(STORES[store].title + ': принято ' + done +
+      (failed ? ', отклонено ' + failed : '')));
   }
 
-  showMsg(msgBox, 'ok', report.map(escapeHtml).join('<br>'));
+  showMsg(msgBox, 'ok', report.join('<br>'));
   buildGroups(); applyFilter();
   if (current) renderEditor();
 }
@@ -1192,15 +1233,15 @@ function runMass(clearDiscount) {
               ' (с ' + promDate(f) + ' по ' + promDate(t) + ')');
   }
   if (vals.presence) what.push('наличие');
-  if (vals.status) what.push($('m-status').value === 'draft' ? 'скрыть' : 'опубликовать');
+  if (vals.status) {
+    what.push(vals.status === 'on_display' ? 'опубликовать'
+            : vals.status === 'hidden' ? 'скрыть' : vals.status === 'draft' ? 'в черновики' : 'опубликовать');
+  }
   if (!what.length) { alert('Задайте, что менять'); return; }
 
   const extra = [];
   if ($('opt-variants').checked) extra.push('со всеми разновидностями');
   if ($('opt-stores').checked) extra.push('и на других магазинах');
-
-  if (!confirm('Изменить ' + items.length + ' позиций?\n\n' + what.join(', ') +
-               (extra.length ? '\n' + extra.join(' ') : ''))) return;
 
   applyChanges(items, vals, $('stats')).catch(function (e) {
     showMsg($('stats'), 'err', escapeHtml(e.message));

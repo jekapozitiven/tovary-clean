@@ -192,7 +192,7 @@
       <span class="step">Bonna-shop: <input type="number" step="0.01" id="step-bonna" value="0"> ₴</span>
       <span class="step">Core22: <input type="number" step="0.01" id="step-core22" value="0"> ₴</span>
       <span class="step">Blink: <input type="number" step="0.01" id="step-blink" value="0"> ₴</span>
-      <span class="muted">шаг прибавляется к цене Black Street</span>
+      <span class="muted">шаг прибавляется к цене со скидкой Black Street</span>
       <span class="step">Обновлять:
         <label class="chk"><input type="checkbox" id="up-blackstreet" checked> Black Street</label>
         <label class="chk"><input type="checkbox" id="up-bonna" checked> Bonna</label>
@@ -490,6 +490,17 @@ function saveOpts() {
 ['opt-variants', 'opt-stores', 'step-bonna', 'step-core22', 'step-blink', 'def-from', 'def-to']
   .concat(STORE_KEYS.map(k => 'up-' + k))
   .forEach(function (id) { const el = $(id); if (el) el.addEventListener('change', saveOpts); });
+
+// «Дублировать на другие магазины» работает как «выбрать все»:
+// включён — отмечаем все магазины; выключен — снимаем всё, кроме выбранного (Black Street).
+$('opt-stores').addEventListener('change', function () {
+  const all = $('opt-stores').checked;
+  STORE_KEYS.forEach(function (k) {
+    const el = $('up-' + k);
+    if (el) el.checked = all || (k === MAIN);
+  });
+  saveOpts();
+});
 ['def-from', 'def-to'].forEach(function (id) {
   const el = $(id);
   if (el) el.addEventListener('input', showUntil);
@@ -1089,49 +1100,78 @@ async function applyChanges(items, vals, msgBox) {
   STORE_KEYS.forEach(k => { jobs[k] = []; });
   const seen = new Set();
 
-  function addJob(store, prod, price) {
+  const money = (x) => Math.round(x * 100) / 100;
+
+  // есть ли реальная скидка (не «убрать» и со значением)
+  const hasDisc = !!(vals.discount && vals.discount !== 'clear' && vals.discount.value);
+  const discType = hasDisc ? vals.discount.type : null;
+
+  // цена со скидкой при базовой «цене без скидки»
+  function finalPrice(base) {
+    if (!hasDisc) return base;
+    if (discType === 'percent') return money(base * (1 - vals.discount.value / 100));
+    return money(base - vals.discount.value);            // сумма (₴)
+  }
+
+  // проверка дат скидки (один раз пригодится для всех Prom-магазинов)
+  function discountObj(step) {
+    const from = vals.discount.from || defStart();
+    const to   = vals.discount.to   || defEnd();
+    if (!from || !to) throw new Error('Укажите даты скидки — оба поля в панели сверху');
+    const days = Math.round((new Date(to) - new Date(from)) / 86400000);
+    if (isNaN(days) || days < 0) throw new Error('Дата окончания скидки раньше начала');
+    if (days > MAX_DISCOUNT_DAYS) {
+      throw new Error('Скидка не может длиться дольше ' + MAX_DISCOUNT_DAYS +
+        ' дней. Сейчас задано ' + days + '.');
+    }
+    // Шаг переносим на ЦЕНУ СО СКИДКОЙ: «цену без скидки» держим одинаковой,
+    // а разницу между магазинами прячем в сумму скидки (для типа ₴).
+    let dval = vals.discount.value;
+    if (step && discType === 'amount') dval = money(vals.discount.value - step);
+    return { value: dval, type: vals.discount.type, date_start: promDate(from), date_end: promDate(to) };
+  }
+
+  // store — магазин, prod — товар, step — шаг цены этого магазина (0 у выбранного)
+  function addJob(store, prod, step) {
     const key = store + ':' + prod.id;
     if (seen.has(key)) return;
     seen.add(key);
     const o = { id: prod.id };
-    if (price != null) o.price = Math.round(price * 100) / 100;
 
-    // На Blink скидок нет — туда уходит только цена, наличие и видимость
-    if (store !== 'blink') {
-      if (vals.discount === 'clear') {
-        o.discount = null;
-      } else if (vals.discount && vals.discount.value) {
-        const from = vals.discount.from || defStart();
-        const to   = vals.discount.to   || defEnd();
-        if (!from || !to) {
-          throw new Error('Укажите даты скидки — оба поля в панели сверху');
-        }
-        const days = Math.round((new Date(to) - new Date(from)) / 86400000);
-        if (isNaN(days) || days < 0) throw new Error('Дата окончания скидки раньше начала');
-        if (days > MAX_DISCOUNT_DAYS) {
-          throw new Error('Скидка не может длиться дольше ' + MAX_DISCOUNT_DAYS +
-            ' дней. Сейчас задано ' + days + '.');
-        }
-        o.discount = {
-          value: vals.discount.value, type: vals.discount.type,
-          date_start: promDate(from), date_end: promDate(to),
-        };
+    if (store === 'blink') {
+      // Хорошоп: скидок нет. В «Цена» и «Старая цена» — одна и та же
+      // ИТОГОВАЯ цена (цена со скидкой + шаг Blink).
+      if (vals.price != null) {
+        const p = money(finalPrice(vals.price) + step);
+        o.price = p;
+        o.old_price = p;
       }
+    } else {
+      // Prom: «цена без скидки» одинаковая на всех магазинах.
+      if (vals.price != null) {
+        // при скидке-сумме шаг уходит в скидку → цену без скидки не двигаем;
+        // без скидки (или процент) шаг прибавляем к самой цене.
+        o.price = (step && hasDisc && discType === 'amount')
+          ? money(vals.price)
+          : money(vals.price + step);
+      }
+      if (vals.discount === 'clear') o.discount = null;
+      else if (hasDisc) o.discount = discountObj(step);
     }
+
     if (vals.presence) o.presence = vals.presence;
     if (vals.status) o.status = vals.status;
     if (Object.keys(o).length > 1) jobs[store].push({ upd: o, ref: prod });
   }
 
   for (const it of items) {
-    const base = (vals.price != null) ? vals.price : it.product.price;
     const list = [it.product].concat(useVariants ? siblingsOf(it.store, it.product) : []);
-    list.forEach(pr => addJob(it.store, pr, vals.price != null ? vals.price : null));
+    // выбранный магазин — без шага
+    list.forEach(pr => addJob(it.store, pr, 0));
 
     if (useStores && it.store === MAIN) {
       for (const st of STORE_KEYS.filter(k => k !== MAIN)) {
         const step = stepFor(st);
-        const newPrice = (vals.price != null) ? (vals.price + step) : null;
 
         if (st === 'blink') {
           // На Blink размеры не совпадают по букве — берём все с тем же
@@ -1139,20 +1179,26 @@ async function applyChanges(items, vals, msgBox) {
           const twin = findTwin(st, it.product);
           if (twin) {
             const family = [twin].concat(useVariants ? siblingsOf(st, twin) : []);
-            family.forEach(pr => addJob(st, pr, newPrice));
+            family.forEach(pr => addJob(st, pr, step));
           }
         } else {
           list.forEach(function (pr) {
             const twin = findTwin(st, pr);
-            if (twin) addJob(st, twin, newPrice);
+            if (twin) addJob(st, twin, step);
           });
         }
       }
     }
   }
 
+  // «Обновлять»: снятые магазины не трогаем (ни запись, ни отчёт)
+  STORE_KEYS.forEach(function (k) {
+    const el = $('up-' + k);
+    if (el && !el.checked) jobs[k] = [];
+  });
+
   const total = STORE_KEYS.reduce((n, k) => n + jobs[k].length, 0);
-  if (!total) { showMsg(msgBox, 'warn', 'Нечего менять — не заданы значения.'); return; }
+  if (!total) { showMsg(msgBox, 'warn', 'Нечего менять — не выбран ни один магазин или не заданы значения.'); return; }
 
   showMsg(msgBox, 'warn', 'Отправляю ' + total + ' позиций…');
   const report = [];

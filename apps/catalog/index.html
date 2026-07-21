@@ -1028,8 +1028,10 @@ function renderEditor() {
     '<div class="final" id="e-final"></div>' +
 
     '<div class="grid2" style="margin-top:12px;">' +
-      '<label class="f"><span>Наличие</span><select id="e-presence">' + presenceOpts + '</select></label>' +
+      '<label class="f"><span>Наличие</span><select id="e-presence">' +
+        '<option value="">не менять</option>' + presenceOpts + '</select></label>' +
       '<label class="f"><span>Видимость</span><select id="e-status">' +
+        '<option value="">не менять</option>' +
         '<option value="on_display"' + (p.status === 'on_display' ? ' selected' : '') + '>Опубликован</option>' +
         '<option value="hidden"' + (p.status === 'hidden' ? ' selected' : '') + '>Скрыт (приховані)</option>' +
         '<option value="draft"' + (p.status === 'draft' ? ' selected' : '') + '>Черновик</option>' +
@@ -1129,12 +1131,22 @@ async function applyChanges(items, vals, msgBox) {
     if (useStores && it.store === MAIN) {
       for (const st of STORE_KEYS.filter(k => k !== MAIN)) {
         const step = stepFor(st);
-        list.forEach(function (pr) {
-          const twin = findTwin(st, pr);
-          if (!twin) return;
-          const newPrice = (vals.price != null) ? (vals.price + step) : null;
-          addJob(st, twin, newPrice);
-        });
+        const newPrice = (vals.price != null) ? (vals.price + step) : null;
+
+        if (st === 'blink') {
+          // На Blink размеры не совпадают по букве — берём все с тем же
+          // родительским артикулом, что и у найденной пары.
+          const twin = findTwin(st, it.product);
+          if (twin) {
+            const family = [twin].concat(useVariants ? siblingsOf(st, twin) : []);
+            family.forEach(pr => addJob(st, pr, newPrice));
+          }
+        } else {
+          list.forEach(function (pr) {
+            const twin = findTwin(st, pr);
+            if (twin) addJob(st, twin, newPrice);
+          });
+        }
       }
     }
   }

@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0b">
+<title>Клонирование товаров — Товары</title>
+
+<link rel="icon" href="../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="../../favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+<link rel="stylesheet" href="../../assets/portal.css">
+
+<style>
+  .wrap { max-width: 1500px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: var(--radius); padding: clamp(16px, 3vw, 24px); margin-bottom: 14px; }
+  .panel h2 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+  .panel .sub { margin: 0 0 16px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+
+  label.f { display: block; margin-bottom: 12px; }
+  label.f > span { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    width: 100%; font-family: var(--font); font-size: 14px; color: var(--text);
+    background: #0e0e10; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 9px 12px; }
+  input:focus, select:focus { outline: none; border-color: var(--border-hover); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+         padding: 9px 17px; font-size: 14px; font-weight: 700; font-family: var(--font);
+         color: #0a0a0b; background: var(--accent); border: none; border-radius: 999px;
+         cursor: pointer; transition: opacity .15s, transform .1s; }
+  .btn:hover { opacity: .9; } .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn--ghost { color: var(--text); background: transparent; border: 1px solid var(--border); }
+  .btn--sm { padding: 7px 13px; font-size: 13px; }
+
+  .toolbar { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .toolbar .search { flex: 1; min-width: 200px; }
+  .toolbar select, .toolbar input[type=text] { width: auto; }
+  .muted { font-size: 12.5px; color: var(--text-faint); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+  @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .progress { height: 3px; background: #1e1e22; border-radius: 999px; overflow: hidden; margin-bottom: 10px; }
+  .progress i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+
+  .list { max-height: 68vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .row { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: none; }
+  .row:hover { background: var(--panel-hover); }
+  .row__chk { width: 16px; height: 16px; flex: none; accent-color: var(--accent); cursor: pointer; }
+  .row__img { width: 40px; height: 40px; flex: none; border-radius: 6px; object-fit: cover;
+              background: #17171a; border: 1px solid var(--border); }
+  .row__body { flex: 1; min-width: 0; }
+  .row__name { display: block; font-size: 13.5px; font-weight: 600;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row__meta { display: block; font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin-left: 6px; }
+  .tag-new { color: #6ee7b7; background: rgba(52,211,153,.12); }
+  .tag-dup { color: var(--text-faint); background: #1a1a1d; }
+
+  .msg { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.55; margin-top: 10px; }
+  .msg--ok   { background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.25); color: #6ee7b7; }
+  .msg--err  { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.25); color: #fca5a5; }
+  .msg--warn { background: rgba(214,242,74,.06); border: 1px solid rgba(214,242,74,.2); color: var(--text-dim); }
+  .msg pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; opacity: .85; }
+
+  table.prev { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+  table.prev th, table.prev td { text-align: left; padding: 6px 9px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.prev th { color: var(--text-faint); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  table.prev code { color: var(--accent); }
+
+  pre.raw { max-height: 60vh; overflow: auto; background: #0e0e10; border: 1px solid var(--border);
+            border-radius: var(--radius-sm); padding: 12px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .empty { padding: 36px 20px; text-align: center; color: var(--text-faint); font-size: 13.5px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand__name">ТОВАРЫ<span class="slash">//</span></div>
+    <div class="brand__sub">Клонирование товаров</div>
+  </div>
+  <a class="home-btn" href="../../index.html"><span class="home-btn__arrow">←</span> Главная</a>
+</header>
+
+<main class="wrap">
+
+  <!-- Подключение -->
+  <div class="panel" id="setup">
+    <h2>Подключение</h2>
+    <p class="sub">Тот же посредник и пароль, что и в «Ценах и наличии» — подхватываются автоматически. Если поля пустые, введите один раз.</p>
+    <div class="grid2">
+      <label class="f"><span>Адрес посредника</span>
+        <input type="text" id="cfg-url" placeholder="https://…workers.dev"></label>
+      <label class="f"><span>Пароль приложения</span>
+        <input type="password" id="cfg-pass" placeholder="••••••••"></label>
+    </div>
+    <button class="btn btn--sm" id="cfg-save">Проверить связь и сохранить</button>
+    <div id="cfg-msg"></div>
+  </div>
+
+  <!-- Рабочая часть -->
+  <div class="panel hidden" id="work">
+    <h2>1. Источник — Black Street</h2>
+    <p class="sub">Отметьте товары, которые нужно продублировать на Bonna-shop и Core22.
+       Данные берутся из общего кэша с «Ценами». Если список пуст — нажмите «Загрузить Black Street».</p>
+
+    <div class="toolbar">
+      <button class="btn btn--sm" id="load">Загрузить Black Street</button>
+      <input type="text" class="search" id="q" placeholder="Поиск по названию или артикулу…">
+      <select id="fcat"><option value="">Все категории</option></select>
+      <button class="btn btn--sm btn--ghost" id="pick-found">Выбрать найденные</button>
+      <button class="btn btn--sm btn--ghost" id="pick-none">Снять всё</button>
+    </div>
+
+    <div class="progress hidden" id="prog"><i></i></div>
+    <div id="stats" class="muted"></div>
+
+    <div class="list" id="list"><div class="empty">Нет данных. Нажмите «Загрузить Black Street».</div></div>
+
+    <div style="margin-top:14px; display:flex; gap:9px; flex-wrap:wrap; align-items:center;">
+      <button class="btn" id="preview">Показать, что создам (<span id="cnt">0</span>)</button>
+      <button class="btn btn--ghost btn--sm" id="diag">Прочитать 1 товар полностью (диагностика)</button>
+    </div>
+    <div id="out"></div>
+  </div>
+
+</main>
+
+<script>
+/* =====================================================================
+   Клонирование товаров. ЭТАП 1: подключение, загрузка Black Street,
+   выбор, предпросмотр клонов, диагностика /get.
+   Создание на Bonna/Core22 (через импорт-файл) — следующий этап,
+   после того как по /get увидим точный формат полей.
+   ===================================================================== */
+
+/* Магазины и суффиксы (кириллическая С в Core22!) */
+var STORES = {
+  blackstreet: { title: 'Black Street', suffix: '' },
+  bonna:       { title: 'Bonna-shop',   suffix: ' (B)' },
+  core22:      { title: 'Core22',        suffix: ' (С)' }, // С = кириллическая С
+};
+var TARGETS = ['bonna', 'core22'];
+var MAIN = 'blackstreet';
+
+/* --- та же конфигурация, что и у «Цен» (общий localStorage-ключ) --- */
+var CFG_KEY = 'tovary:prices:cfg';
+var loadJSON = function (k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
+var saveJSON = function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+var cfg = loadJSON(CFG_KEY, { url: '', pass: '' });
+
+/* --- общий кэш с «Ценами»: IndexedDB tovary-prices / stores --- */
+var DB_NAME = 'tovary-prices', DB_STORE = 'stores', CHUNK = 2000, dbPromise = null;
+
+var $ = function (id) { return document.getElementById(id); };
+var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+var showMsg = function (el, kind, html) { el.innerHTML = '<div class="msg msg--' + kind + '">' + html + '</div>'; };
+function decodeMsg(s) {
+  try { return String(s).replace(/\\u([0-9a-fA-F]{4})/g, function (m, h) { return String.fromCharCode(parseInt(h, 16)); }); }
+  catch (e) { return String(s); }
+}
+
+/* --- посредник --- */
+async function api(route, payload) {
+  if (!cfg.url) throw new Error('Не задан адрес посредника');
+  var res = await fetch(cfg.url.replace(/\/+$/, '') + route, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-App-Password': cfg.pass },
+    body: JSON.stringify(payload || {}),
+  });
+  var data = await res.json().catch(function () { return {}; });
+  if (!res.ok) {
+    var d = data.detail ? '\n' + JSON.stringify(data.detail, null, 2) : '';
+    throw new Error(decodeMsg((data.error || ('Ошибка ' + res.status)) + d));
+  }
+  return data;
+}
+
+/* --- IndexedDB (только чтение и запись Black Street) --- */
+function db() {
+  if (!dbPromise) {
+    dbPromise = new Promise(function (resolve, reject) {
+      var req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = function () {
+        var d = req.result;
+        if (!d.objectStoreNames.contains(DB_STORE)) d.createObjectStore(DB_STORE);
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+  return dbPromise;
+}
+function cacheGet(key) {
+  return db().then(function (d) {
+    return new Promise(function (resolve, reject) {
+      var tx = d.transaction(DB_STORE, 'readonly');
+      var r = tx.objectStore(DB_STORE).get(key);
+      r.onsuccess = function () { resolve(r.result); };
+      r.onerror = function () { reject(r.error); };
+    });
+  });
+}
+function cachePut(key, value) {
+  return db().then(function (d) {
+    return new Promise(function (resolve, reject) {
+      var tx = d.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(value, key);
+      tx.oncomplete = resolve;
+      tx.onerror = function () { reject(tx.error || new Error('ошибка записи')); };
+      tx.onabort = function () { reject(tx.error || new Error('запись прервана')); };
+    });
+  });
+}
+
+/* хранение только нужного (совместимо с «Ценами») */
+var KEEP = ['id', 'external_id', 'name', 'sku', 'article', 'price', 'old_price',
+            'presence', 'status', 'discount', 'variation_group_id', 'quantity_in_stock'];
+function slim(p) {
+  var o = {}; for (var i = 0; i < KEEP.length; i++) { var k = KEEP[i]; if (p[k] !== undefined) o[k] = p[k]; }
+  if (Array.isArray(p.images) && p.images.length) {
+    var im = p.images[0]; o.images = [{ url: im.url, thumbnail_url: im.thumbnail_url }];
+  }
+  if (p.group && typeof p.group === 'object') o.group = { id: p.group.id, name: p.group.name || p.group.caption || '' };
+  else if (p.group_name || p.group_id) o.group = { id: p.group_id || null, name: p.group_name || '' };
+  return o;
+}
+
+/* читаем магазин из общего кэша */
+async function readCache(store) {
+  var products = [], miss = 0;
+  for (var i = 0; i < 400 && miss < 3; i++) {
+    var part = await cacheGet(store + ':' + i);
+    if (part && Array.isArray(part.products) && part.products.length) { products = products.concat(part.products); miss = 0; }
+    else miss++;
+  }
+  return products;
+}
+
+/* =====================================================================
+   Данные и состояние
+   ===================================================================== */
+var bsAll = [];       // все строки Black Street (включая разновидности)
+var bsCards = [];     // сгруппированные карточки (по одному на товар)
+var targetSku = {};   // { bonna:Set(baseSku), core22:Set(baseSku) } — что уже есть
+var picked = new Set();
+var shown = [];
+
+function articleOf(p) { return String(p.article || p.sku || p.external_id || p.id || '').trim(); }
+function groupKey(p) { return p.variation_group_id != null ? 'v' + p.variation_group_id : 'i' + p.id; }
+
+/* убрать суффикс магазина, чтобы сопоставлять с Black Street */
+function baseSku(sku, store) {
+  var s = String(sku || '').trim();
+  var suf = (STORES[store].suffix || '').trim();
+  if (suf && s.slice(-suf.length) === suf) s = s.slice(0, -suf.length).trim();
+  return s;
+}
+
+/* сгруппировать строки в карточки товаров */
+function buildCards() {
+  var map = new Map();
+  for (var i = 0; i < bsAll.length; i++) {
+    var p = bsAll[i], key = groupKey(p);
+    if (!map.has(key)) map.set(key, { base: p, kids: [], cat: (p.group && p.group.name) || '' });
+    var g = map.get(key);
+    g.kids.push(p);
+    // базовым считаем товар, чей id совпадает с variation_group_id, иначе первый
+    if (p.variation_group_id != null && String(p.id) === String(p.variation_group_id)) g.base = p;
+    if (!g.cat && p.group && p.group.name) g.cat = p.group.name;
+  }
+  bsCards = Array.from(map.values());
+}
+
+/* какие baseSku уже заведены на целевых магазинах */
+async function buildTargets() {
+  targetSku = {};
+  for (var t = 0; t < TARGETS.length; t++) {
+    var store = TARGETS[t];
+    var list = await readCache(store);
+    var set = new Set();
+    for (var i = 0; i < list.length; i++) set.add(baseSku(articleOf(list[i]), store));
+    targetSku[store] = set;
+  }
+}
+
+/* статус клонирования карточки: для каждого целевого — новый/дубликат */
+function cloneState(card) {
+  var art = articleOf(card.base);
+  var res = {};
+  for (var t = 0; t < TARGETS.length; t++) {
+    var store = TARGETS[t];
+    res[store] = (targetSku[store] && targetSku[store].has(art)) ? 'dup' : 'new';
+  }
+  return res;
+}
+
+/* =====================================================================
+   Настройка подключения
+   ===================================================================== */
+$('cfg-url').value = cfg.url;
+$('cfg-pass').value = cfg.pass;
+
+$('cfg-save').addEventListener('click', async function () {
+  cfg.url = $('cfg-url').value.trim();
+  cfg.pass = $('cfg-pass').value;
+  showMsg($('cfg-msg'), 'warn', 'Проверяю связь…');
+  try {
+    await api('/ping', {});
+    saveJSON(CFG_KEY, cfg);
+    showMsg($('cfg-msg'), 'ok', 'Связь есть.');
+    $('work').classList.remove('hidden');
+    setTimeout(function () { $('setup').classList.add('hidden'); }, 600);
+    init();
+  } catch (e) {
+    showMsg($('cfg-msg'), 'err', 'Не получилось.<pre>' + escapeHtml(e.message) + '</pre>');
+  }
+});
+
+if (cfg.url && cfg.pass) {
+  $('setup').classList.add('hidden');
+  $('work').classList.remove('hidden');
+  init();
+}
+
+/* =====================================================================
+   Инициализация: читаем кэш
+   ===================================================================== */
+async function init() {
+  try {
+    bsAll = await readCache(MAIN);
+    await buildTargets();
+    if (bsAll.length) { buildCards(); fillCats(); applyFilter(); showStats(); }
+    else $('stats').innerHTML = 'Кэш Black Street пуст. Нажмите «Загрузить Black Street».';
+  } catch (e) {
+    $('stats').innerHTML = '<span style="color:#fca5a5">Сбой чтения кэша: ' + escapeHtml(e.message) + '</span>';
+  }
+}
+
+function showStats() {
+  var t = 'Black Street: ' + bsCards.length + ' товаров (' + bsAll.length + ' позиций с разновидностями). ';
+  t += 'На Bonna уже: ' + ((targetSku.bonna && targetSku.bonna.size) || 0) + ', на Core22: ' + ((targetSku.core22 && targetSku.core22.size) || 0) + '.';
+  $('stats').textContent = t;
+}
+
+function fillCats() {
+  var cats = {};
+  for (var i = 0; i < bsCards.length; i++) { var c = bsCards[i].cat || ''; if (c) cats[c] = (cats[c] || 0) + 1; }
+  var names = Object.keys(cats).sort(function (a, b) { return a.localeCompare(b, 'ru'); });
+  var sel = $('fcat'), cur = sel.value;
+  sel.innerHTML = '<option value="">Все категории (' + bsCards.length + ')</option>' +
+    names.map(function (n) { return '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + ' (' + cats[n] + ')</option>'; }).join('');
+  sel.value = cur;
+}
+
+/* =====================================================================
+   Загрузка Black Street из Prom (если кэша нет)
+   ===================================================================== */
+async function loadStore(store, onProgress) {
+  var out = [], seen = new Set(), lastId = null, guard = 0;
+  while (guard++ < 3000) {
+    var data = null, tries = 0;
+    while (tries++ < 4) {
+      try { data = await api('/list', { store: store, limit: 100, last_id: lastId, offset: out.length }); break; }
+      catch (e) {
+        if (tries >= 4) { var err = new Error(e.message); err.partial = out; throw err; }
+        onProgress(out.length, 'нет ответа, жду ' + (tries * 5) + ' сек…');
+        await sleep(tries * 5000);
+      }
+    }
+    var batch = (data && data.products) || [];
+    if (!batch.length) break;
+    var added = 0;
+    for (var i = 0; i < batch.length; i++) { var p = batch[i]; if (seen.has(p.id)) continue; seen.add(p.id); out.push(p); added++; }
+    var next = batch[batch.length - 1].id;
+    if (next === lastId) break;
+    lastId = next;
+    onProgress(out.length, '');
+    // КОНЕЦ: только когда новых нет И страница неполная (защита от обрыва на ~8999)
+    if (added === 0 && batch.length < 100) break;
+    await sleep(30);
+  }
+  return out;
+}
+
+$('load').addEventListener('click', async function () {
+  var btn = this; btn.disabled = true;
+  $('prog').classList.remove('hidden');
+  try {
+    var list = await loadStore(MAIN, function (n) {
+      $('stats').textContent = 'Загружаю Black Street: ' + n + '…';
+      $('prog').firstElementChild.style.width = Math.min(97, 2 + n / 350) + '%';
+    });
+    // сохраняем в общий кэш кусками
+    var savedAt = Date.now(), parts = Math.ceil(list.length / CHUNK);
+    for (var i = 0; i < parts; i++) {
+      var slice = list.slice(i * CHUNK, (i + 1) * CHUNK);
+      await cachePut(MAIN + ':' + i, { products: slice.map(slim), savedAt: savedAt });
+    }
+    await cachePut(MAIN, { parts: parts, savedAt: savedAt, total: list.length });
+    bsAll = list.map(slim);
+    await buildTargets(); buildCards(); fillCats(); applyFilter(); showStats();
+    $('prog').firstElementChild.style.width = '100%';
+  } catch (e) {
+    var partial = e.partial || [];
+    $('stats').innerHTML = '<span style="color:#fca5a5">Прервано: ' + escapeHtml(e.message) + '. Загружено: ' + partial.length + '</span>';
+  }
+  btn.disabled = false;
+  setTimeout(function () { $('prog').classList.add('hidden'); }, 500);
+});
+
+/* =====================================================================
+   Список, фильтр, выбор
+   ===================================================================== */
+function applyFilter() {
+  var q = $('q').value.trim().toLowerCase();
+  var cat = $('fcat').value;
+  shown = bsCards.filter(function (c) {
+    if (cat && (c.cat || '') !== cat) return false;
+    if (!q) return true;
+    var hay = ((c.base.name || '') + ' ' + articleOf(c.base)).toLowerCase();
+    return hay.indexOf(q) !== -1;
+  });
+  render();
+}
+
+function render() {
+  var box = $('list');
+  if (!bsCards.length) { box.innerHTML = '<div class="empty">Нет данных. Нажмите «Загрузить Black Street».</div>'; updateCnt(); return; }
+  if (!shown.length) { box.innerHTML = '<div class="empty">Ничего не найдено.</div>'; updateCnt(); return; }
+  var html = shown.slice(0, 400).map(function (c) {
+    var id = String(c.base.id);
+    var img = (c.base.images && c.base.images[0]) ? (c.base.images[0].thumbnail_url || c.base.images[0].url) : '';
+    var st = cloneState(c);
+    var tags = TARGETS.map(function (t) {
+      return '<span class="tag ' + (st[t] === 'new' ? 'tag-new' : 'tag-dup') + '">' +
+             STORES[t].title + ': ' + (st[t] === 'new' ? 'новый' : 'есть') + '</span>';
+    }).join('');
+    var kidsNote = c.kids.length > 1 ? ' · +' + (c.kids.length - 1) + ' разновид.' : '';
+    return '<div class="row">' +
+      '<input type="checkbox" class="row__chk" data-id="' + escapeHtml(id) + '"' + (picked.has(id) ? ' checked' : '') + '>' +
+      (img ? '<img class="row__img" src="' + escapeHtml(img) + '" loading="lazy">' : '<div class="row__img"></div>') +
+      '<div class="row__body">' +
+        '<span class="row__name">' + escapeHtml(c.base.name || '(без названия)') + '</span>' +
+        '<span class="row__meta">арт. ' + escapeHtml(articleOf(c.base)) + kidsNote + tags + '</span>' +
+      '</div></div>';
+  }).join('');
+  if (shown.length > 400) html += '<div class="muted" style="padding:8px 12px">Показаны первые 400 из ' + shown.length + '. Уточните поиск.</div>';
+  box.innerHTML = html;
+  Array.prototype.forEach.call(box.querySelectorAll('.row__chk'), function (chk) {
+    chk.addEventListener('change', function () {
+      var id = chk.getAttribute('data-id');
+      if (chk.checked) picked.add(id); else picked.delete(id);
+      updateCnt();
+    });
+  });
+  updateCnt();
+}
+function updateCnt() { $('cnt').textContent = picked.size; }
+
+$('q').addEventListener('input', applyFilter);
+$('fcat').addEventListener('change', applyFilter);
+$('pick-found').addEventListener('click', function () {
+  for (var i = 0; i < shown.length; i++) picked.add(String(shown[i].base.id));
+  render();
+});
+$('pick-none').addEventListener('click', function () { picked.clear(); render(); });
+
+function pickedCards() {
+  return bsCards.filter(function (c) { return picked.has(String(c.base.id)); });
+}
+
+/* =====================================================================
+   Предпросмотр клонов
+   ===================================================================== */
+$('preview').addEventListener('click', function () {
+  var cards = pickedCards();
+  if (!cards.length) { showMsg($('out'), 'warn', 'Не выбрано ни одного товара.'); return; }
+  var rows = '', willCreate = 0, willSkip = 0;
+  for (var i = 0; i < cards.length; i++) {
+    var c = cards[i], art = articleOf(c.base), nm = c.base.name || '';
+    var st = cloneState(c);
+    var cells = TARGETS.map(function (t) {
+      if (st[t] === 'dup') { willSkip++; return '<td class="muted">пропуск (уже есть)</td>'; }
+      willCreate++;
+      return '<td><code>' + escapeHtml(art + STORES[t].suffix) + '</code><br>' + escapeHtml(nm + STORES[t].suffix) + '</td>';
+    }).join('');
+    rows += '<tr><td>' + escapeHtml(art) + '<br><span class="muted">' + escapeHtml(nm.slice(0, 40)) + '</span></td>' + cells + '</tr>';
+  }
+  var head = '<tr><th>Black Street</th>' + TARGETS.map(function (t) { return '<th>' + STORES[t].title + '</th>'; }).join('') + '</tr>';
+  $('out').innerHTML =
+    '<div class="msg msg--warn">Будет создано позиций: <b>' + willCreate + '</b>, пропущено (уже есть): <b>' + willSkip + '</b>.<br>' +
+    'Это предпросмотр. Само создание на Bonna/Core22 подключим на следующем шаге — после диагностики формата полей.</div>' +
+    '<table class="prev">' + head + rows + '</table>';
+});
+
+/* =====================================================================
+   Диагностика: читаем 1 товар целиком через /get
+   ===================================================================== */
+$('diag').addEventListener('click', async function () {
+  var cards = pickedCards();
+  var card = cards[0] || shown[0];
+  if (!card) { showMsg($('out'), 'warn', 'Сначала загрузите и выберите товар.'); return; }
+  var id = String(card.base.id);
+  showMsg($('out'), 'warn', 'Читаю товар ' + escapeHtml(id) + ' целиком…');
+  try {
+    var data = await api('/get', { id: id });
+    var prod = data.product || data;
+    var keys = Object.keys(prod).sort();
+    $('out').innerHTML =
+      '<div class="msg msg--ok">Товар прочитан. Поля (' + keys.length + '): ' +
+      escapeHtml(keys.join(', ')) + '</div>' +
+      '<pre class="raw">' + escapeHtml(JSON.stringify(prod, null, 2)) + '</pre>';
+  } catch (e) {
+    showMsg($('out'), 'err', 'Не удалось прочитать.<pre>' + escapeHtml(e.message) + '</pre>');
+  }
+});
+</script>
+</body>
+</html>

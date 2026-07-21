@@ -192,7 +192,7 @@
       <span class="step">Bonna-shop: <input type="number" step="0.01" id="step-bonna" value="0"> ₴</span>
       <span class="step">Core22: <input type="number" step="0.01" id="step-core22" value="0"> ₴</span>
       <span class="step">Blink: <input type="number" step="0.01" id="step-blink" value="0"> ₴</span>
-      <span class="muted">шаг прибавляется к цене со скидкой Black Street</span>
+      <span class="muted">шаг — насколько дешевле цены со скидкой Black Street</span>
       <span class="step">Обновлять:
         <label class="chk"><input type="checkbox" id="up-blackstreet" checked> Black Street</label>
         <label class="chk"><input type="checkbox" id="up-bonna" checked> Bonna</label>
@@ -1171,7 +1171,8 @@ async function applyChanges(items, vals, msgBox) {
 
     if (useStores && it.store === MAIN) {
       for (const st of STORE_KEYS.filter(k => k !== MAIN)) {
-        const step = stepFor(st);
+        // положительный шаг = насколько ДЕШЕВЛЕ Black Street (поэтому минус)
+        const step = -stepFor(st);
 
         if (st === 'blink') {
           // На Blink размеры не совпадают по букве — берём все с тем же

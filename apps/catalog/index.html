@@ -230,7 +230,7 @@
         <select class="w-sel" id="m-status">
           <option value="">не менять</option>
           <option value="on_display">Опубликован</option>
-          <option value="hidden">Скрыт (приховані)</option>
+          <option value="not_on_display">Скрыт (прихований)</option>
           <option value="draft">Черновик</option>
         </select></label>
       <button class="btn" id="m-apply">Применить к выбранным</button>
@@ -272,7 +272,7 @@ const STORE_KEYS = Object.keys(STORES);
 const MAIN = 'blackstreet';
 
 const STATUS_RU = {
-  on_display: 'опубликован', hidden: 'скрыт', draft: 'черновик', hidden: 'скрыт', not_on_display: 'не показывается',
+  on_display: 'опубликован', draft: 'черновик', not_on_display: 'скрыт (прихований)', hidden: 'скрыт',
   deleted: 'удалён', approved: 'одобрен', editing_required: 'требует правки',
   waiting_for_moderation: 'на модерации',
 };
@@ -1033,7 +1033,7 @@ function renderEditor() {
       '<label class="f"><span>Видимость</span><select id="e-status">' +
         '<option value="">не менять</option>' +
         '<option value="on_display"' + (p.status === 'on_display' ? ' selected' : '') + '>Опубликован</option>' +
-        '<option value="hidden"' + (p.status === 'hidden' ? ' selected' : '') + '>Скрыт (приховані)</option>' +
+        '<option value="not_on_display"' + (p.status === 'not_on_display' ? ' selected' : '') + '>Скрыт (прихований)</option>' +
         '<option value="draft"' + (p.status === 'draft' ? ' selected' : '') + '>Черновик</option>' +
         extra + '</select></label>' +
     '</div>' +
@@ -1247,7 +1247,7 @@ function runMass(clearDiscount) {
   if (vals.presence) what.push('наличие');
   if (vals.status) {
     what.push(vals.status === 'on_display' ? 'опубликовать'
-            : vals.status === 'hidden' ? 'скрыть' : vals.status === 'draft' ? 'в черновики' : 'опубликовать');
+            : vals.status === 'not_on_display' ? 'скрыть' : vals.status === 'draft' ? 'в черновики' : 'опубликовать');
   }
   if (!what.length) { alert('Задайте, что менять'); return; }
 

@@ -395,6 +395,14 @@ function getChar(row, cols, patterns) {
   }
   return '';
 }
+// Описание для Blink: заголовки h1-h6 -> абзацы, все размеры шрифта -> 28px
+function cleanDesc(html) {
+  if (!html) return html;
+  var s = String(html);
+  s = s.replace(/<(h[1-6])\b[^>]*>/gi, '<p>').replace(/<\/h[1-6]>/gi, '</p>');
+  s = s.replace(/font-size:\s*\d+(\.\d+)?px/gi, 'font-size:28px');
+  return s;
+}
 function discountedPrice(row) {
   var price = (C.price >= 0) ? parseFloat(row[C.price]) : NaN;
   if (isNaN(price)) return '';
@@ -432,8 +440,8 @@ function buildBlink() {
     var nameRu = String(main[C.name] || ''), nameUa = String(main[C.nameuk] || '');
     var brand = virob >= 0 ? String(main[virob] || '') : '';
     var color = getChar(main, cCols, ['колір', 'цвет']);
-    var descRu = opis >= 0 ? String(main[opis] || '') : '';
-    var descUa = opisuk >= 0 ? String(main[opisuk] || '') : '';
+    var descRu = cleanDesc(opis >= 0 ? String(main[opis] || '') : '');
+    var descUa = cleanDesc(opisuk >= 0 ? String(main[opisuk] || '') : '');
     var pv = specVals[s2];
     for (var j = 0; j < card.idxs.length; j++) {
       var ri = card.idxs[j], r = PROWS[ri], isMain = (ri === card.mainIdx);

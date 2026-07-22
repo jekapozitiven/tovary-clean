@@ -406,6 +406,39 @@ function cleanDesc(html, px) {
   s = s.replace(/font-size:\s*\d+(\.\d+)?px/gi, 'font-size:' + size + 'px');
   return s;
 }
+// Обрезка названия Blink по цвету: оставляем часть до слова-цвета включительно.
+var BLINK_COLORS = [
+  ['біл','бел'], ['чорн','чёрн','черн'], ['сір','сер'], ['син'], ['блакитн','голуб'],
+  ['червон','красн'], ['зелен','зелён'], ['жовт','жёлт','желт'], ['бежев'], ['коричнев'],
+  ['рожев','розов'], ['фіолетов','фиолетов'], ['помаранчев','оранжев'], ['хакі','хаки'],
+  ['графіт','графит'], ['бордов'], ['молочн'], ['оливков'], ['сріблист','серебрист'],
+  ['золот'], ['бірюзов','бирюзов'], ['лавандов'], ['гірчичн','горчичн'],
+  ['смарагдов','изумрудн'], ['теракот'], ['мокко','мокка']
+];
+function normColor(s) { return String(s == null ? '' : s).toLowerCase().trim().split(/\s+/)[0]; }
+function colorStems(colorVal) {
+  var c = normColor(colorVal); if (!c) return [];
+  for (var g = 0; g < BLINK_COLORS.length; g++)
+    for (var k = 0; k < BLINK_COLORS[g].length; k++) if (c.indexOf(BLINK_COLORS[g][k]) === 0) return BLINK_COLORS[g];
+  return [c.length > 4 ? c.slice(0, -2) : c];   // запас: основа неизвестного цвета
+}
+function wordCount(s) { return String(s).trim().split(/\s+/).filter(Boolean).length; }
+function cutByColor(name, colorVal) {
+  if (!name || !colorVal) return name;
+  var stems = colorStems(colorVal); if (!stems.length) return name;
+  var tokens = String(name).split(/\s+/);
+  for (var i = 0; i < tokens.length; i++) {
+    var t = tokens[i].toLowerCase().replace(/[^0-9a-zа-яёіїєґ'’\-]/gi, '');
+    for (var s = 0; s < stems.length; s++) {
+      if (stems[s].length >= 3 && t.indexOf(stems[s]) === 0) {
+        var cand = tokens.slice(0, i + 1).join(' ');
+        return (wordCount(cand) >= 3) ? cand : name;   // слишком коротко — не режем
+      }
+    }
+  }
+  return name;   // цвет не найден — оставляем как есть
+}
+
 function discountedPrice(row) {
   var price = (C.price >= 0) ? parseFloat(row[C.price]) : NaN;
   if (isNaN(price)) return '';
@@ -432,7 +465,7 @@ function buildBlink() {
     return specVals.some(function (v) { return v[fld.name] !== '' && v[fld.name] != null; });
   });
 
-  var out = [];
+  var out = [], titles = [];
   for (var s2 = 0; s2 < selected.length; s2++) {
     var card = selected[s2], main = PROWS[card.mainIdx];
     var parent = String(main[C.code] == null ? '' : main[C.code]).trim();
@@ -441,9 +474,11 @@ function buildBlink() {
       imgs = String(main[C.img] || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean).join(';');
       if (imgs) imgs += ';';
     }
-    var nameRu = String(main[C.name] || ''), nameUa = String(main[C.nameuk] || '');
-    var brand = virob >= 0 ? String(main[virob] || '') : '';
     var color = getChar(main, cCols, ['колір', 'цвет']);
+    var nameRu = cutByColor(String(main[C.name] || ''), color);
+    var nameUa = cutByColor(String(main[C.nameuk] || ''), color);
+    if (titles.length < 12) titles.push({ b: String(main[C.name] || ''), a: nameRu });
+    var brand = virob >= 0 ? String(main[virob] || '') : '';
     var descRu = cleanDesc(opis >= 0 ? String(main[opis] || '') : '', fpx);
     var descUa = cleanDesc(opisuk >= 0 ? String(main[opisuk] || '') : '', fpx);
     var pv = specVals[s2];
@@ -467,7 +502,7 @@ function buildBlink() {
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header].concat(out)), 'Sheet1');
   var bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-  return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), rows: out.length };
+  return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), rows: out.length, titles: titles };
 }
 
 /* Хорошоп-поле характеристики -> возможные названия в Prom (характеристика или колонка).
@@ -526,13 +561,23 @@ $('make').addEventListener('click', async function () {
     savedNote = ok ? '<div class="msg msg--ok">Сохранено в папку (обновлены): ' + names.join(', ') + '.</div>' :
       '<div class="msg msg--warn">В папку записать не удалось — скачайте кнопками ниже.</div>';
   }
+  var tprev = '';
+  if (blink.titles && blink.titles.length) {
+    tprev = '<div class="msg msg--warn"><b>Названия Blink (обрезка по цвету), примеры:</b><br>' +
+      blink.titles.map(function (t) {
+        var changed = (t.a !== t.b);
+        return (changed ? '✂ ' : '• ') + escapeHtml(t.a) +
+          (changed ? ' <span class="muted">(было: ' + escapeHtml(t.b) + ')</span>' : '');
+      }).join('<br>') + '</div>';
+  }
   $('out').innerHTML = savedNote +
     '<div class="files">' +
     fcard('Bonna-shop (Prom)', 'import-bonna.xlsx', bonna.rows) +
     fcard('Core22 (Prom)', 'import-core22.xlsx', core.rows) +
     fcard('Blink (Хорошоп)', 'import-blink.xlsx', blink.rows) +
     '</div>' +
-    '<div class="msg msg--warn">Prom: import-bonna → Bonna, import-core22 → Core22. Хорошоп: import-blink → Blink (товары и характеристики в одном файле).</div>';
+    '<div class="msg msg--warn">Prom: import-bonna → Bonna, import-core22 → Core22. Хорошоп: import-blink → Blink (товары и характеристики в одном файле).</div>' +
+    tprev;
   Array.prototype.forEach.call($('out').querySelectorAll('[data-dl]'), function (b) {
     b.addEventListener('click', function () { var n = b.getAttribute('data-dl'); download(n, window._files[n]); });
   });

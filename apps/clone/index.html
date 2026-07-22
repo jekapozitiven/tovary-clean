@@ -302,25 +302,27 @@ function buildCards() {
   });
 }
 
-/* какие baseSku уже заведены на целевых магазинах */
+/* набор РЕАЛЬНЫХ артикулов, уже заведённых на целевых магазинах */
 async function buildTargets() {
   targetSku = {};
   for (var t = 0; t < TARGETS.length; t++) {
     var store = TARGETS[t];
     var list = await readCache(store);
     var set = new Set();
-    for (var i = 0; i < list.length; i++) set.add(baseSku(articleOf(list[i]), store));
+    for (var i = 0; i < list.length; i++) set.add(articleOf(list[i]).trim());
     targetSku[store] = set;
   }
 }
 
-/* статус клонирования карточки: для каждого целевого — новый/дубликат */
+/* статус: клон существует ТОЛЬКО если на магазине есть артикул ровно с суффиксом
+   (Sta-222 (B) / Sta-222 (С)). Совпадение по базовому артикулу без суффикса — это НЕ клон. */
 function cloneState(card) {
-  var art = articleOf(card.base);
+  var art = articleOf(card.base).trim();
   var res = {};
   for (var t = 0; t < TARGETS.length; t++) {
     var store = TARGETS[t];
-    res[store] = (targetSku[store] && targetSku[store].has(art)) ? 'dup' : 'new';
+    var cloneArt = art + STORES[store].suffix;
+    res[store] = (targetSku[store] && targetSku[store].has(cloneArt)) ? 'dup' : 'new';
   }
   return res;
 }

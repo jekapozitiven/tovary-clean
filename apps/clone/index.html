@@ -406,14 +406,24 @@ function discountedPrice(row) {
 
 function buildBlink() {
   var cCols = charCols();
-  var virob = idx(PH, 'Виробник'), opis = idx(PH, 'Опис'), opisuk = idx(PH, 'Опис_укр');
-  var kw = idx(PH, 'Пошукові_запити'), kwuk = idx(PH, 'Пошукові_запити_укр'), avail = idx(PH, 'Наявність');
-  var out = [];
+  var virob = idx(PH, 'Виробник'), opis = idx(PH, 'Опис'), opisuk = idx(PH, 'Опис_укр'), avail = idx(PH, 'Наявність');
   var selected = cards.filter(function (c) { return picked.has(c.key); });
+
+  // характеристики по товару (из главной строки); включаем только те поля, где есть значение
+  var specVals = [];
   for (var s = 0; s < selected.length; s++) {
-    var card = selected[s], main = PROWS[card.mainIdx];
+    var m0 = PROWS[selected[s].mainIdx], vv = {};
+    for (var f = 0; f < BLINK_SPEC_FIELDS.length; f++) vv[BLINK_SPEC_FIELDS[f].name] = promValueByName(m0, BLINK_SPEC_FIELDS[f].cands, cCols);
+    specVals.push(vv);
+  }
+  var included = BLINK_SPEC_FIELDS.filter(function (fld) {
+    return specVals.some(function (v) { return v[fld.name] !== '' && v[fld.name] != null; });
+  });
+
+  var out = [];
+  for (var s2 = 0; s2 < selected.length; s2++) {
+    var card = selected[s2], main = PROWS[card.mainIdx];
     var parent = String(main[C.code] == null ? '' : main[C.code]).trim();
-    // фото главного, порядок как есть (без смены), через ;
     var imgs = '';
     if (C.img >= 0) {
       imgs = String(main[C.img] || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean).join(';');
@@ -424,7 +434,7 @@ function buildBlink() {
     var color = getChar(main, cCols, ['колір', 'цвет']);
     var descRu = opis >= 0 ? String(main[opis] || '') : '';
     var descUa = opisuk >= 0 ? String(main[opisuk] || '') : '';
-    var kwRu = kw >= 0 ? String(main[kw] || '') : '', kwUa = kwuk >= 0 ? String(main[kwuk] || '') : '';
+    var pv = specVals[s2];
     for (var j = 0; j < card.idxs.length; j++) {
       var ri = card.idxs[j], r = PROWS[ri], isMain = (ri === card.mainIdx);
       var size = getChar(r, cCols, ['розмір', 'размер']);
@@ -435,15 +445,40 @@ function buildBlink() {
       var row = [
         art, parent, parent, nameRu, nameUa, nameRu, nameUa, '', brand, BLINK_SECTION, '',
         price, price, 'UAH', 'да', naly, imgs, '', descRu, descUa, '', '', size, color,
-        '', '', kwRu, kwUa, '', ''
+        '', '', '', '', '', ''
       ];
+      for (var f2 = 0; f2 < included.length; f2++) row.push(pv[included[f2].name]);
       out.push(row);
     }
   }
+  var header = BLINK_HDR.concat(included.map(function (fld) { return fld.name; }));
   var wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([BLINK_HDR].concat(out)), 'Sheet1');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header].concat(out)), 'Sheet1');
   var bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
   return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), rows: out.length };
+}
+
+/* Хорошоп-поле характеристики -> возможные названия в Prom (характеристика или колонка).
+   В файл добавляются только те поля, где нашлось значение. */
+var BLINK_SPEC_FIELDS = [
+  { name: 'Сезон',         cands: ['сезон'] },
+  { name: 'Материал',      cands: ['матеріал','материал','тип тканини','тип ткани','тканина'] },
+  { name: 'Капюшон',       cands: ['капюшон'] },
+  { name: 'Верх',          cands: ['верх'] },
+  { name: 'Производитель', cands: ['країна виробник','країна виробництва','страна производитель'] },
+  { name: 'Тип товару',    cands: ['тип товару','тип товара','вид виробу','вид изделия'] },
+  { name: 'Низ',           cands: ['низ'] },
+];
+
+function normName(s) { return String(s == null ? '' : s).toLowerCase().replace(/[_\-]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function promValueByName(row, cands, cCols) {
+  for (var i = 0; i < cCols.length; i++) {
+    if (cands.indexOf(normName(row[cCols[i]])) !== -1) { var v = row[cCols[i] + 2]; if (v != null && v !== '') return String(v); }
+  }
+  for (var c = 0; c < PH.length; c++) {
+    if (cands.indexOf(normName(PH[c])) !== -1) { var v2 = row[c]; if (v2 != null && v2 !== '') return String(v2); }
+  }
+  return '';
 }
 
 async function saveToDir(name, blob) {
@@ -474,10 +509,9 @@ $('make').addEventListener('click', async function () {
   };
   var savedNote = '';
   if (dirHandle) {
-    var s1 = await saveToDir('import-bonna.xlsx', bonna.blob);
-    var s2 = await saveToDir('import-core22.xlsx', core.blob);
-    var s3 = await saveToDir('import-blink.xlsx', blink.blob);
-    savedNote = (s1 && s2 && s3) ? '<div class="msg msg--ok">Сохранено в папку: import-bonna.xlsx, import-core22.xlsx, import-blink.xlsx (обновлены).</div>' :
+    var ok = true, names = ['import-bonna.xlsx','import-core22.xlsx','import-blink.xlsx'];
+    for (var i = 0; i < names.length; i++) { var r = await saveToDir(names[i], window._files[names[i]]); ok = ok && r; }
+    savedNote = ok ? '<div class="msg msg--ok">Сохранено в папку (обновлены): ' + names.join(', ') + '.</div>' :
       '<div class="msg msg--warn">В папку записать не удалось — скачайте кнопками ниже.</div>';
   }
   $('out').innerHTML = savedNote +
@@ -486,7 +520,7 @@ $('make').addEventListener('click', async function () {
     fcard('Core22 (Prom)', 'import-core22.xlsx', core.rows) +
     fcard('Blink (Хорошоп)', 'import-blink.xlsx', blink.rows) +
     '</div>' +
-    '<div class="msg msg--warn">Prom: import-bonna → Bonna, import-core22 → Core22. Хорошоп: import-blink → Blink.</div>';
+    '<div class="msg msg--warn">Prom: import-bonna → Bonna, import-core22 → Core22. Хорошоп: import-blink → Blink (товары и характеристики в одном файле).</div>';
   Array.prototype.forEach.call($('out').querySelectorAll('[data-dl]'), function (b) {
     b.addEventListener('click', function () { var n = b.getAttribute('data-dl'); download(n, window._files[n]); });
   });

@@ -114,6 +114,8 @@
         <input type="number" id="step-bonna" value="1" step="0.5"></label>
       <label class="f"><span>Core22 дешевле на, грн</span>
         <input type="number" id="step-core22" value="2" step="0.5"></label>
+      <label class="f"><span>Blink: размер шрифта описания, px</span>
+        <input type="number" id="blink-font" value="14" step="1" min="8"></label>
     </div>
 
     <div class="toolbar">
@@ -395,12 +397,13 @@ function getChar(row, cols, patterns) {
   }
   return '';
 }
-// Описание для Blink: заголовки h1-h6 -> абзацы, все размеры шрифта -> 28px
-function cleanDesc(html) {
+// Описание для Blink: заголовки h1-h6 -> абзацы, все размеры шрифта -> заданный px
+function cleanDesc(html, px) {
   if (!html) return html;
+  var size = parseInt(px, 10) || 14;
   var s = String(html);
   s = s.replace(/<(h[1-6])\b[^>]*>/gi, '<p>').replace(/<\/h[1-6]>/gi, '</p>');
-  s = s.replace(/font-size:\s*\d+(\.\d+)?px/gi, 'font-size:28px');
+  s = s.replace(/font-size:\s*\d+(\.\d+)?px/gi, 'font-size:' + size + 'px');
   return s;
 }
 function discountedPrice(row) {
@@ -415,6 +418,7 @@ function discountedPrice(row) {
 function buildBlink() {
   var cCols = charCols();
   var virob = idx(PH, 'Виробник'), opis = idx(PH, 'Опис'), opisuk = idx(PH, 'Опис_укр'), avail = idx(PH, 'Наявність');
+  var fpx = parseInt(($('blink-font') && $('blink-font').value) || '14', 10) || 14;
   var selected = cards.filter(function (c) { return picked.has(c.key); });
 
   // характеристики по товару (из главной строки); включаем только те поля, где есть значение
@@ -440,8 +444,8 @@ function buildBlink() {
     var nameRu = String(main[C.name] || ''), nameUa = String(main[C.nameuk] || '');
     var brand = virob >= 0 ? String(main[virob] || '') : '';
     var color = getChar(main, cCols, ['колір', 'цвет']);
-    var descRu = cleanDesc(opis >= 0 ? String(main[opis] || '') : '');
-    var descUa = cleanDesc(opisuk >= 0 ? String(main[opisuk] || '') : '');
+    var descRu = cleanDesc(opis >= 0 ? String(main[opis] || '') : '', fpx);
+    var descUa = cleanDesc(opisuk >= 0 ? String(main[opisuk] || '') : '', fpx);
     var pv = specVals[s2];
     for (var j = 0; j < card.idxs.length; j++) {
       var ri = card.idxs[j], r = PROWS[ri], isMain = (ri === card.mainIdx);

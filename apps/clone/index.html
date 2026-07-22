@@ -515,7 +515,7 @@ $('diag').addEventListener('click', async function () {
   var id = String(card.base.id);
   showMsg($('out'), 'warn', 'Читаю товар ' + escapeHtml(id) + ' целиком…');
   try {
-    var data = await api('/get', { id: id });
+    var data = await api('/get', { store: MAIN, id: id });
     var prod = data.product || data;
     var keys = Object.keys(prod).sort();
     $('out').innerHTML =

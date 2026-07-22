@@ -147,7 +147,9 @@ var STORES = {
   core22:      { title: 'Core22',        suffix: ' (С)' }, // С = кириллическая С
 };
 var TARGETS = ['bonna', 'core22'];
-var MAIN = 'blackstreet';
+var MAIN = 'blackstreet';     // магазин-источник (для API)
+var OWN_KEY = 'bs_clone';     // свой кэш Black Street с полями разновидностей
+var hasVarInfo = false;       // есть ли is_variation/variation_base_id в данных
 
 /* --- та же конфигурация, что и у «Цен» (общий localStorage-ключ) --- */
 var CFG_KEY = 'tovary:prices:cfg';
@@ -226,7 +228,8 @@ function cachePut(key, value) {
 
 /* хранение только нужного (совместимо с «Ценами») */
 var KEEP = ['id', 'external_id', 'name', 'sku', 'article', 'price', 'old_price',
-            'presence', 'status', 'discount', 'variation_group_id', 'quantity_in_stock'];
+            'presence', 'status', 'discount', 'variation_group_id', 'quantity_in_stock',
+            'is_variation', 'variation_base_id'];
 function slim(p) {
   var o = {}; for (var i = 0; i < KEEP.length; i++) { var k = KEEP[i]; if (p[k] !== undefined) o[k] = p[k]; }
   if (Array.isArray(p.images) && p.images.length) {
@@ -268,19 +271,35 @@ function baseSku(sku, store) {
   return s;
 }
 
-/* сгруппировать строки в карточки товаров */
+/* какой из товаров группы — главный (не разновидность) */
+function pickMain(rows) {
+  // 1) явно помеченный главным
+  var m = rows.filter(function (r) { return r.is_variation === false; });
+  if (m.length) return m[0];
+  // 2) тот, на кого ссылаются размеры через variation_base_id
+  var baseIds = {};
+  for (var i = 0; i < rows.length; i++) if (rows[i].variation_base_id != null) baseIds[String(rows[i].variation_base_id)] = 1;
+  for (var j = 0; j < rows.length; j++) if (baseIds[String(rows[j].id)]) return rows[j];
+  // 3) запасной вариант — товар с самым коротким названием (обычно без размера)
+  return rows.slice().sort(function (a, b) { return String(a.name || '').length - String(b.name || '').length; })[0];
+}
+
+/* сгруппировать строки: одна карточка = главный товар, размеры внутри */
 function buildCards() {
   var map = new Map();
   for (var i = 0; i < bsAll.length; i++) {
     var p = bsAll[i], key = groupKey(p);
-    if (!map.has(key)) map.set(key, { base: p, kids: [], cat: (p.group && p.group.name) || '' });
+    if (!map.has(key)) map.set(key, { rows: [], cat: '' });
     var g = map.get(key);
-    g.kids.push(p);
-    // базовым считаем товар, чей id совпадает с variation_group_id, иначе первый
-    if (p.variation_group_id != null && String(p.id) === String(p.variation_group_id)) g.base = p;
+    g.rows.push(p);
     if (!g.cat && p.group && p.group.name) g.cat = p.group.name;
   }
-  bsCards = Array.from(map.values());
+  bsCards = [];
+  map.forEach(function (g) {
+    var main = pickMain(g.rows);
+    var sizes = g.rows.filter(function (r) { return r !== main; });
+    bsCards.push({ base: main, kids: g.rows, sizes: sizes, cat: g.cat });
+  });
 }
 
 /* какие baseSku уже заведены на целевых магазинах */
@@ -339,7 +358,10 @@ if (cfg.url && cfg.pass) {
    ===================================================================== */
 async function init() {
   try {
-    bsAll = await readCache(MAIN);
+    // сначала свой кэш (с полями разновидностей), потом общий с «Ценами»
+    bsAll = await readCache(OWN_KEY);
+    if (!bsAll.length) bsAll = await readCache(MAIN);
+    hasVarInfo = bsAll.some(function (p) { return p.is_variation !== undefined || p.variation_base_id != null; });
     await buildTargets();
     if (bsAll.length) { buildCards(); fillCats(); applyFilter(); showStats(); }
     else $('stats').innerHTML = 'Кэш Black Street пуст. Нажмите «Загрузить Black Street».';
@@ -349,9 +371,10 @@ async function init() {
 }
 
 function showStats() {
-  var t = 'Black Street: ' + bsCards.length + ' товаров (' + bsAll.length + ' позиций с разновидностями). ';
+  var t = 'Black Street: ' + bsCards.length + ' главных товаров (' + bsAll.length + ' позиций с размерами). ';
   t += 'На Bonna уже: ' + ((targetSku.bonna && targetSku.bonna.size) || 0) + ', на Core22: ' + ((targetSku.core22 && targetSku.core22.size) || 0) + '.';
-  $('stats').textContent = t;
+  $('stats').innerHTML = escapeHtml(t) + (hasVarInfo ? '' :
+    '<br><span style="color:#e0c060">Данные из общего кэша без пометок разновидностей — главный товар определяется приблизительно. Нажмите «Загрузить Black Street» для точного разбора.</span>');
 }
 
 function fillCats() {
@@ -402,14 +425,15 @@ $('load').addEventListener('click', async function () {
       $('stats').textContent = 'Загружаю Black Street: ' + n + '…';
       $('prog').firstElementChild.style.width = Math.min(97, 2 + n / 350) + '%';
     });
-    // сохраняем в общий кэш кусками
+    // сохраняем в свой кэш кусками (не мешая «Ценам»)
     var savedAt = Date.now(), parts = Math.ceil(list.length / CHUNK);
     for (var i = 0; i < parts; i++) {
       var slice = list.slice(i * CHUNK, (i + 1) * CHUNK);
-      await cachePut(MAIN + ':' + i, { products: slice.map(slim), savedAt: savedAt });
+      await cachePut(OWN_KEY + ':' + i, { products: slice.map(slim), savedAt: savedAt });
     }
-    await cachePut(MAIN, { parts: parts, savedAt: savedAt, total: list.length });
+    await cachePut(OWN_KEY, { parts: parts, savedAt: savedAt, total: list.length });
     bsAll = list.map(slim);
+    hasVarInfo = bsAll.some(function (p) { return p.is_variation !== undefined || p.variation_base_id != null; });
     await buildTargets(); buildCards(); fillCats(); applyFilter(); showStats();
     $('prog').firstElementChild.style.width = '100%';
   } catch (e) {
@@ -447,7 +471,7 @@ function render() {
       return '<span class="tag ' + (st[t] === 'new' ? 'tag-new' : 'tag-dup') + '">' +
              STORES[t].title + ': ' + (st[t] === 'new' ? 'новый' : 'есть') + '</span>';
     }).join('');
-    var kidsNote = c.kids.length > 1 ? ' · +' + (c.kids.length - 1) + ' разновид.' : '';
+    var kidsNote = c.sizes.length ? ' · +' + c.sizes.length + ' размер.' : '';
     return '<div class="row">' +
       '<input type="checkbox" class="row__chk" data-id="' + escapeHtml(id) + '"' + (picked.has(id) ? ' checked' : '') + '>' +
       (img ? '<img class="row__img" src="' + escapeHtml(img) + '" loading="lazy">' : '<div class="row__img"></div>') +

@@ -106,7 +106,8 @@
   <!-- 2. Товары -->
   <div class="panel hidden" id="work">
     <h2>2. Товары из выгрузки</h2>
-    <p class="sub">Отметьте товары, которые нужно продублировать на Bonna-shop и Core22.</p>
+    <p class="sub">Отметьте товары, которые нужно продублировать. «Сделать файлы» создаёт три импорта:
+       Bonna-shop и Core22 (Prom) и Blink (Хорошоп).</p>
 
     <div class="steps">
       <label class="f"><span>Bonna дешевле на, грн (в цену со скидкой)</span>
@@ -371,6 +372,80 @@ function buildStore(suffix, step) {
   return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), rows: out.length };
 }
 
+/* =====================================================================
+   Blink (Хорошоп) — отдельный формат (30 колонок, один лист)
+   ===================================================================== */
+var BLINK_HDR = ['Артикул','Родительский артикул','Артикул для отображения на сайте',
+  'Название(RU)','Название(UA)','Название модификации(RU)','Название модификации(UA)',
+  'Алиас','Бренд','Раздел','Дополнительные разделы','Цена','Старая цена','Валюта',
+  'Отображать','Наличие','Фото','Поставщик','Описание товара(RU)','Описание товара(UA)',
+  'Короткое описание(RU)','Короткое описание(UA)','Размеры','Цвет','HTML title(RU)',
+  'HTML title(UA)','META keywords(RU)','META keywords(UA)','META description(RU)','META description(UA)'];
+var BLINK_SECTION = 'Взуття/Весняне взуття';
+
+function charCols() {
+  var res = []; for (var i = 0; i < PH.length; i++) if (PH[i] === 'Назва_Характеристики') res.push(i); return res;
+}
+function getChar(row, cols, patterns) {
+  for (var i = 0; i < cols.length; i++) {
+    var nm = String(row[cols[i]] == null ? '' : row[cols[i]]).toLowerCase();
+    for (var p = 0; p < patterns.length; p++) if (nm.indexOf(patterns[p]) !== -1) {
+      var v = row[cols[i] + 2]; return (v == null ? '' : String(v));   // +2 = Значення_Характеристики
+    }
+  }
+  return '';
+}
+function discountedPrice(row) {
+  var price = (C.price >= 0) ? parseFloat(row[C.price]) : NaN;
+  if (isNaN(price)) return '';
+  var d = (C.disc >= 0) ? parseDisc(row[C.disc]) : { has: false };
+  if (d.has && !d.percent) return round2(price - d.amount);
+  if (d.has && d.percent) return round2(price * (1 - d.amount / 100));
+  return round2(price);
+}
+
+function buildBlink() {
+  var cCols = charCols();
+  var virob = idx(PH, 'Виробник'), opis = idx(PH, 'Опис'), opisuk = idx(PH, 'Опис_укр');
+  var kw = idx(PH, 'Пошукові_запити'), kwuk = idx(PH, 'Пошукові_запити_укр'), avail = idx(PH, 'Наявність');
+  var out = [];
+  var selected = cards.filter(function (c) { return picked.has(c.key); });
+  for (var s = 0; s < selected.length; s++) {
+    var card = selected[s], main = PROWS[card.mainIdx];
+    var parent = String(main[C.code] == null ? '' : main[C.code]).trim();
+    // фото главного, порядок как есть (без смены), через ;
+    var imgs = '';
+    if (C.img >= 0) {
+      imgs = String(main[C.img] || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean).join(';');
+      if (imgs) imgs += ';';
+    }
+    var nameRu = String(main[C.name] || ''), nameUa = String(main[C.nameuk] || '');
+    var brand = virob >= 0 ? String(main[virob] || '') : '';
+    var color = getChar(main, cCols, ['колір', 'цвет']);
+    var descRu = opis >= 0 ? String(main[opis] || '') : '';
+    var descUa = opisuk >= 0 ? String(main[opisuk] || '') : '';
+    var kwRu = kw >= 0 ? String(main[kw] || '') : '', kwUa = kwuk >= 0 ? String(main[kwuk] || '') : '';
+    for (var j = 0; j < card.idxs.length; j++) {
+      var ri = card.idxs[j], r = PROWS[ri], isMain = (ri === card.mainIdx);
+      var size = getChar(r, cCols, ['розмір', 'размер']);
+      var art = isMain ? parent : (parent + (size || ('v' + (j + 1))));
+      var price = discountedPrice(r);
+      var pav = (avail >= 0) ? String(r[avail] || '').trim() : '';
+      var naly = (pav === '-') ? 'Немає в наявності' : 'В наявності';
+      var row = [
+        art, parent, parent, nameRu, nameUa, nameRu, nameUa, '', brand, BLINK_SECTION, '',
+        price, price, 'UAH', 'да', naly, imgs, '', descRu, descUa, '', '', size, color,
+        '', '', kwRu, kwUa, '', ''
+      ];
+      out.push(row);
+    }
+  }
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([BLINK_HDR].concat(out)), 'Sheet1');
+  var bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), rows: out.length };
+}
+
 async function saveToDir(name, blob) {
   if (!dirHandle) return false;
   try {
@@ -391,23 +466,27 @@ $('make').addEventListener('click', async function () {
   var sc = parseFloat($('step-core22').value) || 0;
   var bonna = buildStore(SUF_B, sb);
   var core = buildStore(SUF_C, sc);
+  var blink = buildBlink();
   window._files = {
     'import-bonna.xlsx': bonna.blob,
     'import-core22.xlsx': core.blob,
+    'import-blink.xlsx': blink.blob,
   };
   var savedNote = '';
   if (dirHandle) {
     var s1 = await saveToDir('import-bonna.xlsx', bonna.blob);
     var s2 = await saveToDir('import-core22.xlsx', core.blob);
-    savedNote = (s1 && s2) ? '<div class="msg msg--ok">Сохранено в папку: import-bonna.xlsx, import-core22.xlsx (обновлены).</div>' :
+    var s3 = await saveToDir('import-blink.xlsx', blink.blob);
+    savedNote = (s1 && s2 && s3) ? '<div class="msg msg--ok">Сохранено в папку: import-bonna.xlsx, import-core22.xlsx, import-blink.xlsx (обновлены).</div>' :
       '<div class="msg msg--warn">В папку записать не удалось — скачайте кнопками ниже.</div>';
   }
   $('out').innerHTML = savedNote +
     '<div class="files">' +
-    fcard('Bonna-shop', 'import-bonna.xlsx', bonna.rows) +
-    fcard('Core22', 'import-core22.xlsx', core.rows) +
+    fcard('Bonna-shop (Prom)', 'import-bonna.xlsx', bonna.rows) +
+    fcard('Core22 (Prom)', 'import-core22.xlsx', core.rows) +
+    fcard('Blink (Хорошоп)', 'import-blink.xlsx', blink.rows) +
     '</div>' +
-    '<div class="msg msg--warn">Загрузите каждый файл в импорт соответствующего магазина Prom (Bonna → import-bonna, Core22 → import-core22).</div>';
+    '<div class="msg msg--warn">Prom: import-bonna → Bonna, import-core22 → Core22. Хорошоп: import-blink → Blink.</div>';
   Array.prototype.forEach.call($('out').querySelectorAll('[data-dl]'), function (b) {
     b.addEventListener('click', function () { var n = b.getAttribute('data-dl'); download(n, window._files[n]); });
   });

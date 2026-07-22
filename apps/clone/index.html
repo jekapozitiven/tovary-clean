@@ -10,9 +10,10 @@
 <link rel="icon" type="image/png" href="../../favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
 <link rel="stylesheet" href="../../assets/portal.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
-  .wrap { max-width: 1500px; }
+  .wrap { max-width: 1300px; }
   .panel { background: var(--panel); border: 1px solid var(--border);
            border-radius: var(--radius); padding: clamp(16px, 3vw, 24px); margin-bottom: 14px; }
   .panel h2 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
@@ -20,11 +21,9 @@
 
   label.f { display: block; margin-bottom: 12px; }
   label.f > span { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
-
-  input[type=text], input[type=password], input[type=number], select, textarea {
+  input[type=text], input[type=number], select {
     width: 100%; font-family: var(--font); font-size: 14px; color: var(--text);
-    background: #0e0e10; border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 9px 12px; }
+    background: #0e0e10; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 12px; }
   input:focus, select:focus { outline: none; border-color: var(--border-hover); }
 
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -40,13 +39,13 @@
   .toolbar .search { flex: 1; min-width: 200px; }
   .toolbar select, .toolbar input[type=text] { width: auto; }
   .muted { font-size: 12.5px; color: var(--text-faint); }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
-  @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
+  .row-flex { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
-  .progress { height: 3px; background: #1e1e22; border-radius: 999px; overflow: hidden; margin-bottom: 10px; }
-  .progress i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .steps { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin: 4px 0 2px; }
+  .steps label { margin: 0; }
+  .steps input { width: 120px; }
 
-  .list { max-height: 68vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .list { max-height: 60vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
   .row { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--border); }
   .row:last-child { border-bottom: none; }
   .row:hover { background: var(--panel-hover); }
@@ -57,9 +56,6 @@
   .row__name { display: block; font-size: 13.5px; font-weight: 600;
                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row__meta { display: block; font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
-  .tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin-left: 6px; }
-  .tag-new { color: #6ee7b7; background: rgba(52,211,153,.12); }
-  .tag-dup { color: var(--text-faint); background: #1a1a1d; }
 
   .msg { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.55; margin-top: 10px; }
   .msg--ok   { background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.25); color: #6ee7b7; }
@@ -67,13 +63,12 @@
   .msg--warn { background: rgba(214,242,74,.06); border: 1px solid rgba(214,242,74,.2); color: var(--text-dim); }
   .msg pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; opacity: .85; }
 
-  table.prev { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
-  table.prev th, table.prev td { text-align: left; padding: 6px 9px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  table.prev th { color: var(--text-faint); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-  table.prev code { color: var(--accent); }
+  .files { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .fcard { flex: 1; min-width: 220px; background: #101013; border: 1px solid var(--border-hover);
+           border-radius: var(--radius-sm); padding: 14px 16px; }
+  .fcard h3 { margin: 0 0 4px; font-size: 14px; }
+  .fcard .fmeta { font-size: 12px; color: var(--text-faint); margin-bottom: 10px; }
 
-  pre.raw { max-height: 60vh; overflow: auto; background: #0e0e10; border: 1px solid var(--border);
-            border-radius: var(--radius-sm); padding: 12px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
   .empty { padding: 36px 20px; text-align: center; color: var(--text-faint); font-size: 13.5px; }
   .hidden { display: none !important; }
 </style>
@@ -90,42 +85,49 @@
 
 <main class="wrap">
 
-  <!-- Подключение -->
-  <div class="panel" id="setup">
-    <h2>Подключение</h2>
-    <p class="sub">Тот же посредник и пароль, что и в «Ценах и наличии» — подхватываются автоматически. Если поля пустые, введите один раз.</p>
-    <div class="grid2">
-      <label class="f"><span>Адрес посредника</span>
-        <input type="text" id="cfg-url" placeholder="https://…workers.dev"></label>
-      <label class="f"><span>Пароль приложения</span>
-        <input type="password" id="cfg-pass" placeholder="••••••••"></label>
+  <!-- 1. Загрузка выгрузки -->
+  <div class="panel">
+    <h2>1. Выгрузка Black Street</h2>
+    <p class="sub">Экспортируйте товары из кабинета Black Street (Excel .xlsx, язык полей — украинский).
+       Вставьте ссылку на файл выгрузки и нажмите «Загрузить». Если по ссылке не получится
+       (файл за входом в Prom) — выберите скачанный файл кнопкой ниже.</p>
+
+    <label class="f"><span>Ссылка на выгрузку (.xlsx)</span>
+      <input type="text" id="url" placeholder="https://…/export…xlsx"></label>
+    <div class="row-flex">
+      <button class="btn btn--sm" id="load-url">Загрузить по ссылке</button>
+      <span class="muted">или</span>
+      <button class="btn btn--sm btn--ghost" id="pick-file">Выбрать файл выгрузки</button>
+      <input type="file" id="file" accept=".xlsx" class="hidden">
     </div>
-    <button class="btn btn--sm" id="cfg-save">Проверить связь и сохранить</button>
-    <div id="cfg-msg"></div>
+    <div id="load-msg"></div>
   </div>
 
-  <!-- Рабочая часть -->
+  <!-- 2. Товары -->
   <div class="panel hidden" id="work">
-    <h2>1. Источник — Black Street</h2>
-    <p class="sub">Отметьте товары, которые нужно продублировать на Bonna-shop и Core22.
-       Данные берутся из общего кэша с «Ценами». Если список пуст — нажмите «Загрузить Black Street».</p>
+    <h2>2. Товары из выгрузки</h2>
+    <p class="sub">Отметьте товары, которые нужно продублировать на Bonna-shop и Core22.</p>
+
+    <div class="steps">
+      <label class="f"><span>Bonna дешевле на, грн (в цену со скидкой)</span>
+        <input type="number" id="step-bonna" value="1" step="0.5"></label>
+      <label class="f"><span>Core22 дешевле на, грн</span>
+        <input type="number" id="step-core22" value="2" step="0.5"></label>
+    </div>
 
     <div class="toolbar">
-      <button class="btn btn--sm" id="load">Загрузить Black Street</button>
       <input type="text" class="search" id="q" placeholder="Поиск по названию или артикулу…">
       <select id="fcat"><option value="">Все категории</option></select>
       <button class="btn btn--sm btn--ghost" id="pick-found">Выбрать найденные</button>
       <button class="btn btn--sm btn--ghost" id="pick-none">Снять всё</button>
     </div>
-
-    <div class="progress hidden" id="prog"><i></i></div>
     <div id="stats" class="muted"></div>
+    <div class="list" id="list"><div class="empty">Загрузите выгрузку.</div></div>
 
-    <div class="list" id="list"><div class="empty">Нет данных. Нажмите «Загрузить Black Street».</div></div>
-
-    <div style="margin-top:14px; display:flex; gap:9px; flex-wrap:wrap; align-items:center;">
-      <button class="btn" id="preview">Показать, что создам (<span id="cnt">0</span>)</button>
-      <button class="btn btn--ghost btn--sm" id="diag">Прочитать 1 товар полностью (диагностика)</button>
+    <div class="row-flex" style="margin-top:14px">
+      <button class="btn" id="make">Сделать файлы (<span id="cnt">0</span>)</button>
+      <button class="btn btn--ghost btn--sm" id="pick-dir">Папка для сохранения…</button>
+      <span class="muted" id="dir-name"></span>
     </div>
     <div id="out"></div>
   </div>
@@ -134,424 +136,288 @@
 
 <script>
 /* =====================================================================
-   Клонирование товаров. ЭТАП 1: подключение, загрузка Black Street,
-   выбор, предпросмотр клонов, диагностика /get.
-   Создание на Bonna/Core22 (через импорт-файл) — следующий этап,
-   после того как по /get увидим точный формат полей.
+   Клонирование товаров — файловый способ.
+   Читаем выгрузку Black Street (.xlsx), делаем импорт-файлы для
+   Bonna ( (B) ) и Core22 ( (С) ): суффиксы на артикул и названия,
+   шаг цены со скидкой, единые фото по главной позиции со сменой обложки,
+   характеристики и размеры переносятся как есть.
    ===================================================================== */
 
-/* Магазины и суффиксы (кириллическая С в Core22!) */
-var STORES = {
-  blackstreet: { title: 'Black Street', suffix: '' },
-  bonna:       { title: 'Bonna-shop',   suffix: ' (B)' },
-  core22:      { title: 'Core22',        suffix: ' (С)' }, // С = кириллическая С
-};
-var TARGETS = ['bonna', 'core22'];
-var MAIN = 'blackstreet';     // магазин-источник (для API)
-var OWN_KEY = 'bs_clone';     // свой кэш Black Street с полями разновидностей
-var hasVarInfo = false;       // есть ли is_variation/variation_base_id в данных
-
-/* --- та же конфигурация, что и у «Цен» (общий localStorage-ключ) --- */
-var CFG_KEY = 'tovary:prices:cfg';
-var loadJSON = function (k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
-var saveJSON = function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-var cfg = loadJSON(CFG_KEY, { url: '', pass: '' });
-
-/* --- общий кэш с «Ценами»: IndexedDB tovary-prices / stores --- */
-var DB_NAME = 'tovary-prices', DB_STORE = 'stores', CHUNK = 2000, dbPromise = null;
+var PSHEET = 'Export Products Sheet', GSHEET = 'Export Groups Sheet';
+var SUF_B = ' (B)', SUF_C = ' (С)';   // С — кириллическая С для Core22
 
 var $ = function (id) { return document.getElementById(id); };
-var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
   });
 }
 var showMsg = function (el, kind, html) { el.innerHTML = '<div class="msg msg--' + kind + '">' + html + '</div>'; };
-function decodeMsg(s) {
-  try { return String(s).replace(/\\u([0-9a-fA-F]{4})/g, function (m, h) { return String.fromCharCode(parseInt(h, 16)); }); }
-  catch (e) { return String(s); }
-}
 
-/* --- посредник --- */
-async function api(route, payload) {
-  if (!cfg.url) throw new Error('Не задан адрес посредника');
-  var res = await fetch(cfg.url.replace(/\/+$/, '') + route, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-App-Password': cfg.pass },
-    body: JSON.stringify(payload || {}),
-  });
-  var data = await res.json().catch(function () { return {}; });
-  if (!res.ok) {
-    var d = data.detail ? '\n' + JSON.stringify(data.detail, null, 2) : '';
-    throw new Error(decodeMsg((data.error || ('Ошибка ' + res.status)) + d));
-  }
-  return data;
-}
-
-/* --- IndexedDB (только чтение и запись Black Street) --- */
-function db() {
-  if (!dbPromise) {
-    dbPromise = new Promise(function (resolve, reject) {
-      var req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = function () {
-        var d = req.result;
-        if (!d.objectStoreNames.contains(DB_STORE)) d.createObjectStore(DB_STORE);
-      };
-      req.onsuccess = function () { resolve(req.result); };
-      req.onerror = function () { reject(req.error); };
-    });
-  }
-  return dbPromise;
-}
-function cacheGet(key) {
-  return db().then(function (d) {
-    return new Promise(function (resolve, reject) {
-      var tx = d.transaction(DB_STORE, 'readonly');
-      var r = tx.objectStore(DB_STORE).get(key);
-      r.onsuccess = function () { resolve(r.result); };
-      r.onerror = function () { reject(r.error); };
-    });
-  });
-}
-function cachePut(key, value) {
-  return db().then(function (d) {
-    return new Promise(function (resolve, reject) {
-      var tx = d.transaction(DB_STORE, 'readwrite');
-      tx.objectStore(DB_STORE).put(value, key);
-      tx.oncomplete = resolve;
-      tx.onerror = function () { reject(tx.error || new Error('ошибка записи')); };
-      tx.onabort = function () { reject(tx.error || new Error('запись прервана')); };
-    });
-  });
-}
-
-/* хранение только нужного (совместимо с «Ценами») */
-var KEEP = ['id', 'external_id', 'name', 'sku', 'article', 'price', 'old_price',
-            'presence', 'status', 'discount', 'variation_group_id', 'quantity_in_stock',
-            'is_variation', 'variation_base_id'];
-function slim(p) {
-  var o = {}; for (var i = 0; i < KEEP.length; i++) { var k = KEEP[i]; if (p[k] !== undefined) o[k] = p[k]; }
-  if (Array.isArray(p.images) && p.images.length) {
-    var im = p.images[0]; o.images = [{ url: im.url, thumbnail_url: im.thumbnail_url }];
-  }
-  if (p.group && typeof p.group === 'object') o.group = { id: p.group.id, name: p.group.name || p.group.caption || '' };
-  else if (p.group_name || p.group_id) o.group = { id: p.group_id || null, name: p.group_name || '' };
-  return o;
-}
-
-/* читаем магазин из общего кэша */
-async function readCache(store) {
-  var products = [], miss = 0;
-  for (var i = 0; i < 400 && miss < 3; i++) {
-    var part = await cacheGet(store + ':' + i);
-    if (part && Array.isArray(part.products) && part.products.length) { products = products.concat(part.products); miss = 0; }
-    else miss++;
-  }
-  return products;
-}
-
-/* =====================================================================
-   Данные и состояние
-   ===================================================================== */
-var bsAll = [];       // все строки Black Street (включая разновидности)
-var bsCards = [];     // сгруппированные карточки (по одному на товар)
-var targetSku = {};   // { bonna:Set(baseSku), core22:Set(baseSku) } — что уже есть
-var picked = new Set();
+/* данные выгрузки */
+var PH = [], GH = [];         // заголовки листов
+var PROWS = [], GROWS = [];   // строки данных (без заголовка)
+var cards = [];               // по одной карточке на товар (группу разновидностей)
 var shown = [];
+var picked = new Set();
+var dirHandle = null;
 
-function articleOf(p) { return String(p.article || p.sku || p.external_id || p.id || '').trim(); }
-function groupKey(p) { return p.variation_group_id != null ? 'v' + p.variation_group_id : 'i' + p.id; }
+/* индексы колонок листа товаров */
+var C = {};
+function idx(h, name) { return h.indexOf(name); }
 
-/* убрать суффикс магазина, чтобы сопоставлять с Black Street */
-function baseSku(sku, store) {
-  var s = String(sku || '').trim();
-  var suf = (STORES[store].suffix || '').trim();
-  if (suf && s.slice(-suf.length) === suf) s = s.slice(0, -suf.length).trim();
-  return s;
+/* ---- вспомогательные ---- */
+function swapFirstTwo(v) {
+  if (v == null || v === '') return v;
+  var parts = String(v).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (parts.length >= 2) { var t = parts[0]; parts[0] = parts[1]; parts[1] = t; }
+  return parts.join(', ');
 }
-
-/* какой из товаров группы — главный (не разновидность) */
-function pickMain(rows) {
-  // 1) явно помеченный главным
-  var m = rows.filter(function (r) { return r.is_variation === false; });
-  if (m.length) return m[0];
-  // 2) тот, на кого ссылаются размеры через variation_base_id
-  var baseIds = {};
-  for (var i = 0; i < rows.length; i++) if (rows[i].variation_base_id != null) baseIds[String(rows[i].variation_base_id)] = 1;
-  for (var j = 0; j < rows.length; j++) if (baseIds[String(rows[j].id)]) return rows[j];
-  // 3) запасной вариант — товар с самым коротким названием (обычно без размера)
-  return rows.slice().sort(function (a, b) { return String(a.name || '').length - String(b.name || '').length; })[0];
+function parseDisc(v) {
+  if (v == null || v === '') return { amount: 0, percent: false, has: false };
+  var s = String(v).trim().replace(',', '.');
+  var percent = s.indexOf('%') !== -1;
+  s = s.replace('%', '').trim();
+  var a = parseFloat(s); if (isNaN(a)) a = 0;
+  return { amount: a, percent: percent, has: a > 0 };
 }
-
-/* сгруппировать строки: одна карточка = главный товар, размеры внутри */
-function buildCards() {
-  var map = new Map();
-  for (var i = 0; i < bsAll.length; i++) {
-    var p = bsAll[i], key = groupKey(p);
-    if (!map.has(key)) map.set(key, { rows: [], cat: '' });
-    var g = map.get(key);
-    g.rows.push(p);
-    if (!g.cat && p.group && p.group.name) g.cat = p.group.name;
-  }
-  bsCards = [];
-  map.forEach(function (g) {
-    var main = pickMain(g.rows);
-    var sizes = g.rows.filter(function (r) { return r !== main; });
-    bsCards.push({ base: main, kids: g.rows, sizes: sizes, cat: g.cat });
-  });
-}
-
-/* набор РЕАЛЬНЫХ артикулов, уже заведённых на целевых магазинах */
-async function buildTargets() {
-  targetSku = {};
-  for (var t = 0; t < TARGETS.length; t++) {
-    var store = TARGETS[t];
-    var list = await readCache(store);
-    var set = new Set();
-    for (var i = 0; i < list.length; i++) set.add(articleOf(list[i]).trim());
-    targetSku[store] = set;
-  }
-}
-
-/* статус: клон существует ТОЛЬКО если на магазине есть артикул ровно с суффиксом
-   (Sta-222 (B) / Sta-222 (С)). Совпадение по базовому артикулу без суффикса — это НЕ клон. */
-function cloneState(card) {
-  var art = articleOf(card.base).trim();
-  var res = {};
-  for (var t = 0; t < TARGETS.length; t++) {
-    var store = TARGETS[t];
-    var cloneArt = art + STORES[store].suffix;
-    res[store] = (targetSku[store] && targetSku[store].has(cloneArt)) ? 'dup' : 'new';
-  }
-  return res;
-}
+function round2(x) { return Math.round(x * 100) / 100; }
 
 /* =====================================================================
-   Настройка подключения
+   Загрузка файла выгрузки
    ===================================================================== */
-$('cfg-url').value = cfg.url;
-$('cfg-pass').value = cfg.pass;
-
-$('cfg-save').addEventListener('click', async function () {
-  cfg.url = $('cfg-url').value.trim();
-  cfg.pass = $('cfg-pass').value;
-  showMsg($('cfg-msg'), 'warn', 'Проверяю связь…');
+$('pick-file').addEventListener('click', function () { $('file').click(); });
+$('file').addEventListener('change', function () {
+  var f = this.files && this.files[0];
+  if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function () { try { parseWb(new Uint8Array(rd.result)); } catch (e) { showMsg($('load-msg'), 'err', 'Не прочитать файл.<pre>' + escapeHtml(e.message) + '</pre>'); } };
+  rd.onerror = function () { showMsg($('load-msg'), 'err', 'Ошибка чтения файла.'); };
+  rd.readAsArrayBuffer(f);
+});
+$('load-url').addEventListener('click', async function () {
+  var url = $('url').value.trim();
+  if (!url) { showMsg($('load-msg'), 'warn', 'Вставьте ссылку или выберите файл.'); return; }
+  showMsg($('load-msg'), 'warn', 'Загружаю по ссылке…');
   try {
-    await api('/ping', {});
-    saveJSON(CFG_KEY, cfg);
-    showMsg($('cfg-msg'), 'ok', 'Связь есть.');
-    $('work').classList.remove('hidden');
-    setTimeout(function () { $('setup').classList.add('hidden'); }, 600);
-    init();
+    var r = await fetch(url);
+    if (!r.ok) throw new Error('Сервер ответил ' + r.status);
+    var buf = new Uint8Array(await r.arrayBuffer());
+    parseWb(buf);
   } catch (e) {
-    showMsg($('cfg-msg'), 'err', 'Не получилось.<pre>' + escapeHtml(e.message) + '</pre>');
+    showMsg($('load-msg'), 'err', 'По ссылке не вышло (обычно файл требует входа в Prom или закрыт CORS).<br>' +
+      'Скачайте файл выгрузки и нажмите «Выбрать файл выгрузки».<pre>' + escapeHtml(e.message) + '</pre>');
   }
 });
 
-if (cfg.url && cfg.pass) {
-  $('setup').classList.add('hidden');
-  $('work').classList.remove('hidden');
-  init();
+function sheetAoA(wb, name, fallbackIndex) {
+  var ws = wb.Sheets[name] || wb.Sheets[wb.SheetNames[fallbackIndex]];
+  if (!ws) return [];
+  return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
 }
 
-/* =====================================================================
-   Инициализация: читаем кэш
-   ===================================================================== */
-async function init() {
-  try {
-    // сначала свой кэш (с полями разновидностей), потом общий с «Ценами»
-    bsAll = await readCache(OWN_KEY);
-    if (!bsAll.length) bsAll = await readCache(MAIN);
-    hasVarInfo = bsAll.some(function (p) { return p.is_variation !== undefined || p.variation_base_id != null; });
-    await buildTargets();
-    if (bsAll.length) { buildCards(); fillCats(); applyFilter(); showStats(); }
-    else $('stats').innerHTML = 'Кэш Black Street пуст. Нажмите «Загрузить Black Street».';
-  } catch (e) {
-    $('stats').innerHTML = '<span style="color:#fca5a5">Сбой чтения кэша: ' + escapeHtml(e.message) + '</span>';
+function parseWb(bytes) {
+  var wb = XLSX.read(bytes, { type: 'array' });
+  var pa = sheetAoA(wb, PSHEET, 0);
+  var ga = sheetAoA(wb, GSHEET, 1);
+  if (!pa.length) { showMsg($('load-msg'), 'err', 'В файле не найден лист товаров «' + PSHEET + '».'); return; }
+  PH = pa[0]; PROWS = pa.slice(1).filter(function (r) { return r && r.length; });
+  GH = ga.length ? ga[0] : []; GROWS = ga.slice(1).filter(function (r) { return r && r.length; });
+
+  C = {
+    code:   idx(PH, 'Код_товару'),
+    name:   idx(PH, 'Назва_позиції'),
+    nameuk: idx(PH, 'Назва_позиції_укр'),
+    price:  idx(PH, 'Ціна'),
+    disc:   idx(PH, 'Знижка'),
+    img:    idx(PH, 'Посилання_зображення'),
+    gnum:   idx(PH, 'Номер_групи'),
+    gname:  idx(PH, 'Назва_групи'),
+    vargrp: idx(PH, 'ID_групи_різновидів'),
+    uid:    idx(PH, 'Унікальний_ідентифікатор'),
+    site:   idx(PH, 'Продукт_на_сайті'),
+  };
+  if (C.code < 0 || C.name < 0) {
+    showMsg($('load-msg'), 'err', 'Не те колонки. Экспортируйте с языком полей «Українська».'); return;
   }
+  buildCards();
+  $('work').classList.remove('hidden');
+  showMsg($('load-msg'), 'ok', 'Загружено позиций: ' + PROWS.length + ', товаров: ' + cards.length + '.');
+  fillCats(); applyFilter();
 }
 
-function showStats() {
-  var t = 'Black Street: ' + bsCards.length + ' главных товаров (' + bsAll.length + ' позиций с размерами). ';
-  t += 'На Bonna уже: ' + ((targetSku.bonna && targetSku.bonna.size) || 0) + ', на Core22: ' + ((targetSku.core22 && targetSku.core22.size) || 0) + '.';
-  $('stats').innerHTML = escapeHtml(t) + (hasVarInfo ? '' :
-    '<br><span style="color:#e0c060">Данные из общего кэша без пометок разновидностей — главный товар определяется приблизительно. Нажмите «Загрузить Black Street» для точного разбора.</span>');
+/* группировка: одна карточка на товар (по ID_групи_різновидів; главная — первая строка группы) */
+function buildCards() {
+  var map = new Map();
+  for (var i = 0; i < PROWS.length; i++) {
+    var r = PROWS[i], code = r[C.code];
+    if (code == null || String(code).trim() === '') continue;
+    var key = (C.vargrp >= 0 && r[C.vargrp] !== '' && r[C.vargrp] != null) ? 'v' + r[C.vargrp] : 'r' + i;
+    if (!map.has(key)) map.set(key, { mainIdx: i, idxs: [], cat: '' });
+    var g = map.get(key);
+    g.idxs.push(i);
+    if (!g.cat && C.gname >= 0 && r[C.gname]) g.cat = String(r[C.gname]);
+  }
+  cards = [];
+  map.forEach(function (g) {
+    var m = PROWS[g.mainIdx];
+    cards.push({
+      key: g.mainIdx, mainIdx: g.mainIdx, idxs: g.idxs, cat: g.cat,
+      code: String(m[C.code]), name: String(m[C.name] || ''),
+      sizes: g.idxs.length - 1,
+      img: (C.img >= 0 ? String(m[C.img] || '').split(',')[0].trim() : ''),
+    });
+  });
 }
 
 function fillCats() {
-  var cats = {};
-  for (var i = 0; i < bsCards.length; i++) { var c = bsCards[i].cat || ''; if (c) cats[c] = (cats[c] || 0) + 1; }
-  var names = Object.keys(cats).sort(function (a, b) { return a.localeCompare(b, 'ru'); });
-  var sel = $('fcat'), cur = sel.value;
-  sel.innerHTML = '<option value="">Все категории (' + bsCards.length + ')</option>' +
-    names.map(function (n) { return '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + ' (' + cats[n] + ')</option>'; }).join('');
-  sel.value = cur;
+  var counts = {};
+  for (var i = 0; i < cards.length; i++) { var c = cards[i].cat || ''; if (c) counts[c] = (counts[c] || 0) + 1; }
+  var names = Object.keys(counts).sort(function (a, b) { return a.localeCompare(b, 'ru'); });
+  var sel = $('fcat');
+  sel.innerHTML = '<option value="">Все категории (' + cards.length + ')</option>' +
+    names.map(function (n) { return '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + ' (' + counts[n] + ')</option>'; }).join('');
 }
-
-/* =====================================================================
-   Загрузка Black Street из Prom (если кэша нет)
-   ===================================================================== */
-async function loadStore(store, onProgress) {
-  var out = [], seen = new Set(), lastId = null, guard = 0;
-  while (guard++ < 3000) {
-    var data = null, tries = 0;
-    while (tries++ < 4) {
-      try { data = await api('/list', { store: store, limit: 100, last_id: lastId, offset: out.length }); break; }
-      catch (e) {
-        if (tries >= 4) { var err = new Error(e.message); err.partial = out; throw err; }
-        onProgress(out.length, 'нет ответа, жду ' + (tries * 5) + ' сек…');
-        await sleep(tries * 5000);
-      }
-    }
-    var batch = (data && data.products) || [];
-    if (!batch.length) break;
-    var added = 0;
-    for (var i = 0; i < batch.length; i++) { var p = batch[i]; if (seen.has(p.id)) continue; seen.add(p.id); out.push(p); added++; }
-    var next = batch[batch.length - 1].id;
-    if (next === lastId) break;
-    lastId = next;
-    onProgress(out.length, '');
-    // КОНЕЦ: только когда новых нет И страница неполная (защита от обрыва на ~8999)
-    if (added === 0 && batch.length < 100) break;
-    await sleep(30);
-  }
-  return out;
-}
-
-$('load').addEventListener('click', async function () {
-  var btn = this; btn.disabled = true;
-  $('prog').classList.remove('hidden');
-  try {
-    var list = await loadStore(MAIN, function (n) {
-      $('stats').textContent = 'Загружаю Black Street: ' + n + '…';
-      $('prog').firstElementChild.style.width = Math.min(97, 2 + n / 350) + '%';
-    });
-    // сохраняем в свой кэш кусками (не мешая «Ценам»)
-    var savedAt = Date.now(), parts = Math.ceil(list.length / CHUNK);
-    for (var i = 0; i < parts; i++) {
-      var slice = list.slice(i * CHUNK, (i + 1) * CHUNK);
-      await cachePut(OWN_KEY + ':' + i, { products: slice.map(slim), savedAt: savedAt });
-    }
-    await cachePut(OWN_KEY, { parts: parts, savedAt: savedAt, total: list.length });
-    bsAll = list.map(slim);
-    hasVarInfo = bsAll.some(function (p) { return p.is_variation !== undefined || p.variation_base_id != null; });
-    await buildTargets(); buildCards(); fillCats(); applyFilter(); showStats();
-    $('prog').firstElementChild.style.width = '100%';
-  } catch (e) {
-    var partial = e.partial || [];
-    $('stats').innerHTML = '<span style="color:#fca5a5">Прервано: ' + escapeHtml(e.message) + '. Загружено: ' + partial.length + '</span>';
-  }
-  btn.disabled = false;
-  setTimeout(function () { $('prog').classList.add('hidden'); }, 500);
-});
 
 /* =====================================================================
    Список, фильтр, выбор
    ===================================================================== */
 function applyFilter() {
-  var q = $('q').value.trim().toLowerCase();
-  var cat = $('fcat').value;
-  shown = bsCards.filter(function (c) {
+  var q = $('q').value.trim().toLowerCase(), cat = $('fcat').value;
+  shown = cards.filter(function (c) {
     if (cat && (c.cat || '') !== cat) return false;
     if (!q) return true;
-    var hay = ((c.base.name || '') + ' ' + articleOf(c.base)).toLowerCase();
-    return hay.indexOf(q) !== -1;
+    return (c.name + ' ' + c.code).toLowerCase().indexOf(q) !== -1;
   });
   render();
 }
-
 function render() {
   var box = $('list');
-  if (!bsCards.length) { box.innerHTML = '<div class="empty">Нет данных. Нажмите «Загрузить Black Street».</div>'; updateCnt(); return; }
+  if (!cards.length) { box.innerHTML = '<div class="empty">Загрузите выгрузку.</div>'; updateCnt(); return; }
   if (!shown.length) { box.innerHTML = '<div class="empty">Ничего не найдено.</div>'; updateCnt(); return; }
-  var html = shown.slice(0, 400).map(function (c) {
-    var id = String(c.base.id);
-    var img = (c.base.images && c.base.images[0]) ? (c.base.images[0].thumbnail_url || c.base.images[0].url) : '';
-    var st = cloneState(c);
-    var tags = TARGETS.map(function (t) {
-      return '<span class="tag ' + (st[t] === 'new' ? 'tag-new' : 'tag-dup') + '">' +
-             STORES[t].title + ': ' + (st[t] === 'new' ? 'новый' : 'есть') + '</span>';
-    }).join('');
-    var kidsNote = c.sizes.length ? ' · +' + c.sizes.length + ' размер.' : '';
+  box.innerHTML = shown.slice(0, 500).map(function (c) {
+    var note = c.sizes > 0 ? ' · +' + c.sizes + ' размер.' : '';
     return '<div class="row">' +
-      '<input type="checkbox" class="row__chk" data-id="' + escapeHtml(id) + '"' + (picked.has(id) ? ' checked' : '') + '>' +
-      (img ? '<img class="row__img" src="' + escapeHtml(img) + '" loading="lazy">' : '<div class="row__img"></div>') +
-      '<div class="row__body">' +
-        '<span class="row__name">' + escapeHtml(c.base.name || '(без названия)') + '</span>' +
-        '<span class="row__meta">арт. ' + escapeHtml(articleOf(c.base)) + kidsNote + tags + '</span>' +
-      '</div></div>';
-  }).join('');
-  if (shown.length > 400) html += '<div class="muted" style="padding:8px 12px">Показаны первые 400 из ' + shown.length + '. Уточните поиск.</div>';
-  box.innerHTML = html;
+      '<input type="checkbox" class="row__chk" data-k="' + c.key + '"' + (picked.has(c.key) ? ' checked' : '') + '>' +
+      (c.img ? '<img class="row__img" src="' + escapeHtml(c.img) + '" loading="lazy">' : '<div class="row__img"></div>') +
+      '<div class="row__body"><span class="row__name">' + escapeHtml(c.name || '(без названия)') + '</span>' +
+      '<span class="row__meta">арт. ' + escapeHtml(c.code) + note + (c.cat ? ' · ' + escapeHtml(c.cat) : '') + '</span></div></div>';
+  }).join('') + (shown.length > 500 ? '<div class="muted" style="padding:8px 12px">Показаны первые 500 из ' + shown.length + '.</div>' : '');
   Array.prototype.forEach.call(box.querySelectorAll('.row__chk'), function (chk) {
     chk.addEventListener('change', function () {
-      var id = chk.getAttribute('data-id');
-      if (chk.checked) picked.add(id); else picked.delete(id);
+      var k = Number(chk.getAttribute('data-k'));
+      if (chk.checked) picked.add(k); else picked.delete(k);
       updateCnt();
     });
   });
   updateCnt();
 }
-function updateCnt() { $('cnt').textContent = picked.size; }
-
+function updateCnt() {
+  $('cnt').textContent = picked.size;
+  $('stats').textContent = 'Товаров: ' + cards.length + ' · выбрано: ' + picked.size;
+}
 $('q').addEventListener('input', applyFilter);
 $('fcat').addEventListener('change', applyFilter);
-$('pick-found').addEventListener('click', function () {
-  for (var i = 0; i < shown.length; i++) picked.add(String(shown[i].base.id));
-  render();
-});
+$('pick-found').addEventListener('click', function () { for (var i = 0; i < shown.length; i++) picked.add(shown[i].key); render(); });
 $('pick-none').addEventListener('click', function () { picked.clear(); render(); });
 
-function pickedCards() {
-  return bsCards.filter(function (c) { return picked.has(String(c.base.id)); });
+/* =====================================================================
+   Сборка импорт-файлов
+   ===================================================================== */
+function buildStore(suffix, step) {
+  var out = [], used = {};
+  var selected = cards.filter(function (c) { return picked.has(c.key); });
+  for (var s = 0; s < selected.length; s++) {
+    var card = selected[s];
+    var canon = (C.img >= 0) ? swapFirstTwo(PROWS[card.mainIdx][C.img]) : '';
+    for (var j = 0; j < card.idxs.length; j++) {
+      var r = PROWS[card.idxs[j]].slice();
+      r[C.code] = String(r[C.code]) + suffix;
+      if (C.name >= 0 && r[C.name] !== '' && r[C.name] != null) r[C.name] = String(r[C.name]) + suffix;
+      if (C.nameuk >= 0 && r[C.nameuk] !== '' && r[C.nameuk] != null) r[C.nameuk] = String(r[C.nameuk]) + suffix;
+      // цена: шаг на цену СО СКИДКОЙ
+      var price = (C.price >= 0) ? parseFloat(r[C.price]) : NaN;
+      var d = (C.disc >= 0) ? parseDisc(r[C.disc]) : { has: false, percent: false, amount: 0 };
+      if (d.has && !d.percent) { r[C.disc] = round2(d.amount + step); }
+      else if (!isNaN(price)) { r[C.price] = round2(price - step); }
+      if (C.uid >= 0) r[C.uid] = '';
+      if (C.site >= 0) r[C.site] = '';
+      if (C.img >= 0) r[C.img] = canon;
+      out.push(r);
+      if (C.gnum >= 0 && r[C.gnum] !== '' && r[C.gnum] != null) used[String(r[C.gnum])] = 1;
+    }
+  }
+  var prodAoA = [PH].concat(out);
+  var grpAoA = [GH].concat(GROWS.filter(function (g) {
+    var gc = idx(GH, 'Номер_групи');
+    return gc >= 0 && used[String(g[gc])];
+  }));
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(prodAoA), PSHEET);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(grpAoA), GSHEET);
+  var bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), rows: out.length };
 }
 
-/* =====================================================================
-   Предпросмотр клонов
-   ===================================================================== */
-$('preview').addEventListener('click', function () {
-  var cards = pickedCards();
-  if (!cards.length) { showMsg($('out'), 'warn', 'Не выбрано ни одного товара.'); return; }
-  var rows = '', willCreate = 0, willSkip = 0;
-  for (var i = 0; i < cards.length; i++) {
-    var c = cards[i], art = articleOf(c.base), nm = c.base.name || '';
-    var st = cloneState(c);
-    var cells = TARGETS.map(function (t) {
-      if (st[t] === 'dup') { willSkip++; return '<td class="muted">пропуск (уже есть)</td>'; }
-      willCreate++;
-      return '<td><code>' + escapeHtml(art + STORES[t].suffix) + '</code><br>' + escapeHtml(nm + STORES[t].suffix) + '</td>';
-    }).join('');
-    rows += '<tr><td>' + escapeHtml(art) + '<br><span class="muted">' + escapeHtml(nm.slice(0, 40)) + '</span></td>' + cells + '</tr>';
-  }
-  var head = '<tr><th>Black Street</th>' + TARGETS.map(function (t) { return '<th>' + STORES[t].title + '</th>'; }).join('') + '</tr>';
-  $('out').innerHTML =
-    '<div class="msg msg--warn">Будет создано позиций: <b>' + willCreate + '</b>, пропущено (уже есть): <b>' + willSkip + '</b>.<br>' +
-    'Это предпросмотр. Само создание на Bonna/Core22 подключим на следующем шаге — после диагностики формата полей.</div>' +
-    '<table class="prev">' + head + rows + '</table>';
-});
-
-/* =====================================================================
-   Диагностика: читаем 1 товар целиком через /get
-   ===================================================================== */
-$('diag').addEventListener('click', async function () {
-  var cards = pickedCards();
-  var card = cards[0] || shown[0];
-  if (!card) { showMsg($('out'), 'warn', 'Сначала загрузите и выберите товар.'); return; }
-  var id = String(card.base.id);
-  showMsg($('out'), 'warn', 'Читаю товар ' + escapeHtml(id) + ' целиком…');
+async function saveToDir(name, blob) {
+  if (!dirHandle) return false;
   try {
-    var data = await api('/get', { store: MAIN, id: id });
-    var prod = data.product || data;
-    var keys = Object.keys(prod).sort();
-    $('out').innerHTML =
-      '<div class="msg msg--ok">Товар прочитан. Поля (' + keys.length + '): ' +
-      escapeHtml(keys.join(', ')) + '</div>' +
-      '<pre class="raw">' + escapeHtml(JSON.stringify(prod, null, 2)) + '</pre>';
-  } catch (e) {
-    showMsg($('out'), 'err', 'Не удалось прочитать.<pre>' + escapeHtml(e.message) + '</pre>');
+    var fh = await dirHandle.getFileHandle(name, { create: true });
+    var w = await fh.createWritable(); await w.write(blob); await w.close();
+    return true;
+  } catch (e) { return false; }
+}
+function download(name, blob) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+$('make').addEventListener('click', async function () {
+  if (!picked.size) { showMsg($('out'), 'warn', 'Не выбрано ни одного товара.'); return; }
+  var sb = parseFloat($('step-bonna').value) || 0;
+  var sc = parseFloat($('step-core22').value) || 0;
+  var bonna = buildStore(SUF_B, sb);
+  var core = buildStore(SUF_C, sc);
+  window._files = {
+    'import-bonna.xlsx': bonna.blob,
+    'import-core22.xlsx': core.blob,
+  };
+  var savedNote = '';
+  if (dirHandle) {
+    var s1 = await saveToDir('import-bonna.xlsx', bonna.blob);
+    var s2 = await saveToDir('import-core22.xlsx', core.blob);
+    savedNote = (s1 && s2) ? '<div class="msg msg--ok">Сохранено в папку: import-bonna.xlsx, import-core22.xlsx (обновлены).</div>' :
+      '<div class="msg msg--warn">В папку записать не удалось — скачайте кнопками ниже.</div>';
   }
+  $('out').innerHTML = savedNote +
+    '<div class="files">' +
+    fcard('Bonna-shop', 'import-bonna.xlsx', bonna.rows) +
+    fcard('Core22', 'import-core22.xlsx', core.rows) +
+    '</div>' +
+    '<div class="msg msg--warn">Загрузите каждый файл в импорт соответствующего магазина Prom (Bonna → import-bonna, Core22 → import-core22).</div>';
+  Array.prototype.forEach.call($('out').querySelectorAll('[data-dl]'), function (b) {
+    b.addEventListener('click', function () { var n = b.getAttribute('data-dl'); download(n, window._files[n]); });
+  });
 });
+function fcard(title, fname, rows) {
+  return '<div class="fcard"><h3>' + escapeHtml(title) + '</h3>' +
+    '<div class="fmeta">' + escapeHtml(fname) + ' · позиций: ' + rows + '</div>' +
+    '<button class="btn btn--sm" data-dl="' + fname + '">Скачать файл</button></div>';
+}
+
+/* выбор папки (Chrome/Edge) */
+if (!window.showDirectoryPicker) {
+  $('pick-dir').classList.add('hidden');
+  $('dir-name').textContent = 'Сохранение в папку доступно в Chrome/Edge; здесь — только скачивание.';
+} else {
+  $('pick-dir').addEventListener('click', async function () {
+    try {
+      dirHandle = await window.showDirectoryPicker();
+      $('dir-name').textContent = 'Папка выбрана: ' + (dirHandle.name || '') + ' — файлы будут обновляться там.';
+    } catch (e) { /* отмена */ }
+  });
+}
 </script>
 </body>
 </html>

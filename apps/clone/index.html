@@ -236,6 +236,8 @@ function parseWb(bytes) {
     vargrp: idx(PH, 'ID_групи_різновидів'),
     uid:    idx(PH, 'Унікальний_ідентифікатор'),
     site:   idx(PH, 'Продукт_на_сайті'),
+    idgrp:  idx(PH, 'Ідентифікатор_групи'),
+    idtov:  idx(PH, 'Ідентифікатор_товару'),
   };
   if (C.code < 0 || C.name < 0) {
     showMsg($('load-msg'), 'err', 'Не те колонки. Экспортируйте с языком полей «Українська».'); return;
@@ -340,11 +342,21 @@ function buildStore(suffix, step) {
       var d = (C.disc >= 0) ? parseDisc(r[C.disc]) : { has: false, percent: false, amount: 0 };
       if (d.has && !d.percent) { r[C.disc] = round2(d.amount + step); }
       else if (!isNaN(price)) { r[C.price] = round2(price - step); }
-      if (C.uid >= 0) r[C.uid] = '';
+      // Перемещение идентификаторов (с очисткой источника):
+      //  Номер_групи -> Ідентифікатор_групи (Номер_групи очищаем)
+      //  id держим в Унікальний_ідентифікатор, Ідентифікатор_товару очищаем
+      var groupId = (C.gnum >= 0 && r[C.gnum] !== '' && r[C.gnum] != null) ? r[C.gnum]
+                  : ((C.idgrp >= 0) ? r[C.idgrp] : '');
+      var prodId = (C.uid >= 0 && r[C.uid] !== '' && r[C.uid] != null) ? r[C.uid]
+                 : ((C.idtov >= 0) ? r[C.idtov] : '');
+      if (C.idgrp >= 0) r[C.idgrp] = groupId;
+      if (C.gnum >= 0)  r[C.gnum]  = '';
+      if (C.uid >= 0)   r[C.uid]   = prodId;
+      if (C.idtov >= 0) r[C.idtov] = '';
+      if (groupId !== '' && groupId != null) used[String(groupId)] = 1;
       if (C.site >= 0) r[C.site] = '';
       if (C.img >= 0) r[C.img] = canon;
       out.push(r);
-      if (C.gnum >= 0 && r[C.gnum] !== '' && r[C.gnum] != null) used[String(r[C.gnum])] = 1;
     }
   }
   var prodAoA = [PH].concat(out);

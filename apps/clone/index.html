@@ -349,10 +349,10 @@ function buildStore(suffix, step) {
                   : ((C.idgrp >= 0) ? r[C.idgrp] : '');
       var prodId = (C.uid >= 0 && r[C.uid] !== '' && r[C.uid] != null) ? r[C.uid]
                  : ((C.idtov >= 0) ? r[C.idtov] : '');
-      if (C.idgrp >= 0) r[C.idgrp] = groupId;
-      if (C.gnum >= 0)  r[C.gnum]  = '';
-      if (C.uid >= 0)   r[C.uid]   = prodId;
-      if (C.idtov >= 0) r[C.idtov] = '';
+      if (C.idgrp >= 0) r[C.idgrp] = groupId;   // Ідентифікатор_групи ← Номер_групи
+      if (C.gnum >= 0)  r[C.gnum]  = '';        // Номер_групи очищаем
+      if (C.idtov >= 0) r[C.idtov] = prodId;    // Ідентифікатор_товару ← Унікальний_ідентифікатор
+      if (C.uid >= 0)   r[C.uid]   = '';        // Унікальний_ідентифікатор очищаем
       if (groupId !== '' && groupId != null) used[String(groupId)] = 1;
       if (C.site >= 0) r[C.site] = '';
       if (C.img >= 0) r[C.img] = canon;

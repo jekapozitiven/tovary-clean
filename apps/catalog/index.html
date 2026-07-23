@@ -195,6 +195,7 @@
       <select id="fstatus"><option value="">Все статусы</option></select>
       <select id="fcat"><option value="">Все категории</option></select>
       <button class="btn btn--ghost btn--sm" id="sel-all">Выбрать найденные</button>
+      <button class="btn btn--ghost btn--sm" id="sel-all-loaded">Выбрать все</button>
       <button class="btn btn--ghost btn--sm" id="sel-none">Снять выбор</button>
       <button class="btn btn--ghost btn--sm" id="cfg-open">Настройки</button>
     </div>
@@ -873,6 +874,16 @@ function updateMass() {
 
 $('sel-all').addEventListener('click', function () {
   shown.forEach(function (g) {
+    groupPickable(g).forEach(function (it) { picked.add(pickKey(it.store, it.p)); });
+  });
+  updateMass(); renderList();
+});
+$('sel-all-loaded').addEventListener('click', function () {
+  // все загруженные товары — независимо от поиска, статуса и категории
+  if (!groups.length) { alert('Сначала нажмите «Обновить из Prom».'); return; }
+  if (groups.length > 300 &&
+      !confirm('Выбрать все ' + groups.length + ' товаров? Это выделит весь загруженный каталог.')) return;
+  groups.forEach(function (g) {
     groupPickable(g).forEach(function (it) { picked.add(pickKey(it.store, it.p)); });
   });
   updateMass(); renderList();

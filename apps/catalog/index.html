@@ -828,6 +828,11 @@ function showStats() {
 }
 
 function debounce(fn, ms) { let t; return function () { clearTimeout(t); t = setTimeout(fn, ms); }; }
+// При новом поиске сбрасываем прошлый выбор, чтобы случайно не применить
+// изменения к товарам, отмеченным до этого.
+$('search').addEventListener('input', function () {
+  if (picked.size) { picked.clear(); updateMass(); }
+});
 $('search').addEventListener('input', debounce(applyFilter, 250));
 $('fstatus').addEventListener('change', applyFilter);
 if ($('fcat')) $('fcat').addEventListener('change', applyFilter);
@@ -1344,7 +1349,10 @@ $('m-apply').addEventListener('click', function () { runMass(false); });
 $('m-clear-disc').addEventListener('click', function () { runMass(true); });
 
 function runMass(clearDiscount) {
-  if (!picked.size) return;
+  if (!picked.size) {
+    showMsg($('stats'), 'err', 'Не выбран ни один товар. Отметьте нужные товары галочками, затем «Применить к выбранным».');
+    return;
+  }
 
   // собираем выбранные позиции
   const items = [];

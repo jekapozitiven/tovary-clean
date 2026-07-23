@@ -1404,7 +1404,11 @@ function runMass(clearDiscount) {
   if ($('opt-variants').checked) extra.push('со всеми разновидностями');
   if ($('opt-stores').checked) extra.push('и на других магазинах');
 
-  applyChanges(items, vals, $('stats')).catch(function (e) {
+  applyChanges(items, vals, $('stats')).then(function () {
+    // после применения снимаем выбор, чтобы следующая правка меняла
+    // только то, что отмечено заново, а не тянула прошлый выбор
+    picked.clear(); updateMass(); renderList();
+  }).catch(function (e) {
     showMsg($('stats'), 'err', escapeHtml(e.message));
   });
 }

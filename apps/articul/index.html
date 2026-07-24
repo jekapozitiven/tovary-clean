@@ -68,6 +68,13 @@
              margin:14px 0 2px; font-weight:700; }
   .empty { padding:30px; text-align:center; color:var(--faint); }
   .kop { color:#fbbf24; }
+  details.grp { border:1px solid var(--border); border-radius:9px; margin-top:8px; padding:0 12px; background:var(--panel2); }
+  details.grp summary { cursor:pointer; padding:10px 2px; font-size:13px; list-style:none; user-select:none; }
+  details.grp summary::-webkit-details-marker { display:none; }
+  details.grp summary:before { content:'▸'; color:var(--faint); margin-right:8px; font-size:11px; }
+  details.grp[open] summary:before { content:'▾'; }
+  details.grp[open] summary { border-bottom:1px solid var(--border); margin-bottom:6px; }
+  details.grp table { margin-bottom:8px; }
 </style>
 </head>
 <body>
@@ -201,30 +208,63 @@ function sizeToken(store, p){
   const me = clean(p.name);
   return (base && me.indexOf(base)===0 ? me.slice(base.length) : '').trim().toUpperCase();
 }
-// Группировка ПО НАЗВАНИЮ: товар собирается по всем магазинам по совпадению
-// названия (без магазинного суффикса). Артикул на связывание не влияет —
-// поэтому разные товары с одинаковым артикулом не смешиваются.
-function buildGroups(){
-  const map = new Map();
-  for (const store of STORE_KEYS) for (const p of (byStore[store]||[])){
-    const key = normName(p.name) || ('sku:' + (p.sku || p.id));
-    if (!map.has(key)) map.set(key, { key:key, stores:{} });
-    (map.get(key).stores[store] = map.get(key).stores[store] || []).push(p);
+// все варианты названия товара (рус + укр), нормализованные
+function nameVariants(p){
+  const arr = [];
+  if (p.name) arr.push(p.name);
+  if (p.name_multilang){
+    if (p.name_multilang.ru) arr.push(p.name_multilang.ru);
+    if (p.name_multilang.uk) arr.push(p.name_multilang.uk);
+    if (p.name_multilang.ua) arr.push(p.name_multilang.ua);
   }
-  groups = Array.from(map.values());
+  const out = [];
+  for (const n of arr){ const k = normName(n); if (k && out.indexOf(k) === -1) out.push(k); }
+  return out;
+}
+
+// Связывание ТОЛЬКО ПО НАЗВАНИЮ (артикул не участвует). Товары объединяются,
+// если у них совпадает нормализованное название хотя бы на одном языке —
+// поэтому украинское и русское названия сцепляют магазины между собой.
+function buildGroups(){
+  const items = [];
+  for (const store of STORE_KEYS) for (const p of (byStore[store]||[])){
+    items.push({ store:store, p:p, keys:nameVariants(p) });
+  }
+  // объединение (union-find) по общим названиям
+  const parent = items.map((_,i)=>i);
+  function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; }
+  function union(a,b){ const ra=find(a), rb=find(b); if(ra!==rb) parent[ra]=rb; }
+  const keyToIdx = new Map();
+  items.forEach(function(it,i){
+    for (const k of it.keys){
+      if (keyToIdx.has(k)) union(i, keyToIdx.get(k));
+      else keyToIdx.set(k, i);
+    }
+  });
+  const comps = new Map();
+  items.forEach(function(it,i){
+    const r = find(i);
+    if (!comps.has(r)) comps.set(r, { key:'g'+r, stores:{} });
+    (comps.get(r).stores[it.store] = comps.get(r).stores[it.store] || []).push(it.p);
+  });
+  groups = Array.from(comps.values());
   for (const g of groups){
-    let best=null, img='', base='';
-    for (const store of [MAIN,'bonna','core22','blink']){
+    let best=null, img='', base='', search='';
+    for (const store of STORE_KEYS){
       for (const p of (g.stores[store]||[])){
         const n = p.name || '';
-        if (best===null || n.length < best.length) best = n;
+        if ((store===MAIN || best===null) && (best===null || n.length < best.length)) best = n;
         if (!img) img = firstImage(p);
-        if (!base) base = baseSku(p.sku,store) || (p.sku||'');
+        if (!base && store===MAIN) base = (p.sku||'');
+        search += ' ' + n;
+        if (p.name_multilang) search += ' ' + (p.name_multilang.ru||'') + ' ' + (p.name_multilang.uk||p.name_multilang.ua||'');
       }
     }
+    if (!base){ for (const store of STORE_KEYS){ const a=(g.stores[store]||[])[0]; if(a){ base=a.sku||''; break; } } }
     g.name = best || '(без названия)';
-    g.base = base || g.key;
+    g.base = base || '';
     g.image = img;
+    g.search = search.toLowerCase();
   }
   groups.sort((a,b)=>a.name.localeCompare(b.name));
 }
@@ -317,8 +357,7 @@ function doSearch(){
   const box = $('results');
   if (!q){ box.innerHTML = ''; $('hint').textContent = 'Введите название и нажмите «Найти».'; return; }
   matches = groups.filter(function(g){
-    if (g.name.toLowerCase().indexOf(q) !== -1) return true;
-    return STORE_KEYS.some(k => (g.stores[k]||[]).some(p => (p.name||'').toLowerCase().indexOf(q) !== -1));
+    return (g.search || g.name.toLowerCase()).indexOf(q) !== -1;
   }).slice(0, 60);
   $('hint').textContent = 'Найдено карточек: ' + matches.length + (matches.length===60 ? ' (показаны первые 60 — уточните запрос)' : '');
   box.innerHTML = matches.map((g,i)=>cardHtml(g,i)).join('') || '<div class="empty">Ничего не найдено</div>';
@@ -366,30 +405,38 @@ function renderPreview(i){
   if (!base){ box.innerHTML = '<div class="muted">Введите новый артикул, чтобы увидеть превью.</div>'; return; }
   const plan = planArticles(g, base);
 
-  let html = '';
-  // Prom
-  html += '<div class="store-h">Prom (Black Street, Bonna, Core22)</div>';
-  html += '<table><tr><th>Магазин</th><th>Товар</th><th>Было</th><th>Станет</th></tr>' +
-    plan.prom.map(it =>
-      '<tr><td>'+escapeHtml(STORES[it.store].title)+'</td>' +
-      '<td>'+escapeHtml((it.name||'').slice(0,42))+'</td>' +
-      '<td class="old">'+escapeHtml(it.current||'—')+'</td>' +
-      '<td class="new">'+escapeHtml(it.next)+'</td></tr>').join('') +
-    '</table>';
+  let html = '<div class="store-h">Что станет с артикулом</div>';
 
-  // Blink
+  // Prom — по одной сводной строке на магазин, разновидности спрятаны
+  for (const store of PROM_STORES){
+    const items = plan.prom.filter(it => it.store === store);
+    if (!items.length) continue;
+    const next = items[0].next;
+    html += '<details class="grp"><summary>' +
+        '<b>'+escapeHtml(STORES[store].title)+'</b> → <span class="new">'+escapeHtml(next)+'</span> ' +
+        '<span class="muted">('+items.length+' поз.)</span></summary>' +
+      '<table>' + items.map(it =>
+        '<tr><td>'+escapeHtml((it.name||'').slice(0,50))+'</td>' +
+        '<td class="old">'+escapeHtml(it.current||'—')+'</td><td>→</td>' +
+        '<td class="new">'+escapeHtml(it.next)+'</td></tr>').join('') +
+      '</table></details>';
+  }
+
+  // Blink — сводка + разновидности в раскрывающемся списке
   if (plan.blink.length){
     const kop = plan.blinkParent !== base;
-    html += '<div class="store-h">Blink (Хорошоп)' +
-      (kop ? ' — <span class="kop">артикул занят, будет: '+escapeHtml(plan.blinkParent)+'</span>' : '') + '</div>';
-    html += '<table><tr><th>Размер</th><th>Родит. артикул</th><th>Артикул для сайта</th><th>Артикул (было → станет)</th></tr>' +
-      plan.blink.map(b =>
-        '<tr><td>'+escapeHtml(b.size||'—')+'</td>' +
-        '<td class="new">'+escapeHtml(b.parent)+'</td>' +
-        '<td class="new">'+escapeHtml(b.display)+'</td>' +
-        '<td><span class="old">'+escapeHtml(b.currentArticle||'—')+'</span> → <span class="new">'+escapeHtml(b.article)+'</span></td></tr>').join('') +
-      '</table>';
-    html += '<div class="note note--warn" style="margin-top:10px">Blink пока только превью. Запись артикула на Хорошоп включим после теста на Prom и проверки, что Хорошоп переименовывает товар, а не создаёт дубль.</div>';
+    html += '<details class="grp"><summary>' +
+        '<b>Blink</b> → родит. артикул <span class="new">'+escapeHtml(plan.blinkParent)+'</span> ' +
+        '<span class="muted">('+plan.blink.length+' поз.)</span>' +
+        (kop ? ' <span class="kop">артикул занят → '+escapeHtml(plan.blinkParent)+'</span>' : '') +
+      '</summary>' +
+      '<table><tr><th>Размер</th><th>Артикул (было → станет)</th></tr>' +
+        plan.blink.map(b =>
+          '<tr><td>'+escapeHtml(b.size||'главный')+'</td>' +
+          '<td><span class="old">'+escapeHtml(b.currentArticle||'—')+'</span> → <span class="new">'+escapeHtml(b.article)+'</span></td></tr>').join('') +
+      '</table>' +
+      '<div class="note note--warn" style="margin-top:8px">Blink пока только превью. Родительский артикул и «Артикул для сайта» = '+escapeHtml(plan.blinkParent)+' у всех. Запись на Хорошоп включим после теста на Prom.</div>' +
+      '</details>';
   }
 
   // применение на Prom

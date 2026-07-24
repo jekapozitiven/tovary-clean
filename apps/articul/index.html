@@ -163,9 +163,17 @@ async function loadFromCache(){
 /* ==== группировка (та же логика связывания, что в основном приложении) ==== */
 function baseSku(sku, store){
   let s = (sku||'').trim();
-  const suf = (STORES[store].suffix||'').trim();
-  if (suf && s.endsWith(suf)) s = s.slice(0, -suf.length).trim();
+  // терпимо к латинской/кириллической C/В в суффиксе магазина
+  if (store === 'core22') s = s.replace(/\s*\((?:С|C)\)\s*$/i, '').trim();
+  else if (store === 'bonna') s = s.replace(/\s*\((?:B|В)\)\s*$/i, '').trim();
+  else { const suf = (STORES[store].suffix||'').trim(); if (suf && s.endsWith(suf)) s = s.slice(0,-suf.length).trim(); }
   return s;
+}
+// нормализованное название: без магазинного суффикса, нижний регистр
+function normName(name){
+  let s = (name||'').trim();
+  s = s.replace(/\s*\((?:B|В|C|С)\)\s*$/i, '').trim();
+  return s.toLowerCase().replace(/\s+/g, ' ');
 }
 function firstImage(p){
   if (Array.isArray(p.images) && p.images.length) return p.images[0].thumbnail_url || p.images[0].url || '';
@@ -193,38 +201,29 @@ function sizeToken(store, p){
   const me = clean(p.name);
   return (base && me.indexOf(base)===0 ? me.slice(base.length) : '').trim().toUpperCase();
 }
+// Группировка ПО НАЗВАНИЮ: товар собирается по всем магазинам по совпадению
+// названия (без магазинного суффикса). Артикул на связывание не влияет —
+// поэтому разные товары с одинаковым артикулом не смешиваются.
 function buildGroups(){
-  const byId = {};
-  for (const s of STORE_KEYS){ byId[s]=new Map(); for (const p of (byStore[s]||[])) byId[s].set(String(p.id),p); }
-  function localKey(p,store){
-    if (p.variation_group_id != null) return 'v'+p.variation_group_id;
-    const s = baseSku(p.sku,store); return s ? ('s'+s) : ('p'+p.id);
-  }
-  const skuToKey = new Map();
-  for (const p of (byStore[MAIN]||[])){ const s=baseSku(p.sku,MAIN); if(s && !skuToKey.has(s)) skuToKey.set(s, localKey(p,MAIN)); }
-  function globalKey(p,store){
-    if (store===MAIN) return localKey(p,store);
-    const ext = p.external_id!=null ? String(p.external_id) : '';
-    if (ext){ const src=byId[MAIN].get(ext); if(src) return localKey(src,MAIN); }
-    const s = baseSku(p.sku,store);
-    if (s && skuToKey.has(s)) return skuToKey.get(s);
-    return s ? ('s'+s) : localKey(p,store);
-  }
   const map = new Map();
   for (const store of STORE_KEYS) for (const p of (byStore[store]||[])){
-    const key = globalKey(p,store);
+    const key = normName(p.name) || ('sku:' + (p.sku || p.id));
     if (!map.has(key)) map.set(key, { key:key, stores:{} });
     (map.get(key).stores[store] = map.get(key).stores[store] || []).push(p);
   }
   groups = Array.from(map.values());
   for (const g of groups){
-    let best=null, img='', sku='';
-    for (const store of STORE_KEYS){
-      const arr = g.stores[store]; if(!arr) continue;
-      for (const p of arr){ const n=p.name||''; if(best===null||n.length<best.length) best=n; if(!img) img=firstImage(p); if(!sku) sku=baseSku(p.sku,store); }
+    let best=null, img='', base='';
+    for (const store of [MAIN,'bonna','core22','blink']){
+      for (const p of (g.stores[store]||[])){
+        const n = p.name || '';
+        if (best===null || n.length < best.length) best = n;
+        if (!img) img = firstImage(p);
+        if (!base) base = baseSku(p.sku,store) || (p.sku||'');
+      }
     }
     g.name = best || '(без названия)';
-    g.base = sku || g.key;
+    g.base = base || g.key;
     g.image = img;
   }
   groups.sort((a,b)=>a.name.localeCompare(b.name));

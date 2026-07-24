@@ -272,7 +272,7 @@ function buildGroups(){
     g.name = best || '(без названия)';
     g.base = base || '';
     g.image = img;
-    g.search = search.toLowerCase();
+    g.search = normSearch(search);
   }
   groups.sort((a,b)=>a.name.localeCompare(b.name));
 }
@@ -359,13 +359,18 @@ function renderConn(){
   return true;
 }
 
+// поиск без привязки к знакам/пробелам: разбиваем на слова, требуем все
+function normSearch(s){
+  return String(s||'').toLowerCase().replace(/[^0-9a-zа-яёіїєґ]+/gi, ' ').replace(/\s+/g,' ').trim();
+}
 let matches = [];
 function doSearch(){
-  const q = $('q').value.trim().toLowerCase();
   const box = $('results');
-  if (!q){ box.innerHTML = ''; $('hint').textContent = 'Введите название и нажмите «Найти».'; return; }
+  const words = normSearch($('q').value).split(' ').filter(Boolean);
+  if (!words.length){ box.innerHTML = ''; $('hint').textContent = 'Введите название и нажмите «Найти».'; return; }
   matches = groups.filter(function(g){
-    return (g.search || g.name.toLowerCase()).indexOf(q) !== -1;
+    const t = g.search || normSearch(g.name);
+    return words.every(w => t.indexOf(w) !== -1);
   }).slice(0, 60);
   $('hint').textContent = 'Найдено карточек: ' + matches.length + (matches.length===60 ? ' (показаны первые 60 — уточните запрос)' : '');
   box.innerHTML = matches.map((g,i)=>cardHtml(g,i)).join('') || '<div class="empty">Ничего не найдено</div>';
@@ -502,7 +507,15 @@ async function testApply(i){
   }
   buildGroups();
   $('app').style.display = '';
-  $('conn').innerHTML = '<div class="note note--ok">Данные загружены: карточек '+groups.length+'. Найдите товар по названию.</div>';
+  // диагностика: сколько товаров и у скольких есть второе название
+  let total = 0, withMl = 0;
+  for (const k of STORE_KEYS) for (const p of (byStore[k]||[])){
+    total++;
+    if (p.name_multilang && (p.name_multilang.ru || p.name_multilang.uk || p.name_multilang.ua)) withMl++;
+  }
+  const mlNote = withMl ? ('со вторым названием: '+withMl+' из '+total)
+    : ('второго названия НЕТ — залей обновлённый catalog-index.html и нажми «Обновить из Prom» (иначе связывание укр↔рус не работает)');
+  $('conn').innerHTML = '<div class="note note--ok">Данные загружены: карточек '+groups.length+' · '+mlNote+'. Найдите товар по названию.</div>';
   $('find').addEventListener('click', doSearch);
   $('q').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
 })();

@@ -264,8 +264,10 @@ function buildGroups(){
   const comps = new Map();
   items.forEach(function(it,i){
     const r = find(i);
-    if (!comps.has(r)) comps.set(r, { key:'g'+r, stores:{} });
-    (comps.get(r).stores[it.store] = comps.get(r).stores[it.store] || []).push(it.p);
+    if (!comps.has(r)) comps.set(r, { key:'g'+r, stores:{}, _names:new Set() });
+    const c = comps.get(r);
+    (c.stores[it.store] = c.stores[it.store] || []).push(it.p);
+    for (const k of it.keys) c._names.add(k);
   });
   groups = Array.from(comps.values());
   for (const g of groups){
@@ -284,6 +286,9 @@ function buildGroups(){
     g.base = base || '';
     g.image = img;
     g.search = normSearch(search);
+    // наборы слов по каждому названию (для оценки близости при поиске)
+    g.names = Array.from(g._names).map(n => normSearch(n).split(' ').filter(Boolean));
+    delete g._names;
   }
   groups.sort((a,b)=>a.name.localeCompare(b.name));
 }
@@ -374,17 +379,29 @@ function renderConn(){
 function normSearch(s){
   return String(s||'').toLowerCase().replace(/[^0-9a-zа-яёіїєґ]+/gi, ' ').replace(/\s+/g,' ').trim();
 }
+// коэффициент Дайса по словам (насколько два набора похожи, 0..1)
+function diceWords(qset, arr){
+  if (!arr || !arr.length) return 0;
+  let inter = 0; for (const w of arr) if (qset.has(w)) inter++;
+  return (qset.size + arr.length) ? (2*inter) / (qset.size + arr.length) : 0;
+}
 let matches = [];
 function doSearch(){
   const box = $('results');
   const words = normSearch($('q').value).split(' ').filter(Boolean);
   if (!words.length){ box.innerHTML = ''; $('hint').textContent = 'Введите название и нажмите «Найти».'; return; }
-  matches = groups.filter(function(g){
+  const qset = new Set(words);
+  const scored = groups.map(function(g){
     const t = g.search || normSearch(g.name);
-    return words.every(w => t.indexOf(w) !== -1);
-  }).slice(0, 60);
-  $('hint').textContent = 'Найдено карточек: ' + matches.length + (matches.length===60 ? ' (показаны первые 60 — уточните запрос)' : '');
-  box.innerHTML = matches.map((g,i)=>cardHtml(g,i)).join('') || '<div class="empty">Ничего не найдено</div>';
+    let found = 0; for (const w of qset) if (t.indexOf(w) !== -1) found++;
+    const coverage = found / qset.size;                 // сколько слов запроса нашлось
+    let dice = 0; for (const nm of (g.names||[])){ const d = diceWords(qset, nm); if (d > dice) dice = d; }
+    return { g:g, coverage:coverage, dice:dice };
+  }).filter(x => x.coverage >= 0.6)                      // порог: не меньше 60% слов запроса
+    .sort((a,b) => b.coverage - a.coverage || b.dice - a.dice);  // точные — выше
+  matches = scored.slice(0, 60).map(x => x.g);
+  $('hint').textContent = 'Найдено карточек: ' + matches.length + (scored.length > 60 ? ' (показаны первые 60)' : '');
+  box.innerHTML = matches.map((g,i)=>cardHtml(g,i)).join('') || '<div class="empty">Ничего не найдено — попробуйте меньше слов</div>';
 }
 
 function storeCounts(g){
@@ -538,8 +555,11 @@ async function testApply(i){
     const p = (byStore[k]||[])[0];
     if (!p) { diag += STORES[k].title + ': нет данных\n\n'; continue; }
     const shown = {};
-    for (const f of ['name','name_multilang','name_ru','name_uk','name_ua','title','sku','article','variation_group_id','mod_name','modification','title_modification']){
-      if (p[f] !== undefined) shown[f] = p[f];
+    for (const f of Object.keys(p)){
+      if (f === 'images') continue;
+      let v = p[f];
+      if (typeof v === 'string' && v.length > 120) v = v.slice(0,120) + '…';
+      shown[f] = v;
     }
     diag += '### ' + STORES[k].title + '\n' + JSON.stringify(shown, null, 1) + '\n\n';
   }

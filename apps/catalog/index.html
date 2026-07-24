@@ -427,6 +427,10 @@ function slim(p) {
   if (p.name_multilang && typeof p.name_multilang === 'object') {
     o.name_multilang = { ru: p.name_multilang.ru || '', uk: p.name_multilang.uk || p.name_multilang.ua || '' };
   }
+  // название модификации Хорошопа (для связывания в приложении артикула)
+  if (p.mod_name && typeof p.mod_name === 'object' && (p.mod_name.ru || p.mod_name.uk)) {
+    o.mod_name = { ru: p.mod_name.ru || '', uk: p.mod_name.uk || '' };
+  }
   return o;
 }
 

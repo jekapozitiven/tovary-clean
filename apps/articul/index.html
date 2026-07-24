@@ -75,6 +75,9 @@
   details.grp[open] summary:before { content:'▾'; }
   details.grp[open] summary { border-bottom:1px solid var(--border); margin-bottom:6px; }
   details.grp table { margin-bottom:8px; }
+  .thumb { width:38px; height:38px; border-radius:6px; object-fit:cover; background:#17171a; border:1px solid var(--border); display:block; }
+  .diag { margin-top:10px; }
+  .diag pre { white-space:pre-wrap; word-break:break-word; font-size:11px; color:var(--dim); background:#0f0f11; border:1px solid var(--border); border-radius:8px; padding:10px; max-height:340px; overflow:auto; }
 </style>
 </head>
 <body>
@@ -117,6 +120,7 @@ let dbPromise = null, byStore = {}, groups = [];
 
 const $ = (id) => document.getElementById(id);
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const escapeAttr = escapeHtml;
 function decodeMsg(s){ try { return String(s).replace(/\\u([0-9a-fA-F]{4})/g,(m,h)=>String.fromCharCode(parseInt(h,16))); } catch(e){ return String(s); } }
 
 async function api(route, payload){
@@ -217,16 +221,24 @@ function sizeToken(store, p){
   return (base && me.indexOf(base)===0 ? me.slice(base.length) : '').trim().toUpperCase();
 }
 // все варианты названия товара (рус + укр), нормализованные
-function nameVariants(p){
+// все возможные строки-названия товара (рус+укр, разные варианты полей,
+// плюс название модификации у Хорошопа) — сырые, без нормализации
+function allNames(p){
   const arr = [];
-  if (p.name) arr.push(p.name);
-  if (p.name_multilang){
-    if (p.name_multilang.ru) arr.push(p.name_multilang.ru);
-    if (p.name_multilang.uk) arr.push(p.name_multilang.uk);
-    if (p.name_multilang.ua) arr.push(p.name_multilang.ua);
-  }
+  const push = v => { if (v && typeof v === 'string') arr.push(v); };
+  const obj = o => { if (o && typeof o === 'object') { push(o.ru); push(o.uk); push(o.ua); } };
+  push(p.name);
+  obj(p.name_multilang);
+  push(p.name_ru); push(p.name_uk); push(p.name_ua);
+  push(p.title); obj(p.title);
+  // название модификации (Хорошоп): «Название модификации (RU/UA)»
+  push(p.mod_name); push(p.modification); push(p.modification_name);
+  obj(p.modification); obj(p.mod_name); obj(p.title_modification);
+  return arr;
+}
+function nameVariants(p){
   const out = [];
-  for (const n of arr){ const k = normName(n); if (k && out.indexOf(k) === -1) out.push(k); }
+  for (const n of allNames(p)){ const k = normName(n); if (k && out.indexOf(k) === -1) out.push(k); }
   return out;
 }
 
@@ -264,8 +276,7 @@ function buildGroups(){
         if ((store===MAIN || best===null) && (best===null || n.length < best.length)) best = n;
         if (!img) img = firstImage(p);
         if (!base && store===MAIN) base = (p.sku||'');
-        search += ' ' + n;
-        if (p.name_multilang) search += ' ' + (p.name_multilang.ru||'') + ' ' + (p.name_multilang.uk||p.name_multilang.ua||'');
+        search += ' ' + allNames(p).join(' ');
       }
     }
     if (!base){ for (const store of STORE_KEYS){ const a=(g.stores[store]||[])[0]; if(a){ base=a.sku||''; break; } } }
@@ -410,9 +421,13 @@ function detailHtml(i){
     if (!arr.length) continue;
     cur += '<details class="grp"><summary><b>'+escapeHtml(STORES[store].title)+'</b> ' +
         '<span class="muted">('+arr.length+' поз.)</span></summary>' +
-      '<table>' + arr.map(p =>
-        '<tr><td>'+escapeHtml((p.name||'').slice(0,55))+'</td>' +
-        '<td class="old">'+escapeHtml(p.sku||p.article||'—')+'</td></tr>').join('') +
+      '<table>' + arr.map(function(p){
+        const im = firstImage(p);
+        return '<tr>' +
+          '<td style="width:44px">' + (im ? '<img class="thumb" src="'+escapeAttr(im)+'" alt="">' : '<span class="thumb"></span>') + '</td>' +
+          '<td>'+escapeHtml((p.name||'').slice(0,55))+'</td>' +
+          '<td class="old">'+escapeHtml(p.sku||p.article||'—')+'</td></tr>';
+      }).join('') +
       '</table></details>';
   }
   const missing = STORE_KEYS.filter(k => !(g.stores[k]||[]).length).map(k => STORES[k].title);
@@ -515,7 +530,23 @@ async function testApply(i){
   }
   const mlNote = withMl ? ('со вторым названием: '+withMl+' из '+total)
     : ('второго названия НЕТ — залей обновлённый catalog-index.html и нажми «Обновить из Prom» (иначе связывание укр↔рус не работает)');
-  $('conn').innerHTML = '<div class="note note--ok">Данные загружены: карточек '+groups.length+' · '+mlNote+'. Найдите товар по названию.</div>';
+
+  // Диагностика: сырые поля по одному товару с каждого магазина — чтобы точно
+  // увидеть, какие поля реально приходят (пришли мне скрин этого блока).
+  let diag = '';
+  for (const k of STORE_KEYS){
+    const p = (byStore[k]||[])[0];
+    if (!p) { diag += STORES[k].title + ': нет данных\n\n'; continue; }
+    const shown = {};
+    for (const f of ['name','name_multilang','name_ru','name_uk','name_ua','title','sku','article','variation_group_id','mod_name','modification','title_modification']){
+      if (p[f] !== undefined) shown[f] = p[f];
+    }
+    diag += '### ' + STORES[k].title + '\n' + JSON.stringify(shown, null, 1) + '\n\n';
+  }
+
+  $('conn').innerHTML = '<div class="note note--ok">Данные загружены: карточек '+groups.length+' · '+mlNote+'. Найдите товар по названию.</div>' +
+    '<details class="diag"><summary class="muted" style="cursor:pointer">🔧 Диагностика данных (пришли скрин этого, если поиск барахлит)</summary>' +
+    '<pre>'+escapeHtml(diag)+'</pre></details>';
   $('find').addEventListener('click', doSearch);
   $('q').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
 })();

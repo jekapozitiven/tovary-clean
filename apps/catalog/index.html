@@ -422,6 +422,11 @@ function slim(p) {
   } else if (p.group_name || p.group_id) {
     o.group = { id: p.group_id || null, name: p.group_name || '' };
   }
+  // оба названия (рус+укр) — для поиска/связывания в приложении смены артикула.
+  // Ценовое приложение это поле не использует, поведение не меняется.
+  if (p.name_multilang && typeof p.name_multilang === 'object') {
+    o.name_multilang = { ru: p.name_multilang.ru || '', uk: p.name_multilang.uk || p.name_multilang.ua || '' };
+  }
   return o;
 }
 

@@ -76,6 +76,8 @@
   details.grp[open] summary { border-bottom:1px solid var(--border); margin-bottom:6px; }
   details.grp table { margin-bottom:8px; }
   .thumb { width:38px; height:38px; border-radius:6px; object-fit:cover; background:#17171a; border:1px solid var(--border); display:block; }
+  .kidrow { display:flex; gap:10px; align-items:center; padding:7px 0; border-bottom:1px solid var(--border); }
+  .kidrow .btn { flex:none; }
   .diag { margin-top:10px; }
   .diag pre { white-space:pre-wrap; word-break:break-word; font-size:11px; color:var(--dim); background:#0f0f11; border:1px solid var(--border); border-radius:8px; padding:10px; max-height:340px; overflow:auto; }
 </style>
@@ -116,7 +118,7 @@ const PROM_STORES = ['blackstreet','bonna','core22'];
 const MAIN = 'blackstreet';
 
 const DB_NAME = 'tovary-prices', DB_STORE = 'stores';
-let dbPromise = null, byStore = {}, groups = [];
+let dbPromise = null, byStore = {}, groups = [], blinkIndex = [];
 
 const $ = (id) => document.getElementById(id);
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -293,6 +295,24 @@ function buildGroups(){
   groups.sort((a,b)=>a.name.localeCompare(b.name));
 }
 
+// индекс товаров Blink (для ручной привязки): группируем по родительскому артикулу
+function buildBlinkIndex(){
+  const m = new Map();
+  for (const p of (byStore.blink || [])){
+    const parent = String(p.sku || p.article || p.id || '').trim();
+    if (!parent) continue;
+    if (!m.has(parent)) m.set(parent, { parent:parent, variants:[], image:'', name:'', search:'' });
+    const b = m.get(parent);
+    b.variants.push(p);
+    if (!b.image) b.image = firstImage(p);
+    const nm = p.name || '';
+    if (!b.name || (nm && nm.length < b.name.length)) b.name = nm;
+    b.search += ' ' + allNames(p).join(' ');
+  }
+  blinkIndex = Array.from(m.values());
+  for (const b of blinkIndex) b.search = normSearch(b.search);
+}
+
 /* ==== ПЛАН новых артикулов по правилам ==== */
 // набор родительских артикулов Blink, занятых ДРУГИМИ карточками
 function blinkTakenExcept(g){
@@ -391,13 +411,17 @@ function doSearch(){
   const words = normSearch($('q').value).split(' ').filter(Boolean);
   if (!words.length){ box.innerHTML = ''; $('hint').textContent = 'Введите название и нажмите «Найти».'; return; }
   const qset = new Set(words);
+  // отличительные слова запроса (бренд/модель: латиница или цифры) — обязательны
+  const mustHave = words.filter(w => /[a-z0-9]/i.test(w));
   const scored = groups.map(function(g){
     const t = g.search || normSearch(g.name);
+    // если в запросе есть отличительные слова — все они должны быть в карточке
+    for (const d of mustHave) if (t.indexOf(d) === -1) return null;
     let found = 0; for (const w of qset) if (t.indexOf(w) !== -1) found++;
     const coverage = found / qset.size;                 // сколько слов запроса нашлось
     let dice = 0; for (const nm of (g.names||[])){ const d = diceWords(qset, nm); if (d > dice) dice = d; }
     return { g:g, coverage:coverage, dice:dice };
-  }).filter(x => x.coverage >= 0.6)                      // порог: не меньше 60% слов запроса
+  }).filter(x => x && x.coverage >= 0.6)                 // порог: не меньше 60% слов запроса
     .sort((a,b) => b.coverage - a.coverage || b.dice - a.dice);  // точные — выше
   matches = scored.slice(0, 60).map(x => x.g);
   $('hint').textContent = 'Найдено карточек: ' + matches.length + (scored.length > 60 ? ' (показаны первые 60)' : '');
@@ -450,12 +474,67 @@ function detailHtml(i){
   const missing = STORE_KEYS.filter(k => !(g.stores[k]||[]).length).map(k => STORES[k].title);
   if (missing.length) cur += '<div class="muted" style="margin-top:6px">Нет на: ' + escapeHtml(missing.join(', ')) + '</div>';
   return cur +
+    '<div class="store-h" style="margin-top:14px">Blink (Хорошоп) — привязать вручную</div>' +
+    '<div id="blinkattach-'+i+'">' + blinkAttachHtml(i) + '</div>' +
     '<div class="row" style="margin-top:14px">' +
       '<label>Новый артикул:</label>' +
       '<input type="text" id="newart-'+i+'" placeholder="напр. Хар-11" oninput="renderPreview('+i+')">' +
       '<button class="btn btn--sm" onclick="renderPreview('+i+')">Показать превью</button>' +
     '</div>' +
     '<div id="preview-'+i+'"></div>';
+}
+
+/* ==== ручная привязка Blink ==== */
+function blinkAttachHtml(i){
+  const g = matches[i];
+  const cur = g.stores.blink || [];
+  let h = '';
+  if (cur.length){
+    h += '<div class="note note--ok" style="margin:6px 0">Привязано к Blink: ' +
+      escapeHtml((cur[0].name || '').slice(0,55)) + ' (' + cur.length + ' поз.) · ' +
+      '<a href="#" style="color:#fca5a5" onclick="detachBlink('+i+');return false;">отвязать</a></div>';
+  } else {
+    h += '<div class="muted" style="margin:4px 0 8px">Не привязан. Найди костюм на Blink по названию и нажми «Привязать».</div>';
+  }
+  h += '<div class="row">' +
+      '<input type="text" id="blinkq-'+i+'" placeholder="поиск по Blink, напр. костюм футболка шорты черный" oninput="searchBlink('+i+')">' +
+      '<button class="btn btn--sm" onclick="searchBlink('+i+')">Искать на Blink</button>' +
+    '</div><div id="blinkres-'+i+'"></div>';
+  return h;
+}
+function searchBlink(i){
+  const box = $('blinkres-'+i);
+  const words = normSearch($('blinkq-'+i).value).split(' ').filter(Boolean);
+  if (!words.length){ box.innerHTML = ''; return; }
+  const must = words.filter(w => /[a-z0-9]/i.test(w));
+  const list = blinkIndex.filter(function(b){
+    for (const d of must) if (b.search.indexOf(d) === -1) return false;
+    return words.every(w => b.search.indexOf(w) !== -1);
+  }).slice(0, 20);
+  box.innerHTML = list.length ? list.map(function(b){
+    const im = b.image;
+    return '<div class="kidrow">' +
+      (im ? '<img class="thumb" src="'+escapeAttr(im)+'">' : '<span class="thumb"></span>') +
+      '<div style="flex:1;min-width:0"><div style="font-size:12.5px">'+escapeHtml((b.name||'').slice(0,62))+'</div>' +
+      '<div class="muted">'+escapeHtml(b.parent)+' · '+b.variants.length+' поз.</div></div>' +
+      '<button class="btn btn--sm" onclick="attachBlink('+i+',\''+encodeURIComponent(b.parent)+'\')">Привязать</button></div>';
+  }).join('') : '<div class="muted">На Blink не найдено — попробуй другие слова.</div>';
+}
+function reRenderDetail(i){
+  const val = ($('newart-'+i) || {}).value || '';
+  $('detail-'+i).innerHTML = detailHtml(i);
+  if (val && $('newart-'+i)){ $('newart-'+i).value = val; renderPreview(i); }
+}
+function attachBlink(i, parentEnc){
+  const parent = decodeURIComponent(parentEnc);
+  const b = blinkIndex.find(x => x.parent === parent);
+  if (!b) return;
+  matches[i].stores.blink = b.variants.slice();
+  reRenderDetail(i);
+}
+function detachBlink(i){
+  delete matches[i].stores.blink;
+  reRenderDetail(i);
 }
 
 function renderPreview(i){
@@ -538,6 +617,7 @@ async function testApply(i){
     return;
   }
   buildGroups();
+  buildBlinkIndex();
   $('app').style.display = '';
   // диагностика: сколько товаров и у скольких есть второе название
   let total = 0, withMl = 0;

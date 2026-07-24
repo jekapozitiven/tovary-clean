@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0b">
+<title>Смена артикула — Товары</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%20%3Crect%20width%3D%2224%22%20height%3D%2224%22%20rx%3D%225.5%22%20fill%3D%22%230e0e10%22%2F%3E%20%3Cg%20transform%3D%22translate(1.3%200.6)%20scale(0.85)%22%3E%20%3Cpath%20d%3D%22M2.05%202.05h2l2.66%2012.42a2%202%200%200%200%202%201.58h9.78a2%202%200%200%200%201.95-1.57l1.65-7.43H5.12%22%20fill%3D%22none%22%20stroke%3D%22%23d6f24a%22%20stroke-width%3D%221.9%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%20%3Ccircle%20cx%3D%228%22%20cy%3D%2221%22%20r%3D%221.8%22%20fill%3D%22%23d6f24a%22%2F%3E%20%3Ccircle%20cx%3D%2219%22%20cy%3D%2221%22%20r%3D%221.8%22%20fill%3D%22%23d6f24a%22%2F%3E%20%3C%2Fg%3E%20%3C%2Fsvg%3E">
+<style>
+  :root {
+    --bg:#0a0a0b; --panel:#141416; --panel2:#101013; --border:#26262b; --border-h:#3a3a42;
+    --text:#e9e9ea; --dim:#b4b4b8; --faint:#75757c; --accent:#d6f24a; --green:#34d399; --red:#f87171;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; }
+  .topbar { display:flex; align-items:center; justify-content:space-between;
+            padding:14px 22px; border-bottom:1px solid var(--border); }
+  .brand { font-weight:800; letter-spacing:.02em; }
+  .brand span { color:var(--accent); }
+  .brand small { display:block; font-weight:500; color:var(--faint); font-size:12px; margin-top:2px; }
+  .home { color:var(--dim); text-decoration:none; font-size:13px; }
+  .wrap { max-width:1100px; margin:0 auto; padding:20px 22px 60px; }
+
+  .btn { display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border-radius:999px;
+         border:1px solid var(--border-h); background:#1a1a1e; color:var(--text);
+         font-family:var(--font); font-size:13.5px; font-weight:600; cursor:pointer; }
+  .btn:hover { border-color:var(--accent); }
+  .btn--go { background:var(--accent); color:#12140a; border-color:var(--accent); }
+  .btn--sm { padding:7px 13px; font-size:13px; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+
+  input[type=text] { width:100%; padding:11px 14px; border-radius:10px; border:1px solid var(--border);
+         background:#0f0f11; color:var(--text); font-family:var(--font); font-size:14px; }
+  input:focus { outline:none; border-color:var(--accent); }
+
+  .note { padding:12px 16px; border-radius:10px; font-size:13px; line-height:1.55; margin-bottom:14px; }
+  .note--warn { background:rgba(214,242,74,.06); border:1px solid rgba(214,242,74,.22); color:var(--dim); }
+  .note--err  { background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.28); color:#fca5a5; }
+  .note--ok   { background:rgba(52,211,153,.08); border:1px solid rgba(52,211,153,.28); color:#6ee7b7; }
+
+  .searchbar { display:flex; gap:10px; align-items:center; margin-bottom:8px; }
+  .searchbar input { flex:1; }
+  .muted { color:var(--faint); font-size:12.5px; }
+
+  .card { border:1px solid var(--border); border-radius:12px; background:var(--panel); margin-top:10px; overflow:hidden; }
+  .card__top { display:flex; gap:12px; align-items:center; padding:12px 14px; cursor:pointer; }
+  .card__top:hover { background:#17171a; }
+  .card__img { width:46px; height:46px; border-radius:8px; object-fit:cover; background:#17171a;
+               border:1px solid var(--border); flex:none; }
+  .card__body { flex:1; min-width:0; }
+  .card__name { font-weight:600; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .card__meta { font-size:11.5px; color:var(--faint); margin-top:2px; }
+  .card__chev { color:var(--faint); flex:none; }
+
+  .detail { border-top:1px solid var(--border); padding:14px; display:none; }
+  .card.is-open .detail { display:block; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .row label { font-size:12px; color:var(--faint); }
+  .row input[type=text] { width:220px; }
+
+  table { width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--faint); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  .old { color:var(--faint); text-decoration:line-through; }
+  .new { color:var(--accent); font-weight:700; }
+  .store-h { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim);
+             margin:14px 0 2px; font-weight:700; }
+  .empty { padding:30px; text-align:center; color:var(--faint); }
+  .kop { color:#fbbf24; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">ТОВАРЫ<span>//</span><small>Массовая смена артикула</small></div>
+  <a class="home" href="../../index.html">← Главная</a>
+</header>
+
+<main class="wrap">
+  <div id="conn"></div>
+
+  <div id="app" style="display:none">
+    <div class="searchbar">
+      <input type="text" id="q" placeholder="Название товара (рус/укр), напр. Мужской летний костюм белый">
+      <button class="btn btn--sm" id="find">Найти</button>
+    </div>
+    <div class="muted" id="hint">Введите название и нажмите «Найти». Показываются карточки, объединяющие все магазины.</div>
+    <div id="results"></div>
+  </div>
+</main>
+
+<script>
+/* ==== конфиг и данные — те же, что у «Цены и наличие» ==== */
+const CFG_KEY = 'tovary:prices:cfg';
+const loadJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+let cfg = loadJSON(CFG_KEY, { url:'', pass:'' });
+
+const STORES = {
+  blackstreet: { title:'Black Street', suffix:'',     kind:'prom' },
+  bonna:       { title:'Bonna-shop',   suffix:' (B)', kind:'prom' },
+  core22:      { title:'Core22',       suffix:' (С)', kind:'prom' },   // кириллическая С
+  blink:       { title:'Blink',        suffix:'',     kind:'horoshop' },
+};
+const STORE_KEYS = Object.keys(STORES);
+const PROM_STORES = ['blackstreet','bonna','core22'];
+const MAIN = 'blackstreet';
+
+const DB_NAME = 'tovary-prices', DB_STORE = 'stores';
+let dbPromise = null, byStore = {}, groups = [];
+
+const $ = (id) => document.getElementById(id);
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function decodeMsg(s){ try { return String(s).replace(/\\u([0-9a-fA-F]{4})/g,(m,h)=>String.fromCharCode(parseInt(h,16))); } catch(e){ return String(s); } }
+
+async function api(route, payload){
+  if (!cfg.url) throw new Error('Не задан адрес посредника (откройте «Цены и наличие» → Настройки).');
+  const res = await fetch(cfg.url.replace(/\/+$/,'') + route, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'X-App-Password':cfg.pass },
+    body: JSON.stringify(payload||{}),
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok){
+    const d = data.detail ? '\n'+JSON.stringify(data.detail) : '';
+    throw new Error(decodeMsg((data.error||('Ошибка '+res.status))+d));
+  }
+  return data;
+}
+
+/* ==== чтение кэша (заполняет основное приложение) ==== */
+function db(){
+  if (!dbPromise) dbPromise = new Promise((resolve,reject)=>{
+    const req = indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded = ()=>{ const d=req.result; if(!d.objectStoreNames.contains(DB_STORE)) d.createObjectStore(DB_STORE); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+  return dbPromise;
+}
+function cacheGet(key){
+  return db().then(d=>new Promise((resolve,reject)=>{
+    const r = d.transaction(DB_STORE,'readonly').objectStore(DB_STORE).get(key);
+    r.onsuccess = ()=>resolve(r.result); r.onerror = ()=>reject(r.error);
+  }));
+}
+async function loadFromCache(){
+  let any = false;
+  for (const key of STORE_KEYS){
+    let products = [];
+    try {
+      let miss = 0;
+      for (let i=0; i<200 && miss<3; i++){
+        const part = await cacheGet(key+':'+i);
+        if (part && Array.isArray(part.products) && part.products.length){ products = products.concat(part.products); miss=0; }
+        else miss++;
+      }
+    } catch(e){}
+    if (products.length){ byStore[key] = products; any = true; }
+  }
+  return any;
+}
+
+/* ==== группировка (та же логика связывания, что в основном приложении) ==== */
+function baseSku(sku, store){
+  let s = (sku||'').trim();
+  const suf = (STORES[store].suffix||'').trim();
+  if (suf && s.endsWith(suf)) s = s.slice(0, -suf.length).trim();
+  return s;
+}
+function firstImage(p){
+  if (Array.isArray(p.images) && p.images.length) return p.images[0].thumbnail_url || p.images[0].url || '';
+  return p.main_image || '';
+}
+function siblingsOf(store, p){
+  const arr = byStore[store] || [];
+  if (p.variation_group_id != null) return arr.filter(x=>x.id!==p.id && x.variation_group_id===p.variation_group_id);
+  const base = baseSku(p.sku, store);
+  if (!base) return [];
+  return arr.filter(x=>x.id!==p.id && baseSku(x.sku,store)===base);
+}
+function sizeToken(store, p){
+  if (store === 'blink'){
+    const parent = p.sku || '';
+    const art = String(p.article || p.id || '');
+    const tail = (parent && art.indexOf(parent)===0) ? art.slice(parent.length) : '';
+    return tail.replace(/^[-_. ]+/,'').trim().toUpperCase();
+  }
+  const family = [p].concat(siblingsOf(store,p));
+  const suf = (STORES[store].suffix||'').trim();
+  const clean = (n)=>{ let x=(n||'').trim(); if(suf && x.endsWith(suf)) x=x.slice(0,-suf.length).trim(); return x; };
+  let base = clean(family[0].name);
+  for (const x of family){ const c=clean(x.name); if(c.length<base.length) base=c; }
+  const me = clean(p.name);
+  return (base && me.indexOf(base)===0 ? me.slice(base.length) : '').trim().toUpperCase();
+}
+function buildGroups(){
+  const byId = {};
+  for (const s of STORE_KEYS){ byId[s]=new Map(); for (const p of (byStore[s]||[])) byId[s].set(String(p.id),p); }
+  function localKey(p,store){
+    if (p.variation_group_id != null) return 'v'+p.variation_group_id;
+    const s = baseSku(p.sku,store); return s ? ('s'+s) : ('p'+p.id);
+  }
+  const skuToKey = new Map();
+  for (const p of (byStore[MAIN]||[])){ const s=baseSku(p.sku,MAIN); if(s && !skuToKey.has(s)) skuToKey.set(s, localKey(p,MAIN)); }
+  function globalKey(p,store){
+    if (store===MAIN) return localKey(p,store);
+    const ext = p.external_id!=null ? String(p.external_id) : '';
+    if (ext){ const src=byId[MAIN].get(ext); if(src) return localKey(src,MAIN); }
+    const s = baseSku(p.sku,store);
+    if (s && skuToKey.has(s)) return skuToKey.get(s);
+    return s ? ('s'+s) : localKey(p,store);
+  }
+  const map = new Map();
+  for (const store of STORE_KEYS) for (const p of (byStore[store]||[])){
+    const key = globalKey(p,store);
+    if (!map.has(key)) map.set(key, { key:key, stores:{} });
+    (map.get(key).stores[store] = map.get(key).stores[store] || []).push(p);
+  }
+  groups = Array.from(map.values());
+  for (const g of groups){
+    let best=null, img='', sku='';
+    for (const store of STORE_KEYS){
+      const arr = g.stores[store]; if(!arr) continue;
+      for (const p of arr){ const n=p.name||''; if(best===null||n.length<best.length) best=n; if(!img) img=firstImage(p); if(!sku) sku=baseSku(p.sku,store); }
+    }
+    g.name = best || '(без названия)';
+    g.base = sku || g.key;
+    g.image = img;
+  }
+  groups.sort((a,b)=>a.name.localeCompare(b.name));
+}
+
+/* ==== ПЛАН новых артикулов по правилам ==== */
+// набор родительских артикулов Blink, занятых ДРУГИМИ карточками
+function blinkTakenExcept(g){
+  const own = new Set((g.stores['blink']||[]).map(p=>String(p.id)));
+  const taken = new Set();
+  for (const p of (byStore['blink']||[])){
+    if (own.has(String(p.id))) continue;
+    const parent = (p.sku||'').trim().toLowerCase();
+    if (parent) taken.add(parent);
+  }
+  return taken;
+}
+function planArticles(g, newBase){
+  newBase = (newBase||'').trim();
+  const plan = { prom:[], blink:[], blinkParent:'' };
+  if (!newBase) return plan;
+
+  // Prom: Black Street — без добавок, Bonna — (B), Core22 — (С); главный и разновидности одинаково
+  for (const store of PROM_STORES){
+    const suf = STORES[store].suffix;
+    for (const p of (g.stores[store]||[])){
+      plan.prom.push({ store:store, id:p.id, name:p.name, current:(p.sku||''), next:(newBase+suf) });
+    }
+  }
+
+  // Blink: уникальный родительский артикул (при коллизии → (коп1), (коп2)…)
+  const blink = g.stores['blink'] || [];
+  if (blink.length){
+    const taken = blinkTakenExcept(g);
+    let parent = newBase, n = 0;
+    while (taken.has(parent.trim().toLowerCase())){ n++; parent = newBase + '(коп'+n+')'; }
+    plan.blinkParent = parent;
+    // главный (без размера) первым
+    const rows = blink.map(p=>({ p:p, size:sizeToken('blink',p) }));
+    rows.sort((a,b)=> (a.size?1:0)-(b.size?1:0) || a.size.localeCompare(b.size));
+    for (const r of rows){
+      const article = r.size ? (parent + ' ' + r.size) : parent;
+      plan.blink.push({
+        id: r.p.id,
+        name: r.p.name,
+        size: r.size,
+        currentArticle: String(r.p.article || r.p.id || ''),
+        currentParent: (r.p.sku||''),
+        parent: parent,          // Родительский артикул
+        display: parent,         // Артикул для отображения на сайте
+        article: article,        // Артикул (уникальный)
+      });
+    }
+  }
+  return plan;
+}
+
+/* ==== применение на Prom (тест, 1 карточка) ==== */
+async function applyPromCard(plan){
+  const jobs = {};
+  for (const it of plan.prom){ (jobs[it.store] = jobs[it.store] || []).push({ id:it.id, sku:it.next }); }
+  const report = [];
+  for (const store of PROM_STORES){
+    const list = jobs[store]; if (!list || !list.length) continue;
+    try {
+      const res = await api('/edit', { store:store, products:list });
+      const ok = ((res && res.processed_ids) || []).map(String);
+      let line = STORES[store].title + ': принято ' + ok.length + ' из ' + list.length;
+      if (ok.length < list.length) line += ' · ответ Prom: ' + escapeHtml(JSON.stringify(res).slice(0,300));
+      report.push({ ok: ok.length === list.length && list.length>0, text: line });
+    } catch(e){
+      report.push({ ok:false, text: STORES[store].title + ': ' + escapeHtml(e.message) });
+    }
+  }
+  return report;
+}
+
+/* ==== интерфейс ==== */
+function renderConn(){
+  const box = $('conn');
+  if (!cfg.url || !cfg.pass){
+    box.innerHTML = '<div class="note note--err">Нет данных подключения. Откройте приложение «Цены и наличие», нажмите «Настройки» и сохраните адрес посредника и пароль — они общие для обоих приложений.</div>';
+    return false;
+  }
+  return true;
+}
+
+let matches = [];
+function doSearch(){
+  const q = $('q').value.trim().toLowerCase();
+  const box = $('results');
+  if (!q){ box.innerHTML = ''; $('hint').textContent = 'Введите название и нажмите «Найти».'; return; }
+  matches = groups.filter(function(g){
+    if (g.name.toLowerCase().indexOf(q) !== -1) return true;
+    return STORE_KEYS.some(k => (g.stores[k]||[]).some(p => (p.name||'').toLowerCase().indexOf(q) !== -1));
+  }).slice(0, 60);
+  $('hint').textContent = 'Найдено карточек: ' + matches.length + (matches.length===60 ? ' (показаны первые 60 — уточните запрос)' : '');
+  box.innerHTML = matches.map((g,i)=>cardHtml(g,i)).join('') || '<div class="empty">Ничего не найдено</div>';
+}
+
+function storeCounts(g){
+  return STORE_KEYS.filter(k=>(g.stores[k]||[]).length)
+    .map(k=>STORES[k].title+': '+(g.stores[k].length)).join(' · ');
+}
+
+function cardHtml(g, i){
+  return '<div class="card" id="card-'+i+'">' +
+    '<div class="card__top" onclick="toggleCard('+i+')">' +
+      (g.image ? '<img class="card__img" src="'+escapeHtml(g.image)+'" alt="">' : '<span class="card__img"></span>') +
+      '<div class="card__body"><div class="card__name">'+escapeHtml(g.name)+'</div>' +
+      '<div class="card__meta">Артикул: '+escapeHtml(g.base)+' · '+escapeHtml(storeCounts(g))+'</div></div>' +
+      '<span class="card__chev">▸</span>' +
+    '</div>' +
+    '<div class="detail" id="detail-'+i+'"></div>' +
+  '</div>';
+}
+
+function toggleCard(i){
+  const card = $('card-'+i);
+  const open = card.classList.toggle('is-open');
+  if (open && !$('detail-'+i).dataset.ready){
+    $('detail-'+i).innerHTML = detailHtml(i);
+    $('detail-'+i).dataset.ready = '1';
+  }
+}
+
+function detailHtml(i){
+  return '<div class="row">' +
+      '<label>Новый артикул:</label>' +
+      '<input type="text" id="newart-'+i+'" placeholder="напр. Хар-11" oninput="renderPreview('+i+')">' +
+      '<button class="btn btn--sm" onclick="renderPreview('+i+')">Показать превью</button>' +
+    '</div>' +
+    '<div id="preview-'+i+'"></div>';
+}
+
+function renderPreview(i){
+  const g = matches[i];
+  const base = $('newart-'+i).value.trim();
+  const box = $('preview-'+i);
+  if (!base){ box.innerHTML = '<div class="muted">Введите новый артикул, чтобы увидеть превью.</div>'; return; }
+  const plan = planArticles(g, base);
+
+  let html = '';
+  // Prom
+  html += '<div class="store-h">Prom (Black Street, Bonna, Core22)</div>';
+  html += '<table><tr><th>Магазин</th><th>Товар</th><th>Было</th><th>Станет</th></tr>' +
+    plan.prom.map(it =>
+      '<tr><td>'+escapeHtml(STORES[it.store].title)+'</td>' +
+      '<td>'+escapeHtml((it.name||'').slice(0,42))+'</td>' +
+      '<td class="old">'+escapeHtml(it.current||'—')+'</td>' +
+      '<td class="new">'+escapeHtml(it.next)+'</td></tr>').join('') +
+    '</table>';
+
+  // Blink
+  if (plan.blink.length){
+    const kop = plan.blinkParent !== base;
+    html += '<div class="store-h">Blink (Хорошоп)' +
+      (kop ? ' — <span class="kop">артикул занят, будет: '+escapeHtml(plan.blinkParent)+'</span>' : '') + '</div>';
+    html += '<table><tr><th>Размер</th><th>Родит. артикул</th><th>Артикул для сайта</th><th>Артикул (было → станет)</th></tr>' +
+      plan.blink.map(b =>
+        '<tr><td>'+escapeHtml(b.size||'—')+'</td>' +
+        '<td class="new">'+escapeHtml(b.parent)+'</td>' +
+        '<td class="new">'+escapeHtml(b.display)+'</td>' +
+        '<td><span class="old">'+escapeHtml(b.currentArticle||'—')+'</span> → <span class="new">'+escapeHtml(b.article)+'</span></td></tr>').join('') +
+      '</table>';
+    html += '<div class="note note--warn" style="margin-top:10px">Blink пока только превью. Запись артикула на Хорошоп включим после теста на Prom и проверки, что Хорошоп переименовывает товар, а не создаёт дубль.</div>';
+  }
+
+  // применение на Prom
+  html += '<div class="row" style="margin-top:14px">' +
+    '<button class="btn btn--go btn--sm" id="apply-'+i+'" onclick="testApply('+i+')">Тест: применить на Prom (эта карточка)</button>' +
+    '<span class="muted">Изменит артикул только на Prom и только у этой карточки. Обратимо.</span>' +
+    '</div><div id="applyres-'+i+'"></div>';
+
+  box.innerHTML = html;
+}
+
+async function testApply(i){
+  const g = matches[i];
+  const base = $('newart-'+i).value.trim();
+  if (!base) return;
+  if (!confirm('Применить артикул «'+base+'» на Prom для этой карточки (Black Street / Bonna / Core22)?')) return;
+  const btn = $('apply-'+i); btn.disabled = true; btn.textContent = 'Отправляю…';
+  const res = $('applyres-'+i);
+  res.innerHTML = '<div class="note note--warn">Отправляю на Prom…</div>';
+  try {
+    const plan = planArticles(g, base);
+    const report = await applyPromCard(plan);
+    const allOk = report.every(r=>r.ok);
+    res.innerHTML = '<div class="note note--'+(allOk?'ok':'err')+'">' +
+      report.map(r=>escapeHtml(r.text)).join('<br>') +
+      '<br><br>Проверьте товар в кабинете Prom: сменился ли артикул. Если да — включим массовый режим и Blink.</div>';
+  } catch(e){
+    res.innerHTML = '<div class="note note--err">'+escapeHtml(e.message)+'</div>';
+  }
+  btn.disabled = false; btn.textContent = 'Тест: применить на Prom (эта карточка)';
+}
+
+/* ==== старт ==== */
+(async function init(){
+  if (!renderConn()) return;
+  const ok = await loadFromCache();
+  if (!ok){
+    $('conn').innerHTML = '<div class="note note--warn">В памяти нет загруженных товаров. Откройте «Цены и наличие», нажмите «Обновить из Prom» (данные общие), потом вернитесь сюда.</div>';
+    return;
+  }
+  buildGroups();
+  $('app').style.display = '';
+  $('conn').innerHTML = '<div class="note note--ok">Данные загружены: карточек '+groups.length+'. Найдите товар по названию.</div>';
+  $('find').addEventListener('click', doSearch);
+  $('q').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
+})();
+</script>
+</body>
+</html>

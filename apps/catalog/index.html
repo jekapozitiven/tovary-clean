@@ -260,8 +260,6 @@
           <option value="order">Под заказ</option>
           <option value="waiting_for_supply">Ожидается поставка</option>
         </select></label>
-      <label class="f"><span>Новый артикул (Prom)</span>
-        <input type="text" class="w-sel" id="m-article" placeholder="не менять"></label>
       <label class="f"><span>Видимость</span>
         <select class="w-sel" id="m-status">
           <option value="">не менять</option>
@@ -1292,8 +1290,6 @@ async function applyChanges(items, vals, msgBox) {
       }
       if (vals.discount === 'clear') o.discount = null;
       else if (hasDisc) o.discount = discountObj(step);
-      // смена артикула (только Prom): база + суффикс магазина. Blink не трогаем.
-      if (vals.article) o.sku = vals.article + (STORES[store].suffix || '');
     }
 
     if (vals.presence) o.presence = vals.presence;
@@ -1424,11 +1420,9 @@ function runMass(clearDiscount) {
               }),
     presence: $('m-presence').value,
     status: $('m-status').value,
-    article: ($('m-article') ? $('m-article').value.trim() : '') || null,
   };
 
   const what = [];
-  if (vals.article) what.push('артикул → ' + vals.article + ' (только Prom; Blink не трогаем)');
   if (vals.price != null) what.push('цена ' + vals.price);
   if (clearDiscount) what.push('убрать скидку');
   else if (vals.discount) {
@@ -1443,10 +1437,6 @@ function runMass(clearDiscount) {
             : vals.status === 'not_on_display' ? 'скрыть' : vals.status === 'draft' ? 'в черновики' : 'опубликовать');
   }
   if (!what.length) { alert('Задайте, что менять'); return; }
-
-  // смена артикула — подтверждение (особенно если выбрано много карточек)
-  if (vals.article && !confirm('Сменить артикул на «' + vals.article + '» у ' + items.length +
-      ' выбранных товаров (и их разновидностей) на Prom?\nСначала проверь на 1 товаре!')) return;
 
   const extra = [];
   if ($('opt-variants').checked) extra.push('со всеми разновидностями');

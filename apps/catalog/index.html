@@ -241,6 +241,7 @@
     <!-- Массовая правка -->
     <div class="mass" id="mass">
       <span class="mass__n" id="mass-n">выбрано 0</span>
+      <label class="chk" style="align-self:center; white-space:nowrap;"><input type="checkbox" id="m-do-price" checked> менять цену/скидку</label>
       <label class="f"><span>Цена без скидки</span>
         <input type="number" step="0.01" class="w-price" id="m-price" placeholder="не менять"></label>
       <label class="f"><span>Скидка</span>
@@ -259,6 +260,8 @@
           <option value="order">Под заказ</option>
           <option value="waiting_for_supply">Ожидается поставка</option>
         </select></label>
+      <label class="f"><span>Новый артикул (Prom)</span>
+        <input type="text" class="w-sel" id="m-article" placeholder="не менять"></label>
       <label class="f"><span>Видимость</span>
         <select class="w-sel" id="m-status">
           <option value="">не менять</option>
@@ -275,6 +278,9 @@
 
     <div class="cols">
       <div class="panel" style="padding:6px;">
+        <label class="chk" id="sel-all-wrap" style="padding:6px 8px; display:none;">
+          <input type="checkbox" id="sel-all-chk"> Выбрать все найденные
+          <span class="muted">(товары применятся ко всем магазинам и размерам)</span></label>
         <div class="list" id="list"><div class="empty">Нажмите «Обновить из Prom»</div></div>
       </div>
       <div class="panel" id="editor"><div class="empty">Выберите позицию слева</div></div>
@@ -859,6 +865,14 @@ function applyFilter() {
     return STORE_KEYS.some(k => (g.stores[k] || []).some(p =>
       (p.sku || '').toLowerCase().indexOf(q) !== -1 || (p.name || '').toLowerCase().indexOf(q) !== -1));
   });
+  // показать/спрятать галочку «Выбрать все найденные» и синхронизировать её
+  const wrap = $('sel-all-wrap');
+  if (wrap){
+    wrap.style.display = shown.length ? 'flex' : 'none';
+    const allSel = shown.length && shown.every(g =>
+      groupPickable(g).every(it => picked.has(pickKey(it.store, it.p))));
+    if ($('sel-all-chk')) $('sel-all-chk').checked = !!allSel;
+  }
   renderList();
 }
 
@@ -905,6 +919,19 @@ $('sel-all-loaded').addEventListener('click', function () {
 });
 $('sel-none').addEventListener('click', function () {
   picked.clear(); updateMass(); renderList();
+});
+// галочка «Выбрать все найденные» — один клик выбирает/снимает все найденные карточки
+$('sel-all-chk').addEventListener('change', function () {
+  if ($('sel-all-chk').checked){
+    shown.forEach(function (g) {
+      groupPickable(g).forEach(function (it) { picked.add(pickKey(it.store, it.p)); });
+    });
+  } else {
+    shown.forEach(function (g) {
+      groupPickable(g).forEach(function (it) { picked.delete(pickKey(it.store, it.p)); });
+    });
+  }
+  updateMass(); renderList();
 });
 
 /* ===================================================================== */
@@ -1265,6 +1292,8 @@ async function applyChanges(items, vals, msgBox) {
       }
       if (vals.discount === 'clear') o.discount = null;
       else if (hasDisc) o.discount = discountObj(step);
+      // смена артикула (только Prom): база + суффикс магазина. Blink не трогаем.
+      if (vals.article) o.sku = vals.article + (STORES[store].suffix || '');
     }
 
     if (vals.presence) o.presence = vals.presence;
@@ -1382,18 +1411,24 @@ function runMass(clearDiscount) {
   const price = $('m-price').value.trim();
   const dv = $('m-disc').value.trim();
 
+  // галочка «менять цену/скидку»: если снята — цену и скидку не трогаем вообще
+  const doPrice = !$('m-do-price') || $('m-do-price').checked;
+
   const vals = {
-    price: price === '' ? null : Number(price),
-    discount: clearDiscount ? 'clear'
+    price: (!doPrice || price === '') ? null : Number(price),
+    discount: (!doPrice && !clearDiscount) ? null
+            : clearDiscount ? 'clear'
             : (dv === '' ? null : {
                 value: Number(dv), type: $('m-disc-type').value,
                 from: $('m-disc-from').value, to: $('m-disc-to').value,
               }),
     presence: $('m-presence').value,
     status: $('m-status').value,
+    article: ($('m-article') ? $('m-article').value.trim() : '') || null,
   };
 
   const what = [];
+  if (vals.article) what.push('артикул → ' + vals.article + ' (только Prom; Blink не трогаем)');
   if (vals.price != null) what.push('цена ' + vals.price);
   if (clearDiscount) what.push('убрать скидку');
   else if (vals.discount) {
@@ -1408,6 +1443,10 @@ function runMass(clearDiscount) {
             : vals.status === 'not_on_display' ? 'скрыть' : vals.status === 'draft' ? 'в черновики' : 'опубликовать');
   }
   if (!what.length) { alert('Задайте, что менять'); return; }
+
+  // смена артикула — подтверждение (особенно если выбрано много карточек)
+  if (vals.article && !confirm('Сменить артикул на «' + vals.article + '» у ' + items.length +
+      ' выбранных товаров (и их разновидностей) на Prom?\nСначала проверь на 1 товаре!')) return;
 
   const extra = [];
   if ($('opt-variants').checked) extra.push('со всеми разновидностями');

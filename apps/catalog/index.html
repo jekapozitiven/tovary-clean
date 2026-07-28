@@ -266,6 +266,7 @@
           <option value="on_display">Опубликован</option>
           <option value="not_on_display">Скрыт (прихований)</option>
           <option value="draft">Черновик</option>
+          <option value="deleted">🗑 Удалить (Prom → корзина, Blink → скрыть)</option>
         </select></label>
       <button class="btn" id="m-apply">Применить к выбранным</button>
       <button class="btn btn--ghost btn--sm" id="m-clear-disc">Убрать скидку</button>
@@ -1185,6 +1186,7 @@ function renderEditor() {
         '<option value="on_display"' + (p.status === 'on_display' ? ' selected' : '') + '>Опубликован</option>' +
         '<option value="not_on_display"' + (p.status === 'not_on_display' ? ' selected' : '') + '>Скрыт (прихований)</option>' +
         '<option value="draft"' + (p.status === 'draft' ? ' selected' : '') + '>Черновик</option>' +
+        '<option value="deleted">🗑 Удалить (Prom → корзина, Blink → скрыть)</option>' +
         extra + '</select></label>' +
     '</div>' +
 
@@ -1440,9 +1442,17 @@ function runMass(clearDiscount) {
   if (vals.presence) what.push('наличие');
   if (vals.status) {
     what.push(vals.status === 'on_display' ? 'опубликовать'
-            : vals.status === 'not_on_display' ? 'скрыть' : vals.status === 'draft' ? 'в черновики' : 'опубликовать');
+            : vals.status === 'not_on_display' ? 'скрыть' : vals.status === 'draft' ? 'в черновики'
+            : vals.status === 'deleted' ? 'УДАЛИТЬ' : 'опубликовать');
   }
   if (!what.length) { alert('Задайте, что менять'); return; }
+
+  // удаление — отдельное подтверждение
+  if (vals.status === 'deleted' && !confirm(
+      'Удалить ' + items.length + ' выбранных товаров (и их разновидности)?\n\n' +
+      '• Prom: уйдут в корзину «Видалені товари» — можно восстановить.\n' +
+      '• Blink (Хорошоп): удалить через API нельзя — товары просто скроются.\n\n' +
+      'Продолжить?')) return;
 
   const extra = [];
   if ($('opt-variants').checked) extra.push('со всеми разновидностями');

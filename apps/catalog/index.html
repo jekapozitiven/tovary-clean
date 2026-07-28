@@ -192,7 +192,7 @@
 
     <div class="toolbar">
       <button class="btn btn--sm" id="load">Обновить из Prom</button>
-      <input type="text" class="search" id="search" placeholder="Артикул или название…">
+      <input type="text" class="search" id="search" placeholder="Артикул или название (можно несколько артикулов через запятую)…">
       <select id="fstatus"><option value="">Все статусы</option></select>
       <select id="fcat"><option value="">Все категории</option></select>
       <button class="btn btn--ghost btn--sm" id="sel-all">Выбрать найденные</button>
@@ -852,16 +852,22 @@ $('fstatus').addEventListener('change', applyFilter);
 if ($('fcat')) $('fcat').addEventListener('change', applyFilter);
 
 function applyFilter() {
-  const q = $('search').value.trim().toLowerCase();
+  const raw = $('search').value.trim().toLowerCase();
   const st = $('fstatus').value;
   const cat = $('fcat') ? $('fcat').value : '';
-  shown = groups.filter(function (g) {
-    if (st && !STORE_KEYS.some(k => (g.stores[k] || []).some(p => (p.status || '—') === st))) return false;
-    if (cat && (g.category || '') !== cat) return false;
-    if (!q) return true;
+  // можно вписать несколько артикулов через запятую/точку с запятой/новую строку —
+  // товар подойдёт, если совпал ЛЮБОЙ из них. Без разделителей — обычный поиск.
+  const terms = raw.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+  const hit = (g, q) => {
     if (g.base.toLowerCase().indexOf(q) !== -1 || g.name.toLowerCase().indexOf(q) !== -1) return true;
     return STORE_KEYS.some(k => (g.stores[k] || []).some(p =>
       (p.sku || '').toLowerCase().indexOf(q) !== -1 || (p.name || '').toLowerCase().indexOf(q) !== -1));
+  };
+  shown = groups.filter(function (g) {
+    if (st && !STORE_KEYS.some(k => (g.stores[k] || []).some(p => (p.status || '—') === st))) return false;
+    if (cat && (g.category || '') !== cat) return false;
+    if (!terms.length) return true;
+    return terms.some(q => hit(g, q));
   });
   // показать/спрятать галочку «Выбрать все найденные» и синхронизировать её
   const wrap = $('sel-all-wrap');

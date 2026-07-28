@@ -1447,13 +1447,6 @@ function runMass(clearDiscount) {
   }
   if (!what.length) { alert('Задайте, что менять'); return; }
 
-  // удаление — отдельное подтверждение
-  if (vals.status === 'deleted' && !confirm(
-      'Удалить ' + items.length + ' выбранных товаров (и их разновидности)?\n\n' +
-      '• Prom: уйдут в корзину «Видалені товари» — можно восстановить.\n' +
-      '• Blink (Хорошоп): удалить через API нельзя — товары просто скроются.\n\n' +
-      'Продолжить?')) return;
-
   const extra = [];
   if ($('opt-variants').checked) extra.push('со всеми разновидностями');
   if ($('opt-stores').checked) extra.push('и на других магазинах');

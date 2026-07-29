@@ -43,9 +43,9 @@
 
   .steps { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin: 4px 0 2px; }
   .steps label { margin: 0; }
-  .steps input { width: 120px; }
+  .steps input { width: 130px; }
 
-  .list { max-height: 60vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .list { max-height: 58vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
   .row { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--border); }
   .row:last-child { border-bottom: none; }
   .row:hover { background: var(--panel-hover); }
@@ -107,7 +107,8 @@
   <div class="panel hidden" id="work">
     <h2>2. Товары из выгрузки</h2>
     <p class="sub">Отметьте товары, которые нужно продублировать. «Сделать файлы» создаёт три импорта:
-       Bonna-shop и Core22 (Prom) и Blink (Хорошоп).</p>
+       Bonna-shop и Core22 (Prom) и Blink (Хорошоп). Дубли артикулов проверяются по кэшу
+       приложения «Цены и наличие» (нажмите там «Обновить товары»).</p>
 
     <div class="steps">
       <label class="f"><span>Bonna дешевле на, грн (в цену со скидкой)</span>
@@ -140,10 +141,10 @@
 <script>
 /* =====================================================================
    Клонирование товаров — файловый способ.
-   Читаем выгрузку Black Street (.xlsx), делаем импорт-файлы для
-   Bonna ( (B) ) и Core22 ( (С) ): суффиксы на артикул и названия,
-   шаг цены со скидкой, единые фото по главной позиции со сменой обложки,
-   характеристики и размеры переносятся как есть.
+   Читаем выгрузку Black Street (.xlsx), делаем импорт-файлы:
+   Bonna ( (B) ), Core22 ( (С) ) — Prom-формат; Blink — Хорошоп-формат.
+   Дубли артикулов проверяются по общему кэшу «Цены и наличие», при
+   совпадении дописываем (копN) ПЕРЕД суффиксом магазина.
    ===================================================================== */
 
 var PSHEET = 'Export Products Sheet', GSHEET = 'Export Groups Sheet';
@@ -158,16 +159,67 @@ function escapeHtml(s) {
 var showMsg = function (el, kind, html) { el.innerHTML = '<div class="msg msg--' + kind + '">' + html + '</div>'; };
 
 /* данные выгрузки */
-var PH = [], GH = [];         // заголовки листов
-var PROWS = [], GROWS = [];   // строки данных (без заголовка)
-var cards = [];               // по одной карточке на товар (группу разновидностей)
+var PH = [], GH = [];
+var PROWS = [], GROWS = [];
+var cards = [];
 var shown = [];
 var picked = new Set();
 var dirHandle = null;
-
-/* индексы колонок листа товаров */
 var C = {};
 function idx(h, name) { return h.indexOf(name); }
+
+/* ---- общий кэш «Цены и наличие» (IndexedDB tovary-prices) ---- */
+var DB_NAME = 'tovary-prices', DB_STORE = 'stores', dbPromise = null;
+function db() {
+  if (!dbPromise) dbPromise = new Promise(function (resolve, reject) {
+    var req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = function () { var d = req.result; if (!d.objectStoreNames.contains(DB_STORE)) d.createObjectStore(DB_STORE); };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
+  });
+  return dbPromise;
+}
+function cacheGet(key) {
+  return db().then(function (d) {
+    return new Promise(function (resolve) {
+      try {
+        var tx = d.transaction(DB_STORE, 'readonly');
+        var r = tx.objectStore(DB_STORE).get(key);
+        r.onsuccess = function () { resolve(r.result); };
+        r.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+  });
+}
+async function existingArticles(store) {
+  var set = new Set();
+  try {
+    var miss = 0;
+    for (var i = 0; i < 500 && miss < 3; i++) {
+      var part = await cacheGet(store + ':' + i);
+      if (part && part.products && part.products.length) {
+        for (var j = 0; j < part.products.length; j++) {
+          var p = part.products[j];
+          var a = String(p.article || p.sku || p.external_id || p.id || '').trim();
+          if (a) set.add(a);
+        }
+        miss = 0;
+      } else miss++;
+    }
+  } catch (e) {}
+  return set;
+}
+/* Уникальный артикул: (копN) ставится ПЕРЕД суффиксом магазина: base + ' (копN)' + suffix */
+function uniqueArticle(base, suffix, taken) {
+  var art = base + suffix;
+  if (!taken || !taken.has(art)) { if (taken) taken.add(art); return { art: art, dup: false }; }
+  var n = 1;
+  while (true) {
+    var cand = base + ' (коп' + n + ')' + suffix;
+    if (!taken.has(cand)) { taken.add(cand); return { art: cand, dup: true }; }
+    n++;
+  }
+}
 
 /* ---- вспомогательные ---- */
 function swapFirstTwo(v) {
@@ -185,6 +237,92 @@ function parseDisc(v) {
   return { amount: a, percent: percent, has: a > 0 };
 }
 function round2(x) { return Math.round(x * 100) / 100; }
+
+/* Описание Blink: заголовки h1-h6 -> абзацы, размеры шрифта -> заданный px */
+function cleanDesc(html, px) {
+  if (!html) return html;
+  var size = parseInt(px, 10) || 14;
+  var s = String(html);
+  s = s.replace(/<(h[1-6])\b[^>]*>/gi, '<p>').replace(/<\/h[1-6]>/gi, '</p>');
+  s = s.replace(/font-size:\s*\d+(\.\d+)?px/gi, 'font-size:' + size + 'px');
+  return s;
+}
+
+/* Обрезка названия Blink по цвету: оставляем часть до слова-цвета включительно */
+var BLINK_COLORS = [
+  ['біл','бел'], ['чорн','чёрн','черн'], ['сір','сер'], ['син'], ['блакитн','голуб'],
+  ['червон','красн'], ['зелен','зелён'], ['жовт','жёлт','желт'], ['бежев'], ['коричнев'],
+  ['рожев','розов'], ['фіолетов','фиолетов'], ['помаранчев','оранжев'], ['хакі','хаки'],
+  ['графіт','графит'], ['бордов'], ['молочн'], ['оливков'], ['сріблист','серебрист'],
+  ['золот'], ['бірюзов','бирюзов'], ['лавандов'], ['гірчичн','горчичн'],
+  ['смарагдов','изумрудн'], ['теракот'], ['мокко','мокка']
+];
+function normColor(s) { return String(s == null ? '' : s).toLowerCase().trim().split(/\s+/)[0]; }
+function colorStems(colorVal) {
+  var c = normColor(colorVal); if (!c) return [];
+  for (var g = 0; g < BLINK_COLORS.length; g++)
+    for (var k = 0; k < BLINK_COLORS[g].length; k++) if (c.indexOf(BLINK_COLORS[g][k]) === 0) return BLINK_COLORS[g];
+  return [c.length > 4 ? c.slice(0, -2) : c];
+}
+function wordCount(s) { return String(s).trim().split(/\s+/).filter(Boolean).length; }
+function cutByColor(name, colorVal) {
+  if (!name || !colorVal) return name;
+  var stems = colorStems(colorVal); if (!stems.length) return name;
+  var tokens = String(name).split(/\s+/);
+  for (var i = 0; i < tokens.length; i++) {
+    var t = tokens[i].toLowerCase().replace(/[^0-9a-zа-яёіїєґ'’\-]/gi, '');
+    for (var s = 0; s < stems.length; s++) {
+      if (stems[s].length >= 3 && t.indexOf(stems[s]) === 0) {
+        var cand = tokens.slice(0, i + 1).join(' ');
+        return (wordCount(cand) >= 3) ? cand : name;
+      }
+    }
+  }
+  return name;
+}
+
+function discountedPrice(row) {
+  var price = (C.price >= 0) ? parseFloat(row[C.price]) : NaN;
+  if (isNaN(price)) return '';
+  var d = (C.disc >= 0) ? parseDisc(row[C.disc]) : { has: false };
+  if (d.has && !d.percent) return round2(price - d.amount);
+  if (d.has && d.percent) return round2(price * (1 - d.amount / 100));
+  return round2(price);
+}
+
+/* характеристики Prom */
+function charCols() {
+  var res = []; for (var i = 0; i < PH.length; i++) if (PH[i] === 'Назва_Характеристики') res.push(i); return res;
+}
+function getChar(row, cols, patterns) {
+  for (var i = 0; i < cols.length; i++) {
+    var nm = String(row[cols[i]] == null ? '' : row[cols[i]]).toLowerCase();
+    for (var p = 0; p < patterns.length; p++) if (nm.indexOf(patterns[p]) !== -1) {
+      var v = row[cols[i] + 2]; return (v == null ? '' : String(v));
+    }
+  }
+  return '';
+}
+function normName(s) { return String(s == null ? '' : s).toLowerCase().replace(/[_\-]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function promValueByName(row, cands, cCols) {
+  for (var i = 0; i < cCols.length; i++) {
+    if (cands.indexOf(normName(row[cCols[i]])) !== -1) { var v = row[cCols[i] + 2]; if (v != null && v !== '') return String(v); }
+  }
+  for (var c = 0; c < PH.length; c++) {
+    if (cands.indexOf(normName(PH[c])) !== -1) { var v2 = row[c]; if (v2 != null && v2 !== '') return String(v2); }
+  }
+  return '';
+}
+/* Хорошоп-поле характеристики -> возможные названия в Prom. Добавляются только непустые. */
+var BLINK_SPEC_FIELDS = [
+  { name: 'Сезон',         cands: ['сезон'] },
+  { name: 'Материал',      cands: ['матеріал','материал','тип тканини','тип ткани','тканина'] },
+  { name: 'Капюшон',       cands: ['капюшон'] },
+  { name: 'Верх',          cands: ['верх'] },
+  { name: 'Производитель', cands: ['країна виробник','країна виробництва','страна производитель'] },
+  { name: 'Тип товару',    cands: ['тип товару','тип товара','вид виробу','вид изделия'] },
+  { name: 'Низ',           cands: ['низ'] }
+];
 
 /* =====================================================================
    Загрузка файла выгрузки
@@ -205,8 +343,7 @@ $('load-url').addEventListener('click', async function () {
   try {
     var r = await fetch(url);
     if (!r.ok) throw new Error('Сервер ответил ' + r.status);
-    var buf = new Uint8Array(await r.arrayBuffer());
-    parseWb(buf);
+    parseWb(new Uint8Array(await r.arrayBuffer()));
   } catch (e) {
     showMsg($('load-msg'), 'err', 'По ссылке не вышло (обычно файл требует входа в Prom или закрыт CORS).<br>' +
       'Скачайте файл выгрузки и нажмите «Выбрать файл выгрузки».<pre>' + escapeHtml(e.message) + '</pre>');
@@ -218,7 +355,6 @@ function sheetAoA(wb, name, fallbackIndex) {
   if (!ws) return [];
   return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
 }
-
 function parseWb(bytes) {
   var wb = XLSX.read(bytes, { type: 'array' });
   var pa = sheetAoA(wb, PSHEET, 0);
@@ -240,7 +376,7 @@ function parseWb(bytes) {
     uid:    idx(PH, 'Унікальний_ідентифікатор'),
     site:   idx(PH, 'Продукт_на_сайті'),
     idgrp:  idx(PH, 'Ідентифікатор_групи'),
-    idtov:  idx(PH, 'Ідентифікатор_товару'),
+    idtov:  idx(PH, 'Ідентифікатор_товару')
   };
   if (C.code < 0 || C.name < 0) {
     showMsg($('load-msg'), 'err', 'Не те колонки. Экспортируйте с языком полей «Українська».'); return;
@@ -270,11 +406,10 @@ function buildCards() {
       key: g.mainIdx, mainIdx: g.mainIdx, idxs: g.idxs, cat: g.cat,
       code: String(m[C.code]), name: String(m[C.name] || ''),
       sizes: g.idxs.length - 1,
-      img: (C.img >= 0 ? String(m[C.img] || '').split(',')[0].trim() : ''),
+      img: (C.img >= 0 ? String(m[C.img] || '').split(',')[0].trim() : '')
     });
   });
 }
-
 function fillCats() {
   var counts = {};
   for (var i = 0; i < cards.length; i++) { var c = cards[i].cat || ''; if (c) counts[c] = (counts[c] || 0) + 1; }
@@ -284,9 +419,7 @@ function fillCats() {
     names.map(function (n) { return '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + ' (' + counts[n] + ')</option>'; }).join('');
 }
 
-/* =====================================================================
-   Список, фильтр, выбор
-   ===================================================================== */
+/* список, фильтр, выбор */
 function applyFilter() {
   var q = $('q').value.trim().toLowerCase(), cat = $('fcat').value;
   shown = cards.filter(function (c) {
@@ -327,17 +460,22 @@ $('pick-found').addEventListener('click', function () { for (var i = 0; i < show
 $('pick-none').addEventListener('click', function () { picked.clear(); render(); });
 
 /* =====================================================================
-   Сборка импорт-файлов
+   Сборка Prom-файла (Bonna / Core22)
    ===================================================================== */
-function buildStore(suffix, step) {
-  var out = [], used = {};
+function buildStore(suffix, step, taken) {
+  var out = [], used = {}, dups = 0, skipped = [];
   var selected = cards.filter(function (c) { return picked.has(c.key); });
   for (var s = 0; s < selected.length; s++) {
     var card = selected[s];
+    var baseCode = String(PROWS[card.mainIdx][C.code] == null ? '' : PROWS[card.mainIdx][C.code]).trim();
+    if (!baseCode) { skipped.push({ name: card.name, reason: 'пустой артикул' }); continue; }
+    var ua = uniqueArticle(baseCode, suffix, taken);
+    if (ua.dup) dups++;
+    var groupArticle = ua.art;
     var canon = (C.img >= 0) ? swapFirstTwo(PROWS[card.mainIdx][C.img]) : '';
     for (var j = 0; j < card.idxs.length; j++) {
       var r = PROWS[card.idxs[j]].slice();
-      r[C.code] = String(r[C.code]) + suffix;
+      r[C.code] = groupArticle;
       if (C.name >= 0 && r[C.name] !== '' && r[C.name] != null) r[C.name] = String(r[C.name]) + suffix;
       if (C.nameuk >= 0 && r[C.nameuk] !== '' && r[C.nameuk] != null) r[C.nameuk] = String(r[C.nameuk]) + suffix;
       // цена: шаг на цену СО СКИДКОЙ
@@ -345,13 +483,9 @@ function buildStore(suffix, step) {
       var d = (C.disc >= 0) ? parseDisc(r[C.disc]) : { has: false, percent: false, amount: 0 };
       if (d.has && !d.percent) { r[C.disc] = round2(d.amount + step); }
       else if (!isNaN(price)) { r[C.price] = round2(price - step); }
-      // Перемещение идентификаторов (с очисткой источника):
-      //  Номер_групи -> Ідентифікатор_групи (Номер_групи очищаем)
-      //  id держим в Унікальний_ідентифікатор, Ідентифікатор_товару очищаем
-      var groupId = (C.gnum >= 0 && r[C.gnum] !== '' && r[C.gnum] != null) ? r[C.gnum]
-                  : ((C.idgrp >= 0) ? r[C.idgrp] : '');
-      var prodId = (C.uid >= 0 && r[C.uid] !== '' && r[C.uid] != null) ? r[C.uid]
-                 : ((C.idtov >= 0) ? r[C.idtov] : '');
+      // перемещение идентификаторов
+      var groupId = (C.gnum >= 0 && r[C.gnum] !== '' && r[C.gnum] != null) ? r[C.gnum] : ((C.idgrp >= 0) ? r[C.idgrp] : '');
+      var prodId = (C.uid >= 0 && r[C.uid] !== '' && r[C.uid] != null) ? r[C.uid] : ((C.idtov >= 0) ? r[C.idtov] : '');
       if (C.idgrp >= 0) r[C.idgrp] = groupId;   // Ідентифікатор_групи ← Номер_групи
       if (C.gnum >= 0)  r[C.gnum]  = '';        // Номер_групи очищаем
       if (C.idtov >= 0) r[C.idtov] = prodId;    // Ідентифікатор_товару ← Унікальний_ідентифікатор
@@ -371,11 +505,12 @@ function buildStore(suffix, step) {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(prodAoA), PSHEET);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(grpAoA), GSHEET);
   var bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-  return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), rows: out.length };
+  return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+           rows: out.length, dups: dups, skipped: skipped };
 }
 
 /* =====================================================================
-   Blink (Хорошоп) — отдельный формат (30 колонок, один лист)
+   Сборка Blink-файла (Хорошоп) — товары + характеристики + обрезка/шрифт
    ===================================================================== */
 var BLINK_HDR = ['Артикул','Родительский артикул','Артикул для отображения на сайте',
   'Название(RU)','Название(UA)','Название модификации(RU)','Название модификации(UA)',
@@ -385,76 +520,13 @@ var BLINK_HDR = ['Артикул','Родительский артикул','А�
   'HTML title(UA)','META keywords(RU)','META keywords(UA)','META description(RU)','META description(UA)'];
 var BLINK_SECTION = 'Взуття/Весняне взуття';
 
-function charCols() {
-  var res = []; for (var i = 0; i < PH.length; i++) if (PH[i] === 'Назва_Характеристики') res.push(i); return res;
-}
-function getChar(row, cols, patterns) {
-  for (var i = 0; i < cols.length; i++) {
-    var nm = String(row[cols[i]] == null ? '' : row[cols[i]]).toLowerCase();
-    for (var p = 0; p < patterns.length; p++) if (nm.indexOf(patterns[p]) !== -1) {
-      var v = row[cols[i] + 2]; return (v == null ? '' : String(v));   // +2 = Значення_Характеристики
-    }
-  }
-  return '';
-}
-// Описание для Blink: заголовки h1-h6 -> абзацы, все размеры шрифта -> заданный px
-function cleanDesc(html, px) {
-  if (!html) return html;
-  var size = parseInt(px, 10) || 14;
-  var s = String(html);
-  s = s.replace(/<(h[1-6])\b[^>]*>/gi, '<p>').replace(/<\/h[1-6]>/gi, '</p>');
-  s = s.replace(/font-size:\s*\d+(\.\d+)?px/gi, 'font-size:' + size + 'px');
-  return s;
-}
-// Обрезка названия Blink по цвету: оставляем часть до слова-цвета включительно.
-var BLINK_COLORS = [
-  ['біл','бел'], ['чорн','чёрн','черн'], ['сір','сер'], ['син'], ['блакитн','голуб'],
-  ['червон','красн'], ['зелен','зелён'], ['жовт','жёлт','желт'], ['бежев'], ['коричнев'],
-  ['рожев','розов'], ['фіолетов','фиолетов'], ['помаранчев','оранжев'], ['хакі','хаки'],
-  ['графіт','графит'], ['бордов'], ['молочн'], ['оливков'], ['сріблист','серебрист'],
-  ['золот'], ['бірюзов','бирюзов'], ['лавандов'], ['гірчичн','горчичн'],
-  ['смарагдов','изумрудн'], ['теракот'], ['мокко','мокка']
-];
-function normColor(s) { return String(s == null ? '' : s).toLowerCase().trim().split(/\s+/)[0]; }
-function colorStems(colorVal) {
-  var c = normColor(colorVal); if (!c) return [];
-  for (var g = 0; g < BLINK_COLORS.length; g++)
-    for (var k = 0; k < BLINK_COLORS[g].length; k++) if (c.indexOf(BLINK_COLORS[g][k]) === 0) return BLINK_COLORS[g];
-  return [c.length > 4 ? c.slice(0, -2) : c];   // запас: основа неизвестного цвета
-}
-function wordCount(s) { return String(s).trim().split(/\s+/).filter(Boolean).length; }
-function cutByColor(name, colorVal) {
-  if (!name || !colorVal) return name;
-  var stems = colorStems(colorVal); if (!stems.length) return name;
-  var tokens = String(name).split(/\s+/);
-  for (var i = 0; i < tokens.length; i++) {
-    var t = tokens[i].toLowerCase().replace(/[^0-9a-zа-яёіїєґ'’\-]/gi, '');
-    for (var s = 0; s < stems.length; s++) {
-      if (stems[s].length >= 3 && t.indexOf(stems[s]) === 0) {
-        var cand = tokens.slice(0, i + 1).join(' ');
-        return (wordCount(cand) >= 3) ? cand : name;   // слишком коротко — не режем
-      }
-    }
-  }
-  return name;   // цвет не найден — оставляем как есть
-}
-
-function discountedPrice(row) {
-  var price = (C.price >= 0) ? parseFloat(row[C.price]) : NaN;
-  if (isNaN(price)) return '';
-  var d = (C.disc >= 0) ? parseDisc(row[C.disc]) : { has: false };
-  if (d.has && !d.percent) return round2(price - d.amount);
-  if (d.has && d.percent) return round2(price * (1 - d.amount / 100));
-  return round2(price);
-}
-
-function buildBlink() {
+function buildBlink(taken) {
   var cCols = charCols();
   var virob = idx(PH, 'Виробник'), opis = idx(PH, 'Опис'), opisuk = idx(PH, 'Опис_укр'), avail = idx(PH, 'Наявність');
   var fpx = parseInt(($('blink-font') && $('blink-font').value) || '14', 10) || 14;
   var selected = cards.filter(function (c) { return picked.has(c.key); });
 
-  // характеристики по товару (из главной строки); включаем только те поля, где есть значение
+  // характеристики по товару; включаем только непустые поля
   var specVals = [];
   for (var s = 0; s < selected.length; s++) {
     var m0 = PROWS[selected[s].mainIdx], vv = {};
@@ -465,10 +537,14 @@ function buildBlink() {
     return specVals.some(function (v) { return v[fld.name] !== '' && v[fld.name] != null; });
   });
 
-  var out = [], titles = [];
+  var out = [], titles = [], dups = 0, skipped = [];
   for (var s2 = 0; s2 < selected.length; s2++) {
     var card = selected[s2], main = PROWS[card.mainIdx];
-    var parent = String(main[C.code] == null ? '' : main[C.code]).trim();
+    var baseParent = String(main[C.code] == null ? '' : main[C.code]).trim();
+    if (!baseParent) { skipped.push({ name: card.name, reason: 'пустой артикул' }); continue; }
+    var pa = uniqueArticle(baseParent, '', taken);
+    if (pa.dup) dups++;
+    var parent = pa.art;
     var imgs = '';
     if (C.img >= 0) {
       imgs = String(main[C.img] || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean).join(';');
@@ -502,32 +578,13 @@ function buildBlink() {
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header].concat(out)), 'Sheet1');
   var bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-  return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), rows: out.length, titles: titles };
+  return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+           rows: out.length, titles: titles, dups: dups, skipped: skipped };
 }
 
-/* Хорошоп-поле характеристики -> возможные названия в Prom (характеристика или колонка).
-   В файл добавляются только те поля, где нашлось значение. */
-var BLINK_SPEC_FIELDS = [
-  { name: 'Сезон',         cands: ['сезон'] },
-  { name: 'Материал',      cands: ['матеріал','материал','тип тканини','тип ткани','тканина'] },
-  { name: 'Капюшон',       cands: ['капюшон'] },
-  { name: 'Верх',          cands: ['верх'] },
-  { name: 'Производитель', cands: ['країна виробник','країна виробництва','страна производитель'] },
-  { name: 'Тип товару',    cands: ['тип товару','тип товара','вид виробу','вид изделия'] },
-  { name: 'Низ',           cands: ['низ'] },
-];
-
-function normName(s) { return String(s == null ? '' : s).toLowerCase().replace(/[_\-]/g, ' ').replace(/\s+/g, ' ').trim(); }
-function promValueByName(row, cands, cCols) {
-  for (var i = 0; i < cCols.length; i++) {
-    if (cands.indexOf(normName(row[cCols[i]])) !== -1) { var v = row[cCols[i] + 2]; if (v != null && v !== '') return String(v); }
-  }
-  for (var c = 0; c < PH.length; c++) {
-    if (cands.indexOf(normName(PH[c])) !== -1) { var v2 = row[c]; if (v2 != null && v2 !== '') return String(v2); }
-  }
-  return '';
-}
-
+/* =====================================================================
+   Сохранение / скачивание / статистика
+   ===================================================================== */
 async function saveToDir(name, blob) {
   if (!dirHandle) return false;
   try {
@@ -541,18 +598,29 @@ function download(name, blob) {
   var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
   a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
 }
+function fcard(title, fname, rows) {
+  return '<div class="fcard"><h3>' + escapeHtml(title) + '</h3>' +
+    '<div class="fmeta">' + escapeHtml(fname) + ' · позиций: ' + rows + '</div>' +
+    '<button class="btn btn--sm" data-dl="' + fname + '">Скачать файл</button></div>';
+}
 
 $('make').addEventListener('click', async function () {
   if (!picked.size) { showMsg($('out'), 'warn', 'Не выбрано ни одного товара.'); return; }
   var sb = parseFloat($('step-bonna').value) || 0;
   var sc = parseFloat($('step-core22').value) || 0;
-  var bonna = buildStore(SUF_B, sb);
-  var core = buildStore(SUF_C, sc);
-  var blink = buildBlink();
+
+  var takenBonna = await existingArticles('bonna');
+  var takenCore  = await existingArticles('core22');
+  var takenBlink = await existingArticles('blink');
+
+  var bonna = buildStore(SUF_B, sb, takenBonna);
+  var core  = buildStore(SUF_C, sc, takenCore);
+  var blink = buildBlink(takenBlink);
+
   window._files = {
     'import-bonna.xlsx': bonna.blob,
     'import-core22.xlsx': core.blob,
-    'import-blink.xlsx': blink.blob,
+    'import-blink.xlsx': blink.blob
   };
   var savedNote = '';
   if (dirHandle) {
@@ -561,6 +629,18 @@ $('make').addEventListener('click', async function () {
     savedNote = ok ? '<div class="msg msg--ok">Сохранено в папку (обновлены): ' + names.join(', ') + '.</div>' :
       '<div class="msg msg--warn">В папку записать не удалось — скачайте кнопками ниже.</div>';
   }
+
+  // статистика
+  function line(nm, res, taken) {
+    var noCache = taken.size ? '' : ' <span style="color:#e0c060">(нет данных магазина — проверка дублей не выполнялась; нажмите «Обновить товары» в «Цены и наличие»)</span>';
+    var skip = res.skipped.length ? ', не добавлено ' + res.skipped.length + ' (' + res.skipped.map(function (x) { return escapeHtml(x.reason); }).join(', ') + ')' : ', не добавлено 0';
+    return nm + ': выбрано ' + picked.size + ', в файл ' + res.rows + ' позиций, дублей→(коп) ' + res.dups + skip + noCache;
+  }
+  var statsHtml = '<div class="msg msg--warn"><b>Статистика:</b><br>' +
+    line('Bonna', bonna, takenBonna) + '<br>' +
+    line('Core22', core, takenCore) + '<br>' +
+    line('Blink', blink, takenBlink) + '</div>';
+
   var tprev = '';
   if (blink.titles && blink.titles.length) {
     tprev = '<div class="msg msg--warn"><b>Названия Blink (обрезка по цвету), примеры:</b><br>' +
@@ -570,23 +650,19 @@ $('make').addEventListener('click', async function () {
           (changed ? ' <span class="muted">(было: ' + escapeHtml(t.b) + ')</span>' : '');
       }).join('<br>') + '</div>';
   }
+
   $('out').innerHTML = savedNote +
     '<div class="files">' +
     fcard('Bonna-shop (Prom)', 'import-bonna.xlsx', bonna.rows) +
     fcard('Core22 (Prom)', 'import-core22.xlsx', core.rows) +
     fcard('Blink (Хорошоп)', 'import-blink.xlsx', blink.rows) +
     '</div>' +
-    '<div class="msg msg--warn">Prom: import-bonna → Bonna, import-core22 → Core22. Хорошоп: import-blink → Blink (товары и характеристики в одном файле).</div>' +
-    tprev;
+    '<div class="msg msg--warn">Prom: import-bonna → Bonna, import-core22 → Core22. Хорошоп: import-blink → Blink.</div>' +
+    statsHtml + tprev;
   Array.prototype.forEach.call($('out').querySelectorAll('[data-dl]'), function (b) {
     b.addEventListener('click', function () { var n = b.getAttribute('data-dl'); download(n, window._files[n]); });
   });
 });
-function fcard(title, fname, rows) {
-  return '<div class="fcard"><h3>' + escapeHtml(title) + '</h3>' +
-    '<div class="fmeta">' + escapeHtml(fname) + ' · позиций: ' + rows + '</div>' +
-    '<button class="btn btn--sm" data-dl="' + fname + '">Скачать файл</button></div>';
-}
 
 /* выбор папки (Chrome/Edge) */
 if (!window.showDirectoryPicker) {

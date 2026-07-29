@@ -1314,7 +1314,9 @@ async function applyChanges(items, vals, msgBox) {
     }
 
     if (vals.presence) o.presence = vals.presence;
-    if (vals.status) o.status = vals.status;
+    // статус шлём, только если он ОТЛИЧАЕТСЯ от текущего — иначе Prom может
+    // счесть правку «без изменений» и молча отбросить её вместе с ценой.
+    if (vals.status && vals.status !== (prod.status || '')) o.status = vals.status;
     if (Object.keys(o).length > 1) jobs[store].push({ upd: o, ref: prod });
   }
 

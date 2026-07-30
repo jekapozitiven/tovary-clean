@@ -141,8 +141,8 @@ function firstImages(p, max){
   return out;
 }
 function presenceText(p){
-  const key = p.presence||'';
-  let t = PRESENCE_RU[key] != null ? PRESENCE_RU[key] : key;
+  const key = String(p.presence==null?'':p.presence);
+  let t = String(PRESENCE_RU[key] != null ? PRESENCE_RU[key] : key);
   if((p.quantity_in_stock!=null) && p.quantity_in_stock!=='' ) t += (t?' ':'') + '('+p.quantity_in_stock+' шт)';
   return t;
 }

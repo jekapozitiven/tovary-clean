@@ -156,9 +156,6 @@ function render(p){
   const imgs = Array.isArray(p.images)?p.images.filter(Boolean):[];
   const gallery = '<div class="gallery" id="gallery-slot">'+galleryHtml(imgs)+'</div>';
 
-  const av = overallPresence(p.stores);
-  const avail = '<div class="avail '+(av.yes?'yes':'no')+'">'+esc(av.text)+'</div>';
-
   const desc = p.desc ? descBlock(p.desc) : '<div id="desc-slot"></div>';
 
   $('result').innerHTML =
@@ -168,7 +165,6 @@ function render(p){
           (p.category?'<span class="cat">'+esc(p.category)+'</span><br>':'')+
           '<div class="name">'+esc(p.name)+'</div>'+
           '<p class="art">Артикул: <b>'+esc(p.base)+'</b></p>'+
-          avail+
         '</div>'+
       '</div>'+ desc +
     '</div>';

@@ -128,12 +128,20 @@ async function loadDetail(d, needDesc, needImg){
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
     });
     const j=await res.json();
-    if(slot) slot.innerHTML = (j && j.ok && j.description) ? descBlock(j.description) : '';
+    if(j && j.ok){
+      if(slot) slot.innerHTML = j.description ? descBlock(j.description) : '';   // товар без описания — тихо
+    } else {
+      console.warn('detail не сработал:', j);
+      if(slot) slot.innerHTML='<div class="desc"><div class="desc-body" style="color:var(--dim)">Описание временно недоступно.</div></div>';
+    }
     if(needImg && j && j.ok && Array.isArray(j.images) && j.images.length){
       const g=document.getElementById('gallery-slot');
       if(g){ g.innerHTML=galleryHtml(j.images); bindGallery(); }
     }
-  }catch(e){ if(slot) slot.innerHTML=''; }
+  }catch(e){
+    console.warn('detail ошибка сети:', e);
+    if(slot) slot.innerHTML='<div class="desc"><div class="desc-body" style="color:var(--dim)">Описание временно недоступно.</div></div>';
+  }
 }
 async function lookup(q){
   const res = await fetch(WORKER_URL.replace(/\/+$/,'')+'/lookup', {

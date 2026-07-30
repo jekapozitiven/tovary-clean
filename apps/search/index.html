@@ -128,7 +128,7 @@ async function loadDetail(d, needDesc, needImg){
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
     });
     const j=await res.json();
-    console.log('[detail ответ]', j);
+    console.log('[detail ответ] '+JSON.stringify({ ok:j&&j.ok, error:j&&j.error, descLen:(j&&j.description||'').length, keys:j&&j.keys }));
     if(j && j.ok){
       if(slot) slot.innerHTML = j.description ? descBlock(j.description) : '';   // товар без описания — тихо
     } else {

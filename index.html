@@ -59,10 +59,11 @@
       },
       {
         icon:   '🔎',
-        title:  'Поиск по артикулу (колл-центр)',
-        desc:   'Простая страница для операторов: артикул → фото, название, описание, цена и наличие. Без паролей. Ссылку на неё давайте колл-центру.',
+        title:  'Поиск для колл-центра',
+        desc:   'Онлайн-страница для операторов: артикул или название → фото, описание, наличие. Без паролей. Ссылку давайте колл-центру.',
         href:   'apps/search/index.html',
-        status: 'active'
+        status: 'active',
+        share:  true
       },
       {
         icon:   '🧩',
@@ -80,15 +81,38 @@
       { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]
     ));
 
-    grid.innerHTML = APPS.map(app => {
+    // абсолютный адрес для ссылки, которую дают колл-центру
+    const abs = (href) => new URL(href, location.href).href;
+
+    const btn = 'display:inline-block;border:0;border-radius:8px;padding:9px 14px;font:600 13.5px system-ui,sans-serif;cursor:pointer;text-decoration:none;';
+
+    grid.innerHTML = APPS.map((app, i) => {
       const active = app.status === 'active';
+      const badge = active
+        ? '<span class="badge badge--active"><span class="dot"></span>Активно</span>'
+        : '<span class="badge badge--soon">Скоро</span>';
+
+      // Особая карточка «Поиск для колл-центра»: не переход, а кнопки со ссылкой
+      if (app.share) {
+        const url = abs(app.href);
+        return `
+          <div class="card" style="cursor:default">
+            <div class="card__icon">${esc(app.icon)}</div>
+            <h2 class="card__title">${esc(app.title)}</h2>
+            <p class="card__desc">${esc(app.desc)}</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 8px">
+              <a href="${esc(app.href)}" target="_blank" rel="noopener" style="${btn}background:#2563eb;color:#fff">Открыть поиск ↗</a>
+              <button type="button" data-copy="${esc(url)}" style="${btn}background:#333b47;color:#e7ecf3">Копировать ссылку</button>
+            </div>
+            <div style="font:12px ui-monospace,Menlo,monospace;color:#8a94a2;word-break:break-all;margin-bottom:8px">${esc(url)}</div>
+            <div class="card__foot">${badge}</div>
+          </div>`;
+      }
+
       const tag = active ? 'a' : 'div';
       const hrefAttr = active ? ` href="${esc(app.href)}"` : '';
       const cls = active ? 'card' : 'card card--soon';
       const arrow = active ? '<span class="card__arrow">↗</span>' : '';
-      const badge = active
-        ? '<span class="badge badge--active"><span class="dot"></span>Активно</span>'
-        : '<span class="badge badge--soon">Скоро</span>';
 
       return `
         <${tag} class="${cls}"${hrefAttr}>
@@ -99,6 +123,19 @@
           <div class="card__foot">${badge}</div>
         </${tag}>`;
     }).join('');
+
+    // копирование ссылки на поиск
+    grid.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-copy]');
+      if (!b) return;
+      const url = b.getAttribute('data-copy');
+      const done = () => { const t = b.textContent; b.textContent = 'Скопировано ✓'; setTimeout(() => b.textContent = t, 1500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(() => { window.prompt('Скопируйте ссылку:', url); });
+      } else {
+        window.prompt('Скопируйте ссылку:', url);
+      }
+    });
   </script>
 
 </body>

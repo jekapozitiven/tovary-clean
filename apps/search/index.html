@@ -174,8 +174,16 @@ function render(p){
 
   bindGallery();
 
+  // диагностика: видно в консоли (F12) при каждом открытии карточки
+  console.log('[поиск] detail:', p.detail, '| длина desc:', (p.desc||'').length, '| фото:', imgs.length);
+
   // описания/фото нет в индексе — догружаем из карточки главного товара
-  if(p.detail && (!p.desc || !imgs.length)){ loadDetail(p.detail, !p.desc, !imgs.length); }
+  if(p.detail && (!p.desc || !imgs.length)){
+    loadDetail(p.detail, !p.desc, !imgs.length);
+  } else if(!p.desc && !p.detail){
+    const slot=document.getElementById('desc-slot');
+    if(slot) slot.innerHTML='<div class="desc"><div class="desc-body" style="color:var(--dim)">Нет ссылки на товар — переопубликуйте каталог (кнопка «Собрать и опубликовать»).</div></div>';
+  }
 }
 
 /* ---- поиск по названию (по лёгкому списку из облака) ---- */

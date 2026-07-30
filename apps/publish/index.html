@@ -308,8 +308,12 @@ async function run(){
         status: rep.status||'',
         variants: arr.length,
       };
-      // алиасы: каждый артикул каждого товара магазина -> base
-      for(const p of arr){ const a=normArt(p.sku||p.article); if(a) aliasShards[shardOf(a)][a]=base; }
+      // алиасы: и родительский артикул, и артикул разновидности -> base
+      for(const p of arr){
+        for(const a of [p.sku, p.article, p.external_id]){
+          const n=normArt(a); if(n) aliasShards[shardOf(n)][n]=base;
+        }
+      }
     }
     if(images.length) withImg++; if(desc) withDesc++;
     // сам base тоже ищется

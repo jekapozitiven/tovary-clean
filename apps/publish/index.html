@@ -231,15 +231,28 @@ async function run(){
   if(!chosen.length){ log('Не выбран ни один магазин.','err'); return; }
   if(!$('pass').value){ log('Не задан пароль приложения.','err'); return; }
 
-  const byStore={};
-  for(const store of STORE_KEYS){
-    if(chosen.indexOf(store)<0){ byStore[store]=[]; continue; }
-    log('Загружаю '+STORES[store].title+'…');
-    byStore[store] = (store==='blink')
-      ? await loadBlink(n=>{ $('log').lastChild; setProg(5); })
-      : await loadProm(store, n=>{ });
+  const byStore={}; STORE_KEYS.forEach(s=>byStore[s]=[]);
+  const active = STORE_KEYS.filter(s=>chosen.indexOf(s)>=0);
+  const counts={}; active.forEach(s=>counts[s]=0);
+  log('Загружаю все магазины одновременно: '+active.map(s=>STORES[s].title).join(', ')+'…');
+
+  // живая строка со счётчиками по каждому магазину
+  const liveId='live-counts';
+  $('log').innerHTML += '\n<span id="'+liveId+'"></span>';
+  const renderCounts=()=>{ const el=document.getElementById(liveId);
+    if(el) el.textContent = active.map(s=>STORES[s].title+': '+counts[s]).join('   |   '); };
+  renderCounts();
+
+  let done=0;
+  await Promise.all(active.map(async store=>{
+    const onProg=n=>{ counts[store]=n; renderCounts(); };
+    try{
+      byStore[store] = (store==='blink') ? await loadBlink(onProg) : await loadProm(store, onProg);
+    }catch(e){ log('  '+STORES[store].title+': сбой — '+e.message,'err'); byStore[store]=byStore[store]||[]; }
+    counts[store]=byStore[store].length; renderCounts();
+    done++; setProg(Math.round(done/active.length*35));
     log('  '+STORES[store].title+': '+byStore[store].length+' позиций', byStore[store].length?'ok':'warn');
-  }
+  }));
   setProg(35);
 
   log('Группирую по базовому артикулу…');

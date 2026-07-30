@@ -84,6 +84,37 @@ function money(v){
 }
 function setStatus(msg, err){ $('status').className='status'+(err?' err':''); $('status').textContent=msg; }
 
+function descBlock(html){
+  return '<div class="desc"><h3>Описание</h3><div class="desc-body">'+html+'</div></div>';
+}
+function galleryHtml(imgs){
+  if(!imgs || !imgs.length) return '';
+  return '<div class="main"><img id="mainimg" src="'+esc(imgs[0])+'" alt=""></div>'+
+    (imgs.length>1 ? '<div class="thumbs">'+imgs.map((u,i)=>'<img data-u="'+esc(u)+'" class="'+(i===0?'sel':'')+'" src="'+esc(u)+'" alt="">').join('')+'</div>' : '');
+}
+function bindGallery(){
+  const main=$('mainimg');
+  document.querySelectorAll('.thumbs img').forEach(t=>t.addEventListener('click',()=>{
+    if(main) main.src=t.dataset.u;
+    document.querySelectorAll('.thumbs img').forEach(x=>x.classList.remove('sel')); t.classList.add('sel');
+  }));
+  if(main) main.addEventListener('click',()=>{ $('lbimg').src=main.src; $('lb').classList.add('on'); });
+}
+async function loadDetail(d, needDesc, needImg){
+  const slot = needDesc ? document.getElementById('desc-slot') : null;
+  if(slot) slot.innerHTML='<div class="desc"><div class="desc-body" style="color:var(--dim)">Загружаю описание…</div></div>';
+  try{
+    const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/detail',{
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
+    });
+    const j=await res.json();
+    if(slot) slot.innerHTML = (j && j.ok && j.description) ? descBlock(j.description) : '';
+    if(needImg && j && j.ok && Array.isArray(j.images) && j.images.length){
+      const g=document.getElementById('gallery-slot');
+      if(g){ g.innerHTML=galleryHtml(j.images); bindGallery(); }
+    }
+  }catch(e){ if(slot) slot.innerHTML=''; }
+}
 async function lookup(q){
   const res = await fetch(WORKER_URL.replace(/\/+$/,'')+'/lookup', {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -94,12 +125,7 @@ async function lookup(q){
 
 function render(p){
   const imgs = Array.isArray(p.images)?p.images.filter(Boolean):[];
-  const gallery = imgs.length ? (
-    '<div class="gallery">'+
-      '<div class="main"><img id="mainimg" src="'+esc(imgs[0])+'" alt=""></div>'+
-      (imgs.length>1 ? '<div class="thumbs">'+imgs.map((u,i)=>'<img data-u="'+esc(u)+'" class="'+(i===0?'sel':'')+'" src="'+esc(u)+'" alt="">').join('')+'</div>' : '')+
-    '</div>'
-  ) : '';
+  const gallery = '<div class="gallery" id="gallery-slot">'+galleryHtml(imgs)+'</div>';
 
   const order=['blackstreet','bonna','core22','blink'];
   let rows='';
@@ -120,7 +146,7 @@ function render(p){
     '<tbody>'+rows+'</tbody></table>'
   ) : '<p class="art">Нет данных по магазинам.</p>';
 
-  const desc = p.desc ? ('<div class="desc"><h3>Описание</h3><div class="desc-body">'+p.desc+'</div></div>') : '';
+  const desc = p.desc ? descBlock(p.desc) : '<div id="desc-slot"></div>';
 
   $('result').innerHTML =
     '<div class="card">'+
@@ -134,13 +160,10 @@ function render(p){
       '</div>'+ desc +
     '</div>';
 
-  // миниатюры и увеличение
-  const main=$('mainimg');
-  document.querySelectorAll('.thumbs img').forEach(t=>t.addEventListener('click',()=>{
-    if(main) main.src=t.dataset.u;
-    document.querySelectorAll('.thumbs img').forEach(x=>x.classList.remove('sel')); t.classList.add('sel');
-  }));
-  if(main) main.addEventListener('click',()=>{ $('lbimg').src=main.src; $('lb').classList.add('on'); });
+  bindGallery();
+
+  // описания/фото нет в индексе — догружаем из карточки главного товара
+  if(p.detail && (!p.desc || !imgs.length)){ loadDetail(p.detail, !p.desc, !imgs.length); }
 }
 
 async function doSearch(){

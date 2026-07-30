@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Поиск товара по артикулу</title>
+<link rel="icon" href="../../favicon.svg">
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#ffffff; --line:#e3e8ef; --text:#1f2733; --dim:#6b7686;
+    --accent:#2563eb; --ok:#15803d; --warn:#b45309; --err:#b91c1c; --chip:#eef2f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:28px 16px 70px}
+  h1{font-size:22px;margin:0 0 4px;text-align:center}
+  .sub{color:var(--dim);text-align:center;margin:0 0 22px;font-size:14px}
+  .searchbar{display:flex;gap:10px;position:sticky;top:0;background:var(--bg);padding:8px 0 12px;z-index:5}
+  #q{flex:1;font-size:19px;padding:14px 16px;border:2px solid var(--line);border-radius:12px;background:#fff;color:var(--text)}
+  #q:focus{outline:none;border-color:var(--accent)}
+  #go{font-size:18px;font-weight:600;padding:0 26px;border:0;border-radius:12px;background:var(--accent);color:#fff;cursor:pointer}
+  #go:disabled{opacity:.6}
+  .status{text-align:center;color:var(--dim);margin:22px 0;font-size:15px}
+  .status.err{color:var(--err)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    box-shadow:0 1px 3px rgba(20,30,50,.06);margin-top:8px}
+  .top{display:flex;gap:18px;padding:18px;flex-wrap:wrap}
+  .gallery{flex:0 0 260px}
+  .gallery .main{width:260px;height:260px;border:1px solid var(--line);border-radius:12px;background:#fafbfc;
+    display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .gallery .main img{max-width:100%;max-height:100%;object-fit:contain}
+  .thumbs{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .thumbs img{width:52px;height:52px;object-fit:cover;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+  .thumbs img.sel{border-color:var(--accent)}
+  .info{flex:1 1 300px;min-width:260px}
+  .name{font-size:20px;font-weight:700;margin:0 0 6px}
+  .cat{display:inline-block;background:var(--chip);color:var(--dim);font-size:12.5px;padding:3px 9px;border-radius:20px;margin-bottom:10px}
+  .art{font-size:15px;color:var(--dim);margin:0 0 12px}
+  .art b{color:var(--text);font-size:17px}
+  table.stores{width:100%;border-collapse:collapse;margin-top:6px;font-size:14.5px}
+  table.stores th,table.stores td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  table.stores th{color:var(--dim);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.02em}
+  .price{font-weight:700;white-space:nowrap}
+  .old{color:var(--dim);text-decoration:line-through;font-size:13px;margin-left:6px}
+  .pres{font-size:13.5px}
+  .pres.yes{color:var(--ok)}.pres.no{color:var(--err)}
+  .hidden-badge{color:var(--warn);font-size:12px}
+  .desc{padding:0 18px 20px}
+  .desc h3{font-size:14px;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin:6px 0 8px}
+  .desc-body{font-size:15px;line-height:1.6;border-top:1px solid var(--line);padding-top:12px;max-height:520px;overflow:auto}
+  .desc-body img{max-width:100%;height:auto}
+  .lightbox{position:fixed;inset:0;background:rgba(10,15,25,.85);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .lightbox.on{display:flex}
+  .lightbox img{max-width:95%;max-height:95%;object-fit:contain;border-radius:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Поиск товара</h1>
+  <p class="sub">Введите артикул — покажем фото, название, описание, цену и наличие.</p>
+
+  <div class="searchbar">
+    <input id="q" type="text" placeholder="Например: Ads-160" autocomplete="off" enterkeyhint="search">
+    <button id="go">Найти</button>
+  </div>
+
+  <div id="status" class="status">Введите артикул и нажмите «Найти».</div>
+  <div id="result"></div>
+</div>
+
+<div class="lightbox" id="lb"><img id="lbimg" alt=""></div>
+
+<script>
+const WORKER_URL = 'https://cold-sea-36e7tovary.bonnashops.workers.dev';
+const $ = (id)=>document.getElementById(id);
+const esc = (s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const PRES_YES = ['В наличии','Под заказ','Ожидается поставка'];
+
+function money(v){
+  if(v==null||v==='') return '—';
+  const n=Number(v); if(!isFinite(n)) return esc(v);
+  return n.toLocaleString('uk-UA').replace(/,/g,' ')+' ₴';
+}
+function setStatus(msg, err){ $('status').className='status'+(err?' err':''); $('status').textContent=msg; }
+
+async function lookup(q){
+  const res = await fetch(WORKER_URL.replace(/\/+$/,'')+'/lookup', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ q })
+  });
+  return res.json();
+}
+
+function render(p){
+  const imgs = Array.isArray(p.images)?p.images.filter(Boolean):[];
+  const gallery = imgs.length ? (
+    '<div class="gallery">'+
+      '<div class="main"><img id="mainimg" src="'+esc(imgs[0])+'" alt=""></div>'+
+      (imgs.length>1 ? '<div class="thumbs">'+imgs.map((u,i)=>'<img data-u="'+esc(u)+'" class="'+(i===0?'sel':'')+'" src="'+esc(u)+'" alt="">').join('')+'</div>' : '')+
+    '</div>'
+  ) : '';
+
+  const order=['blackstreet','bonna','core22','blink'];
+  let rows='';
+  for(const k of order){
+    const s=p.stores&&p.stores[k]; if(!s) continue;
+    const presYes = PRES_YES.some(t=>(s.presence||'').indexOf(t)===0);
+    const hidden = s.status && s.status!=='on_display';
+    rows += '<tr>'+
+      '<td>'+esc(s.title||k)+(hidden?' <span class="hidden-badge">(скрыт)</span>':'')+'</td>'+
+      '<td class="price">'+money(s.price)+(s.old_price?'<span class="old">'+money(s.old_price)+'</span>':'')+'</td>'+
+      '<td class="pres '+(presYes?'yes':'no')+'">'+esc(s.presence||'—')+'</td>'+
+      '<td>'+esc(s.article||'')+'</td>'+
+    '</tr>';
+  }
+  const table = rows ? (
+    '<table class="stores"><thead><tr><th>Магазин</th><th>Цена</th><th>Наличие</th><th>Артикул</th></tr></thead>'+
+    '<tbody>'+rows+'</tbody></table>'
+  ) : '<p class="art">Нет данных по магазинам.</p>';
+
+  const desc = p.desc ? ('<div class="desc"><h3>Описание</h3><div class="desc-body">'+p.desc+'</div></div>') : '';
+
+  $('result').innerHTML =
+    '<div class="card">'+
+      '<div class="top">'+ gallery +
+        '<div class="info">'+
+          (p.category?'<span class="cat">'+esc(p.category)+'</span><br>':'')+
+          '<div class="name">'+esc(p.name)+'</div>'+
+          '<p class="art">Артикул: <b>'+esc(p.base)+'</b></p>'+
+          table+
+        '</div>'+
+      '</div>'+ desc +
+    '</div>';
+
+  // миниатюры и увеличение
+  const main=$('mainimg');
+  document.querySelectorAll('.thumbs img').forEach(t=>t.addEventListener('click',()=>{
+    if(main) main.src=t.dataset.u;
+    document.querySelectorAll('.thumbs img').forEach(x=>x.classList.remove('sel')); t.classList.add('sel');
+  }));
+  if(main) main.addEventListener('click',()=>{ $('lbimg').src=main.src; $('lb').classList.add('on'); });
+}
+
+async function doSearch(){
+  const q=$('q').value.trim();
+  if(!q){ setStatus('Введите артикул.'); return; }
+  $('go').disabled=true; $('result').innerHTML=''; setStatus('Ищу…');
+  try{
+    const data=await lookup(q);
+    if(data && data.found && data.product){ setStatus(''); $('status').style.display='none'; render(data.product); }
+    else { $('status').style.display='block'; setStatus('Товар с артикулом «'+q+'» не найден. Проверьте артикул или обновите публикацию.', true); }
+  }catch(e){ $('status').style.display='block'; setStatus('Ошибка связи: '+e.message, true); }
+  finally{ $('go').disabled=false; }
+}
+
+$('go').addEventListener('click',doSearch);
+$('q').addEventListener('keydown',e=>{ if(e.key==='Enter') doSearch(); });
+$('lb').addEventListener('click',()=>$('lb').classList.remove('on'));
+$('q').focus();
+</script>
+</body>
+</html>

@@ -217,11 +217,18 @@ function buildGroups(byStore){
   return Array.from(map.values());
 }
 
-/* представитель магазина в группе — товар без модификации, иначе первый */
+/* Главная позиция группы в магазине.
+   На Prom описание/фото/название есть только у родителя, у разновидностей — нет.
+   Родитель — тот, чей артикул самый короткий (без размерного «хвоста»),
+   т.е. совпадает с базовым артикулом группы. */
 function representative(arr, store){
   if(!arr||!arr.length) return null;
-  const base = baseSku(arr[0].sku, store);
-  return arr.find(p=>baseSku(p.sku,store)===base && p.variation_group_id==null) || arr[0];
+  let base=null;
+  for(const p of arr){ const b=baseSku(p.sku,store); if(base===null || b.length<base.length) base=b; }
+  // среди совпавших с базовым берём тот, у кого есть описание/фото
+  const same = arr.filter(p=>baseSku(p.sku,store)===base);
+  const cands = same.length ? same : arr;
+  return cands.find(p=>p.description || (Array.isArray(p.images)&&p.images.length)) || cands[0];
 }
 
 /* ===== публикация ===== */
@@ -267,18 +274,24 @@ async function run(){
 
   for(const g of groups){
     // базовый артикул, название, описание, фото
-    let base='', name='', desc='', images=[], category='';
+    let base='', name='', desc='', images=[], category='', detail=null;
     const order=[MAIN].concat(STORE_KEYS.filter(k=>k!==MAIN));
     for(const store of order){
       const rep=representative(g.stores[store], store); if(!rep) continue;
       if(!base) base = baseSku(rep.sku,store) || String(rep.id);
       if(!name || (rep.name && rep.name.length<name.length)) name = rep.name||name;
-      if(!desc && rep.description) desc = rep.description;
+      if(!desc && rep.description){
+        desc = (typeof rep.description==='object')
+          ? (rep.description.ru||rep.description.uk||rep.description.ua||'')
+          : String(rep.description);
+      }
       if(!images.length){ const im=firstImages(rep,6); if(im.length) images=im; }
       if(!category){ const gr=rep.group; if(gr&&gr.name) category=gr.name; }
+      // откуда потом догрузить полное описание (Prom отдаёт его только в карточке)
+      if(!detail && STORES[store].type==='prom' && rep.id!=null) detail={ store, id:String(rep.id) };
     }
     if(!base) base = g.key;
-    const record={ base, name:name||'(без названия)', category, desc, images, stores:{} };
+    const record={ base, name:name||'(без названия)', category, desc, images, detail, stores:{} };
 
     for(const store of STORE_KEYS){
       const arr=g.stores[store]; if(!arr||!arr.length) continue;

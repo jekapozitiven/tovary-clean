@@ -44,7 +44,17 @@
   .old{color:var(--dim);text-decoration:line-through;font-size:13px;margin-left:6px}
   .pres{font-size:13.5px}
   .pres.yes{color:var(--ok)}.pres.no{color:var(--err)}
+  .avail{display:inline-block;margin-top:8px;font-size:17px;font-weight:700;padding:8px 16px;border-radius:10px}
+  .avail.yes{color:#0f7a33;background:#e7f6ec}
+  .avail.no{color:#a51f1f;background:#fbeaea}
   .hidden-badge{color:var(--warn);font-size:12px}
+  .results{margin-top:8px}
+  .ritem{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer;font-size:15px}
+  .ritem:hover{border-color:var(--accent)}
+  .ritem img{width:44px;height:44px;object-fit:cover;border-radius:8px;background:#f0f2f5;flex:0 0 44px}
+  .ritem .rn{font-weight:600}
+  .ritem .ra{color:var(--dim);font-size:13px}
   .desc{padding:0 18px 20px}
   .desc h3{font-size:14px;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin:6px 0 8px}
   .desc-body{font-size:15px;line-height:1.6;border-top:1px solid var(--line);padding-top:12px;max-height:520px;overflow:auto}
@@ -57,14 +67,14 @@
 <body>
 <div class="wrap">
   <h1>Поиск товара</h1>
-  <p class="sub">Введите артикул — покажем фото, название, описание, цену и наличие.</p>
+  <p class="sub">Введите артикул или название — покажем фото, название, описание и наличие.</p>
 
   <div class="searchbar">
-    <input id="q" type="text" placeholder="Например: Ads-160" autocomplete="off" enterkeyhint="search">
+    <input id="q" type="text" placeholder="Артикул или название, напр. Ads-160 или «куртка»" autocomplete="off" enterkeyhint="search">
     <button id="go">Найти</button>
   </div>
 
-  <div id="status" class="status">Введите артикул и нажмите «Найти».</div>
+  <div id="status" class="status">Введите артикул или название и нажмите «Найти».</div>
   <div id="result"></div>
 </div>
 
@@ -84,6 +94,16 @@ function money(v){
 }
 function setStatus(msg, err){ $('status').className='status'+(err?' err':''); $('status').textContent=msg; }
 
+function overallPresence(stores){
+  const vals = Object.values(stores||{}).map(s=>String(s&&s.presence==null?'':s.presence)).filter(Boolean);
+  if(!vals.length) return { text:'—', yes:false };
+  for(const key of ['В наличии','Под заказ','Ожидается поставка']){
+    const hit = vals.find(v=>v.indexOf(key)===0);
+    if(hit) return { text:hit, yes:true };
+  }
+  const no = vals.find(v=>v.indexOf('Нет в наличии')===0);
+  return { text: no||vals[0], yes:false };
+}
 function descBlock(html){
   return '<div class="desc"><h3>Описание</h3><div class="desc-body">'+html+'</div></div>';
 }
@@ -127,24 +147,8 @@ function render(p){
   const imgs = Array.isArray(p.images)?p.images.filter(Boolean):[];
   const gallery = '<div class="gallery" id="gallery-slot">'+galleryHtml(imgs)+'</div>';
 
-  const order=['blackstreet','bonna','core22','blink'];
-  let rows='';
-  for(const k of order){
-    const s=p.stores&&p.stores[k]; if(!s) continue;
-    const presStr = String(s.presence==null?'':s.presence);
-    const presYes = PRES_YES.some(t=>presStr.indexOf(t)===0);
-    const hidden = s.status && s.status!=='on_display';
-    rows += '<tr>'+
-      '<td>'+esc(s.title||k)+(hidden?' <span class="hidden-badge">(скрыт)</span>':'')+'</td>'+
-      '<td class="price">'+money(s.price)+(s.old_price?'<span class="old">'+money(s.old_price)+'</span>':'')+'</td>'+
-      '<td class="pres '+(presYes?'yes':'no')+'">'+esc(presStr||'—')+'</td>'+
-      '<td>'+esc(s.article||'')+'</td>'+
-    '</tr>';
-  }
-  const table = rows ? (
-    '<table class="stores"><thead><tr><th>Магазин</th><th>Цена</th><th>Наличие</th><th>Артикул</th></tr></thead>'+
-    '<tbody>'+rows+'</tbody></table>'
-  ) : '<p class="art">Нет данных по магазинам.</p>';
+  const av = overallPresence(p.stores);
+  const avail = '<div class="avail '+(av.yes?'yes':'no')+'">'+esc(av.text)+'</div>';
 
   const desc = p.desc ? descBlock(p.desc) : '<div id="desc-slot"></div>';
 
@@ -155,7 +159,7 @@ function render(p){
           (p.category?'<span class="cat">'+esc(p.category)+'</span><br>':'')+
           '<div class="name">'+esc(p.name)+'</div>'+
           '<p class="art">Артикул: <b>'+esc(p.base)+'</b></p>'+
-          table+
+          avail+
         '</div>'+
       '</div>'+ desc +
     '</div>';
@@ -166,15 +170,54 @@ function render(p){
   if(p.detail && (!p.desc || !imgs.length)){ loadDetail(p.detail, !p.desc, !imgs.length); }
 }
 
+/* ---- поиск по названию (по лёгкому списку из облака) ---- */
+let CATALOG=null;
+async function ensureCatalog(){
+  if(CATALOG) return CATALOG;
+  const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/catalog',{
+    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+  });
+  const j=await res.json();
+  CATALOG=(j && Array.isArray(j.list)) ? j.list : [];
+  return CATALOG;
+}
+function renderResults(matches, total){
+  const html = matches.map(m=>
+    '<button class="ritem" data-b="'+esc(m.b)+'">'+
+      (m.img?'<img src="'+esc(m.img)+'" alt="">':'<img alt="">')+
+      '<span><span class="rn">'+esc(m.n)+'</span><br><span class="ra">Артикул: '+esc(m.b)+'</span></span>'+
+    '</button>').join('');
+  $('result').innerHTML='<div class="results">'+html+'</div>';
+  document.querySelectorAll('.ritem').forEach(b=>b.addEventListener('click',()=>openBase(b.dataset.b)));
+  $('status').style.display='block';
+  setStatus('Найдено по названию: '+total+(total>matches.length?(' (показаны первые '+matches.length+')'):'')+'. Нажмите на товар.');
+}
+async function openBase(base){
+  $('result').innerHTML=''; setStatus('Открываю…'); $('status').style.display='block';
+  try{
+    const data=await lookup(base);
+    if(data && data.found && data.product){ $('status').style.display='none'; render(data.product); }
+    else setStatus('Не удалось открыть товар.', true);
+  }catch(e){ setStatus('Ошибка связи: '+e.message, true); }
+}
+
 async function doSearch(){
   const q=$('q').value.trim();
-  if(!q){ setStatus('Введите артикул.'); return; }
-  $('go').disabled=true; $('result').innerHTML=''; setStatus('Ищу…');
+  if(!q){ setStatus('Введите артикул или название.'); return; }
+  $('go').disabled=true; $('result').innerHTML=''; setStatus('Ищу…'); $('status').style.display='block';
   try{
+    // 1) точный поиск по артикулу
     const data=await lookup(q);
-    if(data && data.found && data.product){ setStatus(''); $('status').style.display='none'; render(data.product); }
-    else { $('status').style.display='block'; setStatus('Товар с артикулом «'+q+'» не найден. Проверьте артикул или обновите публикацию.', true); }
-  }catch(e){ $('status').style.display='block'; setStatus('Ошибка связи: '+e.message, true); }
+    if(data && data.found && data.product){ $('status').style.display='none'; render(data.product); return; }
+
+    // 2) поиск по названию (и по части артикула) в списке
+    const list=await ensureCatalog();
+    const ql=q.toLowerCase();
+    const found=list.filter(m=> (m.n&&m.n.toLowerCase().indexOf(ql)!==-1) || (m.b&&m.b.toLowerCase().indexOf(ql)!==-1));
+    if(found.length===1){ await openBase(found[0].b); return; }
+    if(found.length>1){ renderResults(found.slice(0,60), found.length); return; }
+    setStatus('Ничего не найдено по запросу «'+q+'». Проверьте артикул/название или обновите публикацию.', true);
+  }catch(e){ setStatus('Ошибка связи: '+e.message, true); }
   finally{ $('go').disabled=false; }
 }
 

@@ -128,6 +128,7 @@ async function loadDetail(d, needDesc, needImg){
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
     });
     const j=await res.json();
+    console.log('[detail ответ]', j);
     if(j && j.ok){
       if(slot) slot.innerHTML = j.description ? descBlock(j.description) : '';   // товар без описания — тихо
     } else {

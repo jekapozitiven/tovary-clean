@@ -270,6 +270,7 @@ async function run(){
   // строим индекс: полки idx:* (base→карточка) и alias:* (артикул→base)
   const idxShards={}, aliasShards={};
   for(let i=0;i<SHARDS;i++){ idxShards[i]={}; aliasShards[i]={}; }
+  const list=[];   // лёгкий список для поиска по названию: {b:артикул, n:название, img}
   let withImg=0, withDesc=0;
 
   for(const g of groups){
@@ -314,6 +315,7 @@ async function run(){
     // сам base тоже ищется
     const nb=normArt(base); aliasShards[shardOf(nb)][nb]=base;
     idxShards[shardOf(base)][base]=record;
+    list.push({ b:base, n:record.name, img:images[0]||'' });
   }
   setProg(55);
   log('  с фото: '+withImg+', с описанием: '+withDesc);
@@ -327,6 +329,8 @@ async function run(){
     catch(e){ log('  полка '+i+': ошибка — '+e.message,'err'); return; }
     sent++; setProg(55+Math.round(sent/SHARDS*44));
   }
+  // лёгкий список для поиска по названию
+  await api('/publish',{ puts:[{ key:'list', value:list }] });
   await api('/publish',{ puts:[{ key:'meta', value:{ builtAt:Date.now(), groups:groups.length, stores:chosen } }] });
   setProg(100);
   log('Готово. Опубликовано карточек: '+groups.length+'. Колл-центр уже видит свежие данные.','ok');

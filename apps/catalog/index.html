@@ -1345,39 +1345,82 @@ async function applyChanges(items, vals, msgBox) {
   showMsg(msgBox, 'warn', 'Отправляю ' + total + ' позиций…');
   const report = [];
 
+  // реально ли применилось: перечитываем товар и сверяем цену/статус
+  function reallyApplied(actual, upd) {
+    const p = actual && (actual.product || actual);
+    if (!p) return false;
+    const m = (x) => Math.round((Number(x) || 0) * 100) / 100;
+    if (upd.price != null && m(p.price) !== m(upd.price)) return false;
+    if (upd.status && (p.status || '') !== upd.status) return false;
+    return true;   // цену и статус сверяем; скидку/наличие Prom по API надёжно не отдаёт
+  }
+
   for (const store of STORE_KEYS) {
     const list = jobs[store];
     if (!list.length) continue;
-    let done = 0, failed = 0;
+
+    // 1) отправка (чанками по 100)
     for (let i = 0; i < list.length; i += 100) {
       const chunk = list.slice(i, i + 100);
       try {
         const res = await api('/edit', { store: store, products: chunk.map(j => j.upd) });
-        const ok = (res && (res.processed_ids || [])).map(String);
-        chunk.forEach(function (j) {
-          if (ok.indexOf(String(j.upd.id)) !== -1) {
-            done++;
-            Object.assign(j.ref, j.upd);          // обновляем у себя
-          } else failed++;
-        });
         const errs = res && res.errors;
         if (errs && Object.keys(errs).length) {
-          report.push(escapeHtml(STORES[store].title + ': ' +
-            decodeMsg(JSON.stringify(errs)).slice(0, 400)));
-        } else if (!ok.length) {
-          // отклонил всё, но причину не назвал — показываем ответ и запрос целиком
-          report.push(STORES[store].title + ': Prom ответил без объяснения.<br>' +
-            '<b>Его ответ:</b> ' + escapeHtml(decodeMsg(JSON.stringify(res)).slice(0, 400)) + '<br>' +
-            '<b>Отправляли:</b> ' + escapeHtml(JSON.stringify(chunk[0].upd).slice(0, 400)));
+          report.push(escapeHtml(STORES[store].title + ': ' + decodeMsg(JSON.stringify(errs)).slice(0, 400)));
         }
       } catch (e) {
-        failed += chunk.length;
         report.push(escapeHtml(STORES[store].title + ': ' + e.message));
       }
-      showMsg(msgBox, 'warn', 'Отправлено ' + (done + failed) + ' из ' + total + '…');
+      showMsg(msgBox, 'warn', 'Отправляю на ' + STORES[store].title + '…');
     }
-    report.unshift(escapeHtml(STORES[store].title + ': принято ' + done +
-      (failed ? ', отклонено ' + failed : '')));
+
+    // Blink: Хорошоп поштучно по API не перечитать — отмечаем только отправку
+    if (store === 'blink') {
+      list.forEach(j => Object.assign(j.ref, j.upd));
+      report.unshift(escapeHtml(STORES[store].title + ': отправлено ' + list.length +
+        ' (Хорошоп поштучно по API не проверяется)'));
+      continue;
+    }
+
+    // 2) ПРОВЕРКА по API + авто-повтор до 3 раз (сверяем цену/статус)
+    const verifiable = list.filter(j => j.upd.price != null || j.upd.status);
+    const unverifiable = list.length - verifiable.length;
+    list.forEach(j => { if (j.upd.price == null && !j.upd.status) Object.assign(j.ref, j.upd); });
+
+    let pending = verifiable.slice();
+    let applied = 0, tries = 0;
+    while (pending.length && tries < 3) {
+      tries++;
+      const wrong = [];
+      let n = 0;
+      for (const j of pending) {
+        n++;
+        showMsg(msgBox, 'warn', STORES[store].title + ': проверяю ' + n + '/' + pending.length +
+          (tries > 1 ? ' (повтор ' + (tries - 1) + ')' : '') + '…');
+        let actual = null;
+        try { actual = await api('/get', { store: store, id: j.upd.id }); } catch (e) { actual = null; }
+        if (reallyApplied(actual, j.upd)) { applied++; Object.assign(j.ref, j.upd); }
+        else wrong.push(j);
+      }
+      pending = wrong;
+      if (!pending.length) break;
+      if (tries < 3) {   // повторно отправляем не применившиеся
+        for (let i = 0; i < pending.length; i += 100) {
+          const chunk = pending.slice(i, i + 100);
+          try { await api('/edit', { store: store, products: chunk.map(j => j.upd) }); } catch (e) {}
+        }
+      }
+    }
+
+    let line = STORES[store].title + ': реально применилось ' + applied + ' из ' + verifiable.length +
+      (tries > 1 ? ' (повторов ' + (tries - 1) + ')' : '');
+    if (applied < verifiable.length) line += ' · НЕ применилось ' + (verifiable.length - applied);
+    if (unverifiable) line += ' · +' + unverifiable + ' (скидка/наличие — по API не сверяется)';
+    report.unshift(escapeHtml(line));
+    if (pending.length) {
+      report.push(escapeHtml(STORES[store].title + ': не применилось, пример id ' + pending[0].upd.id +
+        ' — вероятно, товар в корзине или на прайс-выгрузке (через API не редактируется).'));
+    }
   }
 
   showMsg(msgBox, 'ok', report.join('<br>'));

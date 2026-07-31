@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0b">
+<title>Аудит артикулов — Товары</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Crect%20width%3D%2224%22%20height%3D%2224%22%20rx%3D%225.5%22%20fill%3D%22%230e0e10%22%2F%3E%3Cpath%20d%3D%22M12%203l7%204v5c0%204-3%207-7%208-4-1-7-4-7-8V7z%22%20fill%3D%22none%22%20stroke%3D%22%23d6f24a%22%20stroke-width%3D%221.8%22%20stroke-linejoin%3D%22round%22%2F%3E%3Cpath%20d%3D%22M9%2012l2%202%204-4%22%20fill%3D%22none%22%20stroke%3D%22%23d6f24a%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E">
+<style>
+  :root {
+    --bg:#0a0a0b; --panel:#141416; --panel2:#101013; --border:#26262b; --border-h:#3a3a42;
+    --text:#e9e9ea; --dim:#b4b4b8; --faint:#75757c; --accent:#d6f24a; --green:#34d399; --red:#f87171; --amber:#fbbf24;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; }
+  .topbar { display:flex; align-items:center; justify-content:space-between;
+            padding:14px 22px; border-bottom:1px solid var(--border); }
+  .brand { font-weight:800; letter-spacing:.02em; }
+  .brand span { color:var(--accent); }
+  .brand small { display:block; font-weight:500; color:var(--faint); font-size:12px; margin-top:2px; }
+  .home { color:var(--dim); text-decoration:none; font-size:13px; }
+  .wrap { max-width:1100px; margin:0 auto; padding:20px 22px 60px; }
+
+  .btn { display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border-radius:999px;
+         border:1px solid var(--border-h); background:#1a1a1e; color:var(--text);
+         font-family:var(--font); font-size:13.5px; font-weight:600; cursor:pointer; }
+  .btn:hover { border-color:var(--accent); }
+  .btn--go { background:var(--accent); color:#12140a; border-color:var(--accent); }
+  .btn--sm { padding:7px 13px; font-size:13px; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .btnrow { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:6px 0 14px; }
+
+  input[type=text], input[type=password] { width:100%; padding:11px 14px; border-radius:10px; border:1px solid var(--border);
+         background:#0f0f11; color:var(--text); font-family:var(--font); font-size:14px; }
+  input:focus { outline:none; border-color:var(--accent); }
+
+  .note { padding:12px 16px; border-radius:10px; font-size:13px; line-height:1.55; margin-bottom:14px; }
+  .note--warn { background:rgba(214,242,74,.06); border:1px solid rgba(214,242,74,.22); color:var(--dim); }
+  .note--err  { background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.28); color:#fca5a5; }
+  .note--ok   { background:rgba(52,211,153,.08); border:1px solid rgba(52,211,153,.28); color:#6ee7b7; }
+
+  .muted { color:var(--faint); font-size:12.5px; }
+  .panel { border:1px solid var(--border); border-radius:12px; background:var(--panel); padding:14px 16px; margin-bottom:14px; }
+  .panel h2 { margin:0 0 4px; font-size:15px; }
+  .settings label { display:block; font-size:12px; color:var(--faint); margin:8px 0 4px; }
+
+  .cards { display:flex; gap:10px; flex-wrap:wrap; margin:4px 0 6px; }
+  .stat { border:1px solid var(--border); border-radius:10px; background:var(--panel2); padding:10px 14px; min-width:130px; }
+  .stat b { display:block; font-size:20px; }
+  .stat span { font-size:11.5px; color:var(--faint); }
+  .stat--bad b { color:var(--red); }
+  .stat--ok b { color:var(--green); }
+
+  details.grp { border:1px solid var(--border); border-radius:10px; margin-top:10px; padding:0 14px; background:var(--panel2); }
+  details.grp > summary { cursor:pointer; padding:12px 2px; font-size:13.5px; font-weight:600; list-style:none; user-select:none; }
+  details.grp > summary::-webkit-details-marker { display:none; }
+  details.grp > summary:before { content:'▸'; color:var(--faint); margin-right:8px; font-size:11px; }
+  details.grp[open] > summary:before { content:'▾'; }
+  details.grp[open] > summary { border-bottom:1px solid var(--border); margin-bottom:6px; }
+  .pill { display:inline-block; font-size:11px; font-weight:700; border-radius:999px; padding:1px 9px; margin-left:8px; }
+  .pill--bad { background:rgba(248,113,113,.16); color:#fca5a5; }
+  .pill--amber { background:rgba(251,191,36,.16); color:#fcd34d; }
+  .pill--ok { background:rgba(52,211,153,.16); color:#6ee7b7; }
+
+  table { width:100%; border-collapse:collapse; font-size:12.5px; margin:6px 0 12px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--faint); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  td.art { font-family:ui-monospace,Menlo,monospace; }
+  .bad { color:#fca5a5; }
+  .exp { color:var(--green); }
+  .empty { padding:22px; text-align:center; color:var(--faint); }
+  .progress { height:6px; border-radius:999px; background:#1c1c20; overflow:hidden; margin:10px 0; }
+  .progress > i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  h3.sec { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); margin:22px 0 2px; }
+  .subtle { font-size:12px; color:var(--faint); margin-bottom:6px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">ТОВАРЫ<span>//</span><small>Аудит артикулов</small></div>
+  <a class="home" href="../../index.html">← Главная</a>
+</header>
+
+<main class="wrap">
+
+  <div class="panel settings" id="settings">
+    <h2>Подключение</h2>
+    <div class="muted">Те же адрес и пароль, что в «Цены и наличие». Если там уже заходили — поля заполнятся сами.</div>
+    <label for="cfg-url">Адрес посредника (Cloudflare Worker)</label>
+    <input type="text" id="cfg-url" placeholder="https://…workers.dev">
+    <label for="cfg-pass">Пароль приложения</label>
+    <input type="password" id="cfg-pass" placeholder="пароль">
+    <div class="btnrow" style="margin-top:12px">
+      <button class="btn btn--sm" id="save-cfg">Сохранить</button>
+      <button class="btn btn--sm" id="ping">Проверить связь</button>
+      <span class="muted" id="ping-res"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Данные</h2>
+    <div class="muted" id="data-info">Загружаю данные из памяти…</div>
+    <div class="btnrow">
+      <button class="btn btn--sm" id="reload-cache">Взять из памяти</button>
+      <button class="btn btn--sm" id="reload-api">Обновить из магазинов</button>
+      <button class="btn btn--go" id="run" disabled>Провести аудит</button>
+    </div>
+    <div class="progress hidden" id="prog"><i></i></div>
+    <div id="load-msg"></div>
+  </div>
+
+  <div id="out"></div>
+
+</main>
+
+<script>
+/* ===================================================================== */
+/*  Конфиг и справочник магазинов — единый с остальными приложениями      */
+/* ===================================================================== */
+const CFG_KEY = 'tovary:prices:cfg';
+const loadJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const saveJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+let cfg = loadJSON(CFG_KEY, { url:'', pass:'' });
+
+const STORES = {
+  blackstreet: { title:'Black Street', suffix:'',     kind:'prom' },
+  bonna:       { title:'Bonna-shop',   suffix:' (B)', kind:'prom' },
+  core22:      { title:'Core22',       suffix:' (С)', kind:'prom' },   // кириллическая С
+  blink:       { title:'Blink',        suffix:'',     kind:'horoshop' },
+};
+const STORE_KEYS = Object.keys(STORES);
+const MAIN = 'blackstreet';
+
+const DB_NAME = 'tovary-prices', DB_STORE = 'stores';
+const CHUNK = 2000;
+let dbPromise = null, byStore = {}, cacheAge = null;
+
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function decodeMsg(s){ try { return String(s).replace(/\\u([0-9a-fA-F]{4})/g,(m,h)=>String.fromCharCode(parseInt(h,16))); } catch(e){ return String(s); } }
+
+/* ===================================================================== */
+/*  Связь с посредником                                                   */
+/* ===================================================================== */
+async function api(route, payload){
+  if (!cfg.url) throw new Error('Не задан адрес посредника — заполните поля вверху.');
+  const res = await fetch(cfg.url.replace(/\/+$/,'') + route, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'X-App-Password':cfg.pass },
+    body: JSON.stringify(payload||{}),
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok){
+    const d = data.detail ? '\n'+JSON.stringify(data.detail) : '';
+    throw new Error(decodeMsg((data.error||('Ошибка '+res.status))+d));
+  }
+  return data;
+}
+
+/* ===================================================================== */
+/*  Кэш на устройстве (тот же, что заполняет «Цены и наличие»)            */
+/* ===================================================================== */
+function db(){
+  if (!dbPromise) dbPromise = new Promise((resolve,reject)=>{
+    const req = indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded = ()=>{ const d=req.result; if(!d.objectStoreNames.contains(DB_STORE)) d.createObjectStore(DB_STORE); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+  return dbPromise;
+}
+function cacheGet(key){
+  return db().then(d=>new Promise((resolve,reject)=>{
+    const r = d.transaction(DB_STORE,'readonly').objectStore(DB_STORE).get(key);
+    r.onsuccess = ()=>resolve(r.result); r.onerror = ()=>reject(r.error);
+  }));
+}
+function cachePut(key,value){
+  return db().then(d=>new Promise((resolve,reject)=>{
+    const tx = d.transaction(DB_STORE,'readwrite');
+    tx.objectStore(DB_STORE).put(value,key);
+    tx.oncomplete = resolve; tx.onerror = ()=>reject(tx.error); tx.onabort = ()=>reject(tx.error);
+  }));
+}
+function cacheDel(key){
+  return db().then(d=>new Promise((resolve)=>{
+    const tx = d.transaction(DB_STORE,'readwrite');
+    tx.objectStore(DB_STORE).delete(key);
+    tx.oncomplete = resolve; tx.onerror = resolve; tx.onabort = resolve;
+  }));
+}
+
+/* только нужные поля — тот же формат, что у «Цены и наличие» */
+const KEEP = ['id','external_id','name','sku','article','price','old_price',
+              'presence','status','discount','variation_group_id','quantity_in_stock'];
+function slim(p){
+  const o = {};
+  for (const k of KEEP) if (p[k] !== undefined) o[k] = p[k];
+  if (p.name_multilang && typeof p.name_multilang === 'object')
+    o.name_multilang = { ru:p.name_multilang.ru||'', uk:p.name_multilang.uk||p.name_multilang.ua||'' };
+  if (p.mod_name && typeof p.mod_name === 'object' && (p.mod_name.ru||p.mod_name.uk))
+    o.mod_name = { ru:p.mod_name.ru||'', uk:p.mod_name.uk||'' };
+  return o;
+}
+
+async function loadFromCache(){
+  byStore = {}; let any=false, oldest=null;
+  for (const key of STORE_KEYS){
+    let products = [];
+    try {
+      const head = await cacheGet(key);
+      if (head && head.savedAt && (!oldest || head.savedAt < oldest)) oldest = head.savedAt;
+      let miss = 0;
+      for (let i=0; i<400 && miss<3; i++){
+        const part = await cacheGet(key+':'+i);
+        if (part && Array.isArray(part.products) && part.products.length){ products = products.concat(part.products); miss=0; }
+        else miss++;
+      }
+    } catch(e){}
+    if (products.length){ byStore[key] = products; any = true; }
+  }
+  cacheAge = oldest;
+  return any;
+}
+
+/* Полная загрузка из магазинов (как в «Цены и наличие») — пишет в тот же кэш */
+async function loadStore(store, onProgress){
+  const out=[], seen=new Set();
+  let lastId=null, guard=0, savedUpTo=0;
+  const savedAt = Date.now();
+  async function flush(){
+    const to = out.length;
+    if (to <= savedUpTo) return;
+    for (let i=Math.floor(savedUpTo/CHUNK); i*CHUNK<to; i++){
+      const slice = out.slice(i*CHUNK,(i+1)*CHUNK);
+      if (slice.length) await cachePut(store+':'+i, { products: slice.map(slim), savedAt: savedAt });
+    }
+    await cachePut(store, { parts: Math.ceil(to/CHUNK), savedAt: savedAt, total: to });
+    savedUpTo = to;
+  }
+  while (guard++ < 3000){
+    let data=null, tries=0;
+    while (tries++ < 4){
+      const lim = (store==='blink') ? 500 : 100;
+      try { data = await api('/list', { store:store, limit:lim, last_id:lastId, offset:out.length }); break; }
+      catch(e){
+        const m = String(e.message||'');
+        if (m.indexOf('429')!==-1 || m.indexOf('limit has been exceeded')!==-1){
+          try { await flush(); } catch(x){}
+          const sec = (m.match(/Retry after (\d+)/)||[])[1];
+          const err = new Error('лимит обращений исчерпан'+(sec?', повторить через '+Math.ceil(Number(sec)/60)+' мин':''));
+          err.partial = out; err.rateLimited = true; throw err;
+        }
+        if (tries>=4){ try { await flush(); } catch(x){} const err=new Error(e.message); err.partial=out; throw err; }
+        onProgress(out.length, 'нет ответа, жду '+(tries*5)+' сек…');
+        await sleep(tries*5000);
+      }
+    }
+    const batch = (data && data.products) || [];
+    if (!batch.length){
+      if (data && data.horoshop_answer && !out.length){
+        const err = new Error('Хорошоп ответил: '+JSON.stringify(data.horoshop_answer).slice(0,300));
+        err.partial = out; throw err;
+      }
+      break;
+    }
+    let added=0;
+    for (const p of batch){ if (seen.has(p.id)) continue; seen.add(p.id); out.push(p); added++; }
+    const next = batch[batch.length-1].id;
+    if (next===lastId) break;
+    lastId = next;
+    onProgress(out.length,'');
+    if (out.length - savedUpTo >= CHUNK){ try { await flush(); } catch(e){} }
+    if (added===0 && batch.length < ((store==='blink')?500:100)) break;
+    await sleep(30);
+  }
+  await flush();
+  return out;
+}
+
+async function loadAllFromApi(){
+  const counts={}, notes={}, problems=[];
+  $('prog').classList.remove('hidden');
+  function paint(){
+    $('load-msg').innerHTML = '<div class="note note--warn">Загружаю все магазины…<br>' +
+      STORE_KEYS.map(k => STORES[k].title+': <b>'+(counts[k]||0)+'</b>'+(notes[k]?' — '+escapeHtml(notes[k]):'')).join('<br>')+'</div>';
+    const total = STORE_KEYS.reduce((n,k)=>n+(counts[k]||0),0);
+    $('prog').firstElementChild.style.width = Math.min(97, 2 + total/700) + '%';
+  }
+  await Promise.all(STORE_KEYS.map(async function(key){
+    let list=null;
+    try { list = await loadStore(key, (n,note)=>{ counts[key]=n; notes[key]=note; paint(); }); }
+    catch(e){ list = e.partial||null; problems.push(STORES[key].title+': '+e.message); }
+    if (list && list.length){
+      byStore[key] = list;
+      const parts = Math.ceil(list.length/CHUNK);
+      for (let i=parts; i<parts+12; i++){ try { await cacheDel(key+':'+i); } catch(e){} }
+    }
+  }));
+  $('prog').firstElementChild.style.width='100%';
+  cacheAge = Date.now();
+  setTimeout(()=>$('prog').classList.add('hidden'), 500);
+  if (problems.length) $('load-msg').innerHTML = '<div class="note note--err">'+problems.map(escapeHtml).join('<br>')+'</div>';
+  else $('load-msg').innerHTML = '';
+}
+
+/* ===================================================================== */
+/*  Артикулы: приведение к базе                                           */
+/* ===================================================================== */
+// единый вид для сравнения: верхний регистр, один пробел
+function normArt(a){ return String(a==null?'':a).toUpperCase().replace(/\s+/g,' ').trim(); }
+
+// база артикула = без магазинного суффикса (терпимо к лат./кир. B/С)
+function baseSku(sku, store){
+  let s = (sku||'').trim();
+  if (store==='core22') s = s.replace(/\s*\((?:С|C)\)\s*$/i,'').trim();
+  else if (store==='bonna') s = s.replace(/\s*\((?:B|В)\)\s*$/i,'').trim();
+  else { const suf=(STORES[store].suffix||'').trim(); if (suf && s.endsWith(suf)) s = s.slice(0,-suf.length).trim(); }
+  return s;
+}
+
+// ключ семейства (главный товар + разновидности) внутри одного магазина
+function familyKey(p, store){
+  if (p.variation_group_id != null && p.variation_group_id !== '') return 'v:'+p.variation_group_id;
+  const s = normArt(baseSku(p.sku, store));
+  return s ? ('s:'+s) : ('p:'+p.id);
+}
+// короткое (обычно — родовое) название семейства
+function familyName(arr){
+  let best='';
+  for (const p of arr){ const n=(p.name||'').trim(); if (n && (!best || n.length<best.length)) best=n; }
+  return best || '(без названия)';
+}
+
+/* ===================================================================== */
+/*  АУДИТ                                                                  */
+/* ===================================================================== */
+function runAudit(){
+  const black = byStore[MAIN] || [];
+  // эталон: множество базовых артикулов Black Street + карта id→база
+  const R = new Map();            // база → {name, sku}
+  const blackById = new Map();    // id → база
+  for (const p of black){
+    const b = normArt(baseSku(p.sku, MAIN));
+    if (b && !R.has(b)) R.set(b, { name:p.name||'', sku:p.sku||'' });
+    blackById.set(String(p.id), b);
+  }
+
+  /* ---- Отчёт 1: внутри магазина главный ≠ разновидности ---- */
+  const report1 = {};
+  for (const store of STORE_KEYS){
+    const items = byStore[store] || [];
+    const fam = new Map();
+    for (const p of items){ const k=familyKey(p,store); (fam.get(k) || fam.set(k,[]).get(k)).push(p); }
+    const rows = [];
+    for (const arr of fam.values()){
+      if (arr.length < 2) continue;   // нет разновидностей — сравнивать нечего
+      if (store === 'blink'){
+        // разновидности должны начинаться с родительского артикула (sku)
+        const parent = normArt(arr[0].sku || '');
+        if (!parent) continue;
+        const bad = arr.filter(p => { const a=normArt(p.article || p.id || ''); return a && a.indexOf(parent)!==0; });
+        if (bad.length){
+          rows.push({ name:familyName(arr), ref:arr[0].sku||'', total:arr.length,
+            bad: bad.map(p=>({ art:p.article||p.id||'(пусто)', name:p.name||'', id:p.id })) });
+        }
+      } else {
+        // на Prom база должна совпадать у всех позиций семейства
+        const groups = new Map();
+        for (const p of arr){ const b=normArt(baseSku(p.sku,store))||'(ПУСТО)'; (groups.get(b) || groups.set(b,[]).get(b)).push(p); }
+        if (groups.size > 1){
+          let ref=null, refN=-1;
+          for (const [b,ps] of groups){ if (ps.length>refN){ refN=ps.length; ref=b; } }
+          const bad=[];
+          for (const [b,ps] of groups){ if (b!==ref){ for (const p of ps) bad.push({ art:p.sku||'(пусто)', name:p.name||'', id:p.id }); } }
+          rows.push({ name:familyName(arr), ref:ref, total:arr.length, bad:bad });
+        }
+      }
+    }
+    rows.sort((a,b)=>a.name.localeCompare(b.name));
+    report1[store] = rows;
+  }
+
+  /* ---- Отчёт 2: сверка с Black Street ---- */
+  const report2 = {};
+  for (const store of STORE_KEYS){
+    if (store === MAIN) continue;
+    const items = byStore[store] || [];
+    const storeBase = new Map();   // база → {name, sku, id}
+    const mismatch = [];
+    for (const p of items){
+      const b = (store==='blink') ? normArt(p.sku||'') : normArt(baseSku(p.sku,store));
+      if (b && !storeBase.has(b)) storeBase.set(b, { name:p.name||'', sku:p.sku||'', id:p.id });
+      // связка по external_id (Bonna/Core22 несут id товара Black Street)
+      if (store!=='blink' && p.external_id!=null && String(p.external_id)!==''){
+        const exp = blackById.get(String(p.external_id));
+        if (exp!==undefined && exp!=='' && b!=='' && exp!==b){
+          mismatch.push({ art:p.sku||'', base:b, expected:exp, name:p.name||'', id:p.id, ext:p.external_id });
+        }
+      }
+    }
+    const orphan=[];   // есть на магазине, нет на Black Street
+    for (const [b,info] of storeBase){ if (!R.has(b)) orphan.push({ base:b, sku:info.sku, name:info.name, id:info.id }); }
+    const missing=[];  // есть на Black Street, нет на магазине
+    for (const [b,info] of R){ if (!storeBase.has(b)) missing.push({ base:b, name:info.name }); }
+    orphan.sort((a,b)=>a.base.localeCompare(b.base));
+    missing.sort((a,b)=>a.base.localeCompare(b.base));
+    mismatch.sort((a,b)=>a.base.localeCompare(b.base));
+    report2[store] = { orphan, missing, mismatch, storeCount:storeBase.size };
+  }
+
+  return { report1, report2, refCount:R.size };
+}
+
+/* ===================================================================== */
+/*  Отрисовка                                                             */
+/* ===================================================================== */
+const CAP = 300; // строк на экране; в CSV попадает всё
+let lastResult = null;
+
+function tableFromRows(head, rows, render){
+  if (!rows.length) return '<div class="empty">Ничего не найдено ✓</div>';
+  let html = '<table><tr>'+head.map(h=>'<th>'+h+'</th>').join('')+'</tr>';
+  html += rows.slice(0,CAP).map(render).join('');
+  html += '</table>';
+  if (rows.length>CAP) html += '<div class="muted">Показаны первые '+CAP+' из '+rows.length+'. Полный список — в CSV.</div>';
+  return html;
+}
+
+function render(res){
+  lastResult = res;
+  const r1 = res.report1, r2 = res.report2;
+  let issues1 = 0, issues2 = 0;
+  for (const s of STORE_KEYS) issues1 += (r1[s]||[]).length;
+  for (const s of STORE_KEYS){ if (s===MAIN) continue; const d=r2[s]; issues2 += d.orphan.length + d.mismatch.length; }
+
+  let h = '';
+
+  // сводка
+  h += '<div class="panel"><h2>Итог</h2><div class="cards">';
+  for (const s of STORE_KEYS) h += '<div class="stat"><b>'+((byStore[s]||[]).length)+'</b><span>'+STORES[s].title+', позиций</span></div>';
+  h += '<div class="stat'+(issues1?' stat--bad':' stat--ok')+'"><b>'+issues1+'</b><span>семейств с разными артикулами</span></div>';
+  h += '<div class="stat'+(issues2?' stat--bad':' stat--ok')+'"><b>'+issues2+'</b><span>несовпадений с Black Street</span></div>';
+  h += '</div>';
+  h += '<div class="btnrow"><button class="btn btn--sm" id="csv1">Скачать отчёт 1 (CSV)</button>'+
+       '<button class="btn btn--sm" id="csv2">Скачать отчёт 2 (CSV)</button></div>';
+  if (cacheAge) h += '<div class="muted">Данные обновлены: '+new Date(cacheAge).toLocaleString('ru-RU')+'</div>';
+  h += '</div>';
+
+  // ОТЧЁТ 1
+  h += '<h3 class="sec">Отчёт 1 · разные артикулы на главном товаре и разновидностях</h3>';
+  h += '<div class="subtle">Prom (Black Street, Bonna, Core22): база артикула должна совпадать у всех позиций одного товара. '+
+       'Blink: артикул разновидности должен начинаться с родительского артикула.</div>';
+  for (const s of STORE_KEYS){
+    const rows = r1[s]||[];
+    const pill = rows.length ? '<span class="pill pill--bad">'+rows.length+'</span>' : '<span class="pill pill--ok">0</span>';
+    h += '<details class="grp"'+(rows.length?' open':'')+'><summary>'+STORES[s].title+pill+'</summary>';
+    h += tableFromRows(['Товар','Эталонный артикул','Проблемные артикулы (позиций)'], rows, row=>{
+      const bad = row.bad.map(b=>'<span class="bad art">'+escapeHtml(b.art)+'</span>').join(', ');
+      return '<tr><td>'+escapeHtml(row.name)+'</td><td class="art">'+escapeHtml(row.ref)+'</td><td>'+bad+' <span class="muted">('+row.bad.length+' из '+row.total+')</span></td></tr>';
+    });
+    h += '</details>';
+  }
+
+  // ОТЧЁТ 2
+  h += '<h3 class="sec">Отчёт 2 · сверка артикулов с Black Street</h3>';
+  h += '<div class="subtle">Эталон — '+res.refCount+' базовых артикулов Black Street. Сверяются главный товар и разновидности.</div>';
+  for (const s of STORE_KEYS){
+    if (s===MAIN) continue;
+    const d = r2[s];
+    const bad = d.orphan.length + d.mismatch.length;
+    const pill = bad ? '<span class="pill pill--bad">'+bad+'</span>' : '<span class="pill pill--ok">0</span>';
+    h += '<details class="grp"'+(bad?' open':'')+'><summary>'+STORES[s].title+pill+
+         ' <span class="muted">— на магазине '+d.storeCount+' артикулов</span></summary>';
+
+    if (d.mismatch.length){
+      h += '<div class="subtle"><span class="pill pill--amber">'+d.mismatch.length+'</span> связаны с Black Street (external_id), но артикул отличается</div>';
+      h += tableFromRows(['Артикул на магазине','Ожидался (по Black Street)','Товар'], d.mismatch, row=>
+        '<tr><td class="art bad">'+escapeHtml(row.art)+'</td><td class="art exp">'+escapeHtml(row.expected)+'</td><td>'+escapeHtml(row.name)+'</td></tr>');
+    }
+
+    h += '<div class="subtle"><span class="pill pill--bad">'+d.orphan.length+'</span> нет на Black Street (лишние/чужие артикулы)</div>';
+    h += tableFromRows(['База артикула','Артикул на магазине','Товар'], d.orphan, row=>
+      '<tr><td class="art">'+escapeHtml(row.base)+'</td><td class="art">'+escapeHtml(row.sku)+'</td><td>'+escapeHtml(row.name)+'</td></tr>');
+
+    h += '<div class="subtle"><span class="pill pill--amber">'+d.missing.length+'</span> есть на Black Street, нет на '+STORES[s].title+'</div>';
+    h += tableFromRows(['База артикула','Товар (Black Street)'], d.missing, row=>
+      '<tr><td class="art">'+escapeHtml(row.base)+'</td><td>'+escapeHtml(row.name)+'</td></tr>');
+
+    h += '</details>';
+  }
+
+  $('out').innerHTML = h;
+  $('csv1').addEventListener('click', ()=>downloadCsv1(res));
+  $('csv2').addEventListener('click', ()=>downloadCsv2(res));
+}
+
+/* ===================================================================== */
+/*  Выгрузка CSV (открывается в Excel, разделитель «;», BOM для кириллицы) */
+/* ===================================================================== */
+function csvCell(v){ const s=String(v==null?'':v); return /[";\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+function csvRow(arr){ return arr.map(csvCell).join(';'); }
+function downloadCsv(name, lines){
+  const blob = new Blob(['﻿'+lines.join('\r\n')], { type:'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function downloadCsv1(res){
+  const lines = [csvRow(['Магазин','Товар','Эталонный артикул','Проблемный артикул','ID позиции'])];
+  for (const s of STORE_KEYS){
+    for (const row of (res.report1[s]||[])){
+      for (const b of row.bad) lines.push(csvRow([STORES[s].title, row.name, row.ref, b.art, b.id]));
+    }
+  }
+  downloadCsv('audit_otchet1_raznye_artikuly.csv', lines);
+}
+function downloadCsv2(res){
+  const lines = [csvRow(['Магазин','Тип','База артикула','Артикул на магазине','Ожидался','Товар','ID/связь'])];
+  for (const s of STORE_KEYS){
+    if (s===MAIN) continue;
+    const d = res.report2[s];
+    for (const m of d.mismatch) lines.push(csvRow([STORES[s].title,'связан, но артикул отличается', m.base, m.art, m.expected, m.name, 'ext '+m.ext]));
+    for (const o of d.orphan)   lines.push(csvRow([STORES[s].title,'нет на Black Street', o.base, o.sku, '', o.name, o.id]));
+    for (const m of d.missing)  lines.push(csvRow([STORES[s].title,'отсутствует на магазине', m.base, '', '', m.name, '']));
+  }
+  downloadCsv('audit_otchet2_sverka_black_street.csv', lines);
+}
+
+/* ===================================================================== */
+/*  Экран / кнопки                                                        */
+/* ===================================================================== */
+function showDataInfo(any){
+  if (any){
+    const parts = STORE_KEYS.map(k=>STORES[k].title+': '+((byStore[k]||[]).length));
+    const age = cacheAge ? ' · обновлено '+new Date(cacheAge).toLocaleString('ru-RU') : '';
+    $('data-info').innerHTML = 'В памяти: '+parts.join(' · ')+age;
+    $('run').disabled = false;
+  } else {
+    $('data-info').innerHTML = 'Данных в памяти нет. Нажмите «Обновить из магазинов» здесь, либо сначала обновите в «Цены и наличие».';
+    $('run').disabled = true;
+  }
+}
+
+async function init(){
+  $('cfg-url').value = cfg.url || '';
+  $('cfg-pass').value = cfg.pass || '';
+  const any = await loadFromCache();
+  showDataInfo(any);
+}
+
+$('save-cfg').addEventListener('click', ()=>{
+  cfg = { url:$('cfg-url').value.trim(), pass:$('cfg-pass').value };
+  saveJSON(CFG_KEY, cfg);
+  $('ping-res').textContent = 'сохранено';
+});
+$('ping').addEventListener('click', async ()=>{
+  cfg = { url:$('cfg-url').value.trim(), pass:$('cfg-pass').value }; saveJSON(CFG_KEY, cfg);
+  $('ping-res').textContent = 'проверяю…';
+  try { const r = await api('/ping', {}); $('ping-res').textContent = r.ok ? 'связь есть ✓' : 'ответ без ok'; }
+  catch(e){ $('ping-res').textContent = 'ошибка: '+e.message; }
+});
+$('reload-cache').addEventListener('click', async ()=>{
+  $('load-msg').innerHTML = '';
+  const any = await loadFromCache(); showDataInfo(any);
+});
+$('reload-api').addEventListener('click', async ()=>{
+  cfg = { url:$('cfg-url').value.trim(), pass:$('cfg-pass').value }; saveJSON(CFG_KEY, cfg);
+  $('reload-api').disabled = true; $('run').disabled = true;
+  try { await loadAllFromApi(); } catch(e){ $('load-msg').innerHTML = '<div class="note note--err">'+escapeHtml(e.message)+'</div>'; }
+  $('reload-api').disabled = false;
+  showDataInfo(STORE_KEYS.some(k=>(byStore[k]||[]).length));
+});
+$('run').addEventListener('click', ()=>{
+  $('out').innerHTML = '<div class="panel"><div class="muted">Считаю…</div></div>';
+  setTimeout(()=>{ try { render(runAudit()); } catch(e){ $('out').innerHTML='<div class="note note--err">'+escapeHtml(e.message)+'</div>'; } }, 20);
+});
+
+init();
+</script>
+</body>
+</html>

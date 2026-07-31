@@ -1355,11 +1355,20 @@ async function applyChanges(items, vals, msgBox) {
     return true;   // цену и статус сверяем; скидку/наличие Prom по API надёжно не отдаёт
   }
 
-  for (const store of STORE_KEYS) {
+  // общий прогресс — магазины проверяются ОДНОВРЕМЕННО
+  const progress = {};
+  function paint() {
+    const parts = STORE_KEYS.filter(k => jobs[k].length)
+      .map(k => STORES[k].title + ': ' + (progress[k] || '…'));
+    showMsg(msgBox, 'warn', 'Отправляю и проверяю по API (все магазины сразу):<br>' + parts.join('<br>'));
+  }
+
+  async function processStore(store) {
     const list = jobs[store];
-    if (!list.length) continue;
+    if (!list.length) return;
 
     // 1) отправка (чанками по 100)
+    progress[store] = 'отправка…'; paint();
     for (let i = 0; i < list.length; i += 100) {
       const chunk = list.slice(i, i + 100);
       try {
@@ -1371,15 +1380,15 @@ async function applyChanges(items, vals, msgBox) {
       } catch (e) {
         report.push(escapeHtml(STORES[store].title + ': ' + e.message));
       }
-      showMsg(msgBox, 'warn', 'Отправляю на ' + STORES[store].title + '…');
     }
 
     // Blink: Хорошоп поштучно по API не перечитать — отмечаем только отправку
     if (store === 'blink') {
       list.forEach(j => Object.assign(j.ref, j.upd));
+      progress[store] = 'отправлено ' + list.length + ' (не проверяется)'; paint();
       report.unshift(escapeHtml(STORES[store].title + ': отправлено ' + list.length +
         ' (Хорошоп поштучно по API не проверяется)'));
-      continue;
+      return;
     }
 
     // 2) ПРОВЕРКА по API + авто-повтор до 3 раз (сверяем цену/статус)
@@ -1395,8 +1404,8 @@ async function applyChanges(items, vals, msgBox) {
       let n = 0;
       for (const j of pending) {
         n++;
-        showMsg(msgBox, 'warn', STORES[store].title + ': проверяю ' + n + '/' + pending.length +
-          (tries > 1 ? ' (повтор ' + (tries - 1) + ')' : '') + '…');
+        progress[store] = 'проверяю ' + n + '/' + pending.length +
+          (tries > 1 ? ' (повтор ' + (tries - 1) + ')' : ''); paint();
         let actual = null;
         try { actual = await api('/get', { store: store, id: j.upd.id }); } catch (e) { actual = null; }
         if (reallyApplied(actual, j.upd)) { applied++; Object.assign(j.ref, j.upd); }
@@ -1421,7 +1430,11 @@ async function applyChanges(items, vals, msgBox) {
       report.push(escapeHtml(STORES[store].title + ': не применилось, пример id ' + pending[0].upd.id +
         ' — вероятно, товар в корзине или на прайс-выгрузке (через API не редактируется).'));
     }
+    progress[store] = 'готово ' + applied + '/' + verifiable.length; paint();
   }
+
+  // запускаем все магазины ОДНОВРЕМЕННО
+  await Promise.all(STORE_KEYS.map(processStore));
 
   showMsg(msgBox, 'ok', report.join('<br>'));
   buildGroups(); applyFilter();

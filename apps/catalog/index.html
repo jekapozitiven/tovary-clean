@@ -1345,14 +1345,25 @@ async function applyChanges(items, vals, msgBox) {
   showMsg(msgBox, 'warn', 'Отправляю ' + total + ' позиций…');
   const report = [];
 
-  // реально ли применилось: перечитываем товар и сверяем цену/статус
+  // реально ли применилось: перечитываем товар и сверяем цену/статус/скидку
   function reallyApplied(actual, upd) {
     const p = actual && (actual.product || actual);
     if (!p) return false;
     const m = (x) => Math.round((Number(x) || 0) * 100) / 100;
     if (upd.price != null && m(p.price) !== m(upd.price)) return false;
     if (upd.status && (p.status || '') !== upd.status) return false;
-    return true;   // цену и статус сверяем; скидку/наличие Prom по API надёжно не отдаёт
+    // скидка: Prom отдаёт value и type (даты — нет), поэтому сверяем их
+    if (upd.discount !== undefined) {
+      const ad = p.discount;
+      const av = ad ? Number(ad.value != null ? ad.value : ad.amount) : 0;
+      if (upd.discount === null) {                 // должны были убрать скидку
+        if (av > 0) return false;
+      } else if (upd.discount && upd.discount.value != null) {
+        if (!ad || m(av) !== m(upd.discount.value)) return false;
+        if (ad.type && upd.discount.type && ad.type !== upd.discount.type) return false;
+      }
+    }
+    return true;   // наличие Prom по API надёжно не отдаёт — его не сверяем
   }
 
   // общий прогресс — магазины проверяются ОДНОВРЕМЕННО
@@ -1367,12 +1378,15 @@ async function applyChanges(items, vals, msgBox) {
     const list = jobs[store];
     if (!list.length) return;
 
+    let blinkResp = null;   // для диагностики Blink
+
     // 1) отправка (чанками по 100)
     progress[store] = 'отправка…'; paint();
     for (let i = 0; i < list.length; i += 100) {
       const chunk = list.slice(i, i + 100);
       try {
         const res = await api('/edit', { store: store, products: chunk.map(j => j.upd) });
+        if (store === 'blink') blinkResp = res && res.horoshop;
         const errs = res && res.errors;
         if (errs && Object.keys(errs).length) {
           report.push(escapeHtml(STORES[store].title + ': ' + decodeMsg(JSON.stringify(errs)).slice(0, 400)));
@@ -1382,22 +1396,27 @@ async function applyChanges(items, vals, msgBox) {
       }
     }
 
-    // Blink: Хорошоп поштучно по API не перечитать — отмечаем только отправку
+    // Blink: Хорошоп поштучно по API не перечитать — отмечаем отправку + показываем настоящий ответ
     if (store === 'blink') {
       list.forEach(j => Object.assign(j.ref, j.upd));
       progress[store] = 'отправлено ' + list.length + ' (не проверяется)'; paint();
       report.unshift(escapeHtml(STORES[store].title + ': отправлено ' + list.length +
         ' (Хорошоп поштучно по API не проверяется)'));
+      report.push('<b>Blink — настоящий ответ Хорошопа:</b> ' +
+        escapeHtml(decodeMsg(JSON.stringify(blinkResp)).slice(0, 800)) + '<br>' +
+        '<b>Отправляли:</b> ' + escapeHtml(JSON.stringify(list[0].upd).slice(0, 300)));
       return;
     }
 
-    // 2) ПРОВЕРКА по API + авто-повтор до 3 раз (сверяем цену/статус)
-    const verifiable = list.filter(j => j.upd.price != null || j.upd.status);
+    // 2) ПРОВЕРКА по API + авто-повтор до 3 раз (сверяем цену/статус/скидку)
+    const canCheck = j => (j.upd.price != null) || j.upd.status || (j.upd.discount !== undefined);
+    const verifiable = list.filter(canCheck);
     const unverifiable = list.length - verifiable.length;
-    list.forEach(j => { if (j.upd.price == null && !j.upd.status) Object.assign(j.ref, j.upd); });
+    list.forEach(j => { if (!canCheck(j)) Object.assign(j.ref, j.upd); });
 
     let pending = verifiable.slice();
     let applied = 0, tries = 0;
+    let sampleGot = null, sampleUpd = null;   // для диагностики: что отправили vs что в Prom
     while (pending.length && tries < 3) {
       tries++;
       const wrong = [];
@@ -1408,6 +1427,7 @@ async function applyChanges(items, vals, msgBox) {
           (tries > 1 ? ' (повтор ' + (tries - 1) + ')' : ''); paint();
         let actual = null;
         try { actual = await api('/get', { store: store, id: j.upd.id }); } catch (e) { actual = null; }
+        if (!sampleUpd) { sampleUpd = j.upd; sampleGot = actual; }
         if (reallyApplied(actual, j.upd)) { applied++; Object.assign(j.ref, j.upd); }
         else wrong.push(j);
       }
@@ -1424,11 +1444,19 @@ async function applyChanges(items, vals, msgBox) {
     let line = STORES[store].title + ': реально применилось ' + applied + ' из ' + verifiable.length +
       (tries > 1 ? ' (повторов ' + (tries - 1) + ')' : '');
     if (applied < verifiable.length) line += ' · НЕ применилось ' + (verifiable.length - applied);
-    if (unverifiable) line += ' · +' + unverifiable + ' (скидка/наличие — по API не сверяется)';
+    if (unverifiable) line += ' · +' + unverifiable + ' (только наличие — по API не сверяется)';
     report.unshift(escapeHtml(line));
     if (pending.length) {
-      report.push(escapeHtml(STORES[store].title + ': не применилось, пример id ' + pending[0].upd.id +
-        ' — вероятно, товар в корзине или на прайс-выгрузке (через API не редактируется).'));
+      report.push(escapeHtml(STORES[store].title + ': не применилось у ' + pending.length +
+        ' (пример id ' + pending[0].upd.id + '). Частые причины: дата начала скидки в прошлом (Prom отбрасывает такую скидку), товар в корзине или на прайс-выгрузке.'));
+    }
+    // диагностика: что отправили vs что реально сейчас в Prom (образец)
+    if (sampleUpd) {
+      const gp = sampleGot && (sampleGot.product || sampleGot);
+      const short = (o) => JSON.stringify({ price: o && o.price, discount: o && o.discount, status: o && o.status });
+      report.push('<b>' + escapeHtml(STORES[store].title) + ' — сверка id ' + escapeHtml(String(sampleUpd.id)) + ':</b> ' +
+        'отправляли ' + escapeHtml(short(sampleUpd)) + ' · сейчас в Prom ' +
+        escapeHtml(gp ? short(gp) : 'нет ответа'));
     }
     progress[store] = 'готово ' + applied + '/' + verifiable.length; paint();
   }

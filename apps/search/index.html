@@ -57,8 +57,10 @@
   .ritem .ra{color:var(--dim);font-size:13px}
   .desc{padding:0 18px 20px}
   .desc h3{font-size:14px;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin:6px 0 8px}
-  .desc-body{font-size:15px;line-height:1.6;border-top:1px solid var(--line);padding-top:12px;max-height:520px;overflow:auto}
-  .desc-body img{max-width:100%;height:auto}
+  .desc-body{font-size:14px;line-height:1.55;border-top:1px solid var(--line);padding-top:12px;max-height:520px;overflow:auto;color:var(--text)}
+  /* единый комфортный размер и обычная толщина для описаний из любых магазинов */
+  .desc-body, .desc-body *{font-size:14px !important;font-weight:400 !important;line-height:1.55 !important;letter-spacing:normal !important}
+  .desc-body img{max-width:100% !important;height:auto !important}
   .lightbox{position:fixed;inset:0;background:rgba(10,15,25,.85);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
   .lightbox.on{display:flex}
   .lightbox img{max-width:95%;max-height:95%;object-fit:contain;border-radius:8px}

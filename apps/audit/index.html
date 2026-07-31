@@ -312,13 +312,35 @@ async function loadAllFromApi(){
 // единый вид для сравнения: верхний регистр, один пробел
 function normArt(a){ return String(a==null?'':a).toUpperCase().replace(/\s+/g,' ').trim(); }
 
-// база артикула = без магазинного суффикса (терпимо к лат./кир. B/С)
+// база артикула = без магазинной приставки в конце.
+// Приставки в данных встречаются в разных видах, поэтому снимаем ЛЮБУЮ
+// концевую скобку, начинающуюся с буквы магазина:
+//   Bonna  → (B) (В) (Bon) (Bonna) …   (лат. B или кир. В)
+//   Core22 → (C) (С) (Cor) (Core) (C22) …   (лат. C или кир. С)
+// Снимаем повторно — на случай двойных приставок «… (B) (Bon)».
+const BONNA_SUF = /\s*\((?:b|в)[a-zа-яё0-9]*\)\s*$/i;   // латинская b / кириллическая в
+const CORE_SUF  = /\s*\((?:c|с)[a-zа-яё0-9]*\)\s*$/i;   // латинская c / кириллическая с
 function baseSku(sku, store){
   let s = (sku||'').trim();
-  if (store==='core22') s = s.replace(/\s*\((?:С|C)\)\s*$/i,'').trim();
-  else if (store==='bonna') s = s.replace(/\s*\((?:B|В)\)\s*$/i,'').trim();
+  if (store==='bonna'){ while (BONNA_SUF.test(s)) s = s.replace(BONNA_SUF,'').trim(); }
+  else if (store==='core22'){ while (CORE_SUF.test(s)) s = s.replace(CORE_SUF,'').trim(); }
   else { const suf=(STORES[store].suffix||'').trim(); if (suf && s.endsWith(suf)) s = s.slice(0,-suf.length).trim(); }
   return s;
+}
+
+// нормализованное название: с конца убираем магазинный суффикс (B)/(С)
+// и размер (S/M/L/XL/число), чтобы разновидности сводились к базовому имени.
+// Работает для Prom-магазинов (у Black Street, Bonna, Core22 имя одинаковое).
+const SIZE_RE = /^(?:xs|s|m|l|xl|xxl|xxxl|[2-5]xl|[0-9]{1,3}(?:[.,][05])?)$/i;
+const SUF_RE  = /^\((?:b|в|bon|bonna|c|с|cor|core|c22|core22)\)$/i;
+function normName(name){
+  let parts = String(name||'').trim().split(/\s+/);
+  while (parts.length > 1){
+    const last = parts[parts.length - 1];
+    if (SUF_RE.test(last) || SIZE_RE.test(last)) parts.pop();
+    else break;
+  }
+  return parts.join(' ').toLowerCase().replace(/\s+/g,' ');
 }
 
 // ключ семейства (главный товар + разновидности) внутри одного магазина
@@ -342,10 +364,13 @@ function runAudit(){
   // эталон: множество базовых артикулов Black Street + карта id→база
   const R = new Map();            // база → {name, sku}
   const blackById = new Map();    // id → база
+  const blackByName = new Map();  // нормализованное имя → набор базовых артикулов Black Street
   for (const p of black){
     const b = normArt(baseSku(p.sku, MAIN));
     if (b && !R.has(b)) R.set(b, { name:p.name||'', sku:p.sku||'' });
     blackById.set(String(p.id), b);
+    const nn = normName(p.name);
+    if (nn && b){ if (!blackByName.has(nn)) blackByName.set(nn, new Set()); blackByName.get(nn).add(b); }
   }
 
   /* ---- Отчёт 1: внутри магазина главный ≠ разновидности ---- */
@@ -388,27 +413,38 @@ function runAudit(){
   for (const store of STORE_KEYS){
     if (store === MAIN) continue;
     const items = byStore[store] || [];
+    // По названию сверяем только Bonna и Core22 — у них имя совпадает с Black Street.
+    // У Blink название другое, поэтому имя там не используем (только артикул).
+    const useName = (store !== 'blink');
     const storeBase = new Map();   // база → {name, sku, id}
-    const mismatch = [];
+    const storeByName = new Map(); // нормализованное имя → набор базовых артикулов магазина
     for (const p of items){
       const b = (store==='blink') ? normArt(p.sku||'') : normArt(baseSku(p.sku,store));
       if (b && !storeBase.has(b)) storeBase.set(b, { name:p.name||'', sku:p.sku||'', id:p.id });
-      // связка по external_id (Bonna/Core22 несут id товара Black Street)
-      if (store!=='blink' && p.external_id!=null && String(p.external_id)!==''){
-        const exp = blackById.get(String(p.external_id));
-        if (exp!==undefined && exp!=='' && b!=='' && exp!==b){
-          mismatch.push({ art:p.sku||'', base:b, expected:exp, name:p.name||'', id:p.id, ext:p.external_id });
-        }
+      if (useName){
+        const nn = normName(p.name);
+        if (nn && b){ if (!storeByName.has(nn)) storeByName.set(nn, new Set()); storeByName.get(nn).add(b); }
       }
     }
     const orphan=[];   // есть на магазине, нет на Black Street
-    for (const [b,info] of storeBase){ if (!R.has(b)) orphan.push({ base:b, sku:info.sku, name:info.name, id:info.id }); }
+    for (const [b,info] of storeBase){
+      if (R.has(b)) continue;
+      // подсказка по названию: тот же товар может быть на Black Street под другим артикулом
+      let nameHit = '';
+      if (useName){ const hit = blackByName.get(normName(info.name)); if (hit && hit.size) nameHit = [...hit].join(', '); }
+      orphan.push({ base:b, sku:info.sku, name:info.name, id:info.id, nameHit:nameHit });
+    }
     const missing=[];  // есть на Black Street, нет на магазине
-    for (const [b,info] of R){ if (!storeBase.has(b)) missing.push({ base:b, name:info.name }); }
+    for (const [b,info] of R){
+      if (storeBase.has(b)) continue;
+      // подсказка по названию: товар, возможно, есть на магазине под другим артикулом
+      let storeHit = '';
+      if (useName){ const hit = storeByName.get(normName(info.name)); if (hit && hit.size) storeHit = [...hit].join(', '); }
+      missing.push({ base:b, name:info.name, storeHit:storeHit });
+    }
     orphan.sort((a,b)=>a.base.localeCompare(b.base));
     missing.sort((a,b)=>a.base.localeCompare(b.base));
-    mismatch.sort((a,b)=>a.base.localeCompare(b.base));
-    report2[store] = { orphan, missing, mismatch, storeCount:storeBase.size };
+    report2[store] = { orphan, missing, storeCount:storeBase.size, useName:useName };
   }
 
   return { report1, report2, refCount:R.size };
@@ -434,7 +470,7 @@ function render(res){
   const r1 = res.report1, r2 = res.report2;
   let issues1 = 0, issues2 = 0;
   for (const s of STORE_KEYS) issues1 += (r1[s]||[]).length;
-  for (const s of STORE_KEYS){ if (s===MAIN) continue; const d=r2[s]; issues2 += d.orphan.length + d.mismatch.length; }
+  for (const s of STORE_KEYS){ if (s===MAIN) continue; issues2 += (r2[s].orphan||[]).length; }
 
   let h = '';
 
@@ -442,7 +478,7 @@ function render(res){
   h += '<div class="panel"><h2>Итог</h2><div class="cards">';
   for (const s of STORE_KEYS) h += '<div class="stat"><b>'+((byStore[s]||[]).length)+'</b><span>'+STORES[s].title+', позиций</span></div>';
   h += '<div class="stat'+(issues1?' stat--bad':' stat--ok')+'"><b>'+issues1+'</b><span>семейств с разными артикулами</span></div>';
-  h += '<div class="stat'+(issues2?' stat--bad':' stat--ok')+'"><b>'+issues2+'</b><span>несовпадений с Black Street</span></div>';
+  h += '<div class="stat'+(issues2?' stat--bad':' stat--ok')+'"><b>'+issues2+'</b><span>артикулов не с Black Street</span></div>';
   h += '</div>';
   h += '<div class="btnrow"><button class="btn btn--sm" id="csv1">Скачать отчёт 1 (CSV)</button>'+
        '<button class="btn btn--sm" id="csv2">Скачать отчёт 2 (CSV)</button></div>';
@@ -466,28 +502,31 @@ function render(res){
 
   // ОТЧЁТ 2
   h += '<h3 class="sec">Отчёт 2 · сверка артикулов с Black Street</h3>';
-  h += '<div class="subtle">Эталон — '+res.refCount+' базовых артикулов Black Street. Сверяются главный товар и разновидности.</div>';
+  h += '<div class="subtle">Эталон — '+res.refCount+' базовых артикулов Black Street. Артикул сверяется БЕЗ магазинной приставки: (B)/(В)/(Bon) у Bonna, (C)/(С)/(Cor) у Core22 отбрасываются, поэтому «ГЛА-105 (B)» = «ГЛА-105». '+
+       'Bonna и Core22 дополнительно сверяются по названию; у Blink название другое — только по артикулу.</div>';
   for (const s of STORE_KEYS){
     if (s===MAIN) continue;
     const d = r2[s];
-    const bad = d.orphan.length + d.mismatch.length;
+    const bad = d.orphan.length;
     const pill = bad ? '<span class="pill pill--bad">'+bad+'</span>' : '<span class="pill pill--ok">0</span>';
     h += '<details class="grp"'+(bad?' open':'')+'><summary>'+STORES[s].title+pill+
          ' <span class="muted">— на магазине '+d.storeCount+' артикулов</span></summary>';
 
-    if (d.mismatch.length){
-      h += '<div class="subtle"><span class="pill pill--amber">'+d.mismatch.length+'</span> связаны с Black Street (external_id), но артикул отличается</div>';
-      h += tableFromRows(['Артикул на магазине','Ожидался (по Black Street)','Товар'], d.mismatch, row=>
-        '<tr><td class="art bad">'+escapeHtml(row.art)+'</td><td class="art exp">'+escapeHtml(row.expected)+'</td><td>'+escapeHtml(row.name)+'</td></tr>');
-    }
+    h += '<div class="subtle"><span class="pill pill--bad">'+d.orphan.length+'</span> нет на Black Street (лишние/чужие артикулы)'+
+         (d.useName ? '. Колонка «На Black Street по названию» = похоже, товар там есть под этим артикулом (перепутан артикул).' : '')+'</div>';
+    h += tableFromRows(d.useName ? ['База артикула','Артикул на магазине','Товар','На Black Street по названию']
+                                 : ['База артикула','Артикул на магазине','Товар'], d.orphan, row=>{
+      const hit = d.useName ? '<td class="art exp">'+(row.nameHit?escapeHtml(row.nameHit):'<span class="muted">—</span>')+'</td>' : '';
+      return '<tr><td class="art">'+escapeHtml(row.base)+'</td><td class="art">'+escapeHtml(row.sku)+'</td><td>'+escapeHtml(row.name)+'</td>'+hit+'</tr>';
+    });
 
-    h += '<div class="subtle"><span class="pill pill--bad">'+d.orphan.length+'</span> нет на Black Street (лишние/чужие артикулы)</div>';
-    h += tableFromRows(['База артикула','Артикул на магазине','Товар'], d.orphan, row=>
-      '<tr><td class="art">'+escapeHtml(row.base)+'</td><td class="art">'+escapeHtml(row.sku)+'</td><td>'+escapeHtml(row.name)+'</td></tr>');
-
-    h += '<div class="subtle"><span class="pill pill--amber">'+d.missing.length+'</span> есть на Black Street, нет на '+STORES[s].title+'</div>';
-    h += tableFromRows(['База артикула','Товар (Black Street)'], d.missing, row=>
-      '<tr><td class="art">'+escapeHtml(row.base)+'</td><td>'+escapeHtml(row.name)+'</td></tr>');
+    h += '<div class="subtle"><span class="pill pill--amber">'+d.missing.length+'</span> есть на Black Street, нет на '+STORES[s].title+
+         (d.useName ? '. Колонка «На '+STORES[s].title+' по названию» = товар, возможно, есть под другим артикулом.' : '')+'</div>';
+    h += tableFromRows(d.useName ? ['База артикула','Товар (Black Street)','На '+STORES[s].title+' по названию']
+                                 : ['База артикула','Товар (Black Street)'], d.missing, row=>{
+      const hit = d.useName ? '<td class="art exp">'+(row.storeHit?escapeHtml(row.storeHit):'<span class="muted">—</span>')+'</td>' : '';
+      return '<tr><td class="art">'+escapeHtml(row.base)+'</td><td>'+escapeHtml(row.name)+'</td>'+hit+'</tr>';
+    });
 
     h += '</details>';
   }
@@ -519,13 +558,12 @@ function downloadCsv1(res){
   downloadCsv('audit_otchet1_raznye_artikuly.csv', lines);
 }
 function downloadCsv2(res){
-  const lines = [csvRow(['Магазин','Тип','База артикула','Артикул на магазине','Ожидался','Товар','ID/связь'])];
+  const lines = [csvRow(['Магазин','Тип','База артикула','Артикул на магазине','Ожидался','Товар','ID/связь','Совпадение по названию'])];
   for (const s of STORE_KEYS){
     if (s===MAIN) continue;
     const d = res.report2[s];
-    for (const m of d.mismatch) lines.push(csvRow([STORES[s].title,'связан, но артикул отличается', m.base, m.art, m.expected, m.name, 'ext '+m.ext]));
-    for (const o of d.orphan)   lines.push(csvRow([STORES[s].title,'нет на Black Street', o.base, o.sku, '', o.name, o.id]));
-    for (const m of d.missing)  lines.push(csvRow([STORES[s].title,'отсутствует на магазине', m.base, '', '', m.name, '']));
+    for (const o of d.orphan)   lines.push(csvRow([STORES[s].title, o.nameHit?'нет на Black Street (по названию — перепутан артикул)':'нет на Black Street', o.base, o.sku, o.nameHit||'', o.name, o.id, o.nameHit||'']));
+    for (const m of d.missing)  lines.push(csvRow([STORES[s].title, m.storeHit?'отсутствует (по названию — есть под другим артикулом)':'отсутствует на магазине', m.base, m.storeHit||'', '', m.name, '', m.storeHit||'']));
   }
   downloadCsv('audit_otchet2_sverka_black_street.csv', lines);
 }

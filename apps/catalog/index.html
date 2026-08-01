@@ -1324,10 +1324,15 @@ async function applyChanges(items, vals, msgBox) {
             family.forEach(pr => addJob(st, pr, step));
           }
         } else {
-          list.forEach(function (pr) {
-            const twin = findTwin(st, pr);
-            if (twin) addJob(st, twin, step);
-          });
+          // Prom: правим ВСЕ товары этого магазина с таким же артикулом,
+          // а не только один сопоставленный — под одним артикулом бывает
+          // несколько разных товаров, и раньше часть из них не менялась.
+          const baseArt = baseSku(it.product.sku, MAIN);
+          if (baseArt) {
+            (byStore[st] || []).forEach(function (pr) {
+              if (baseSku(pr.sku, st) === baseArt) addJob(st, pr, step);
+            });
+          }
         }
       }
     }

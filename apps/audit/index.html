@@ -58,6 +58,18 @@
   details.grp > summary:before { content:'▸'; color:var(--faint); margin-right:8px; font-size:11px; }
   details.grp[open] > summary:before { content:'▾'; }
   details.grp[open] > summary { border-bottom:1px solid var(--border); margin-bottom:6px; }
+  details.grp.grp--sub { background:#0c0c0f; margin:8px 0; }
+  details.grp.grp--sub > summary { font-weight:600; color:var(--dim); font-size:13px; }
+  details.grp.grp--sub[open] > summary { color:var(--text); }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 10px; }
+  .tab { padding:8px 15px; border-radius:999px; border:1px solid var(--border-h); background:#1a1a1e;
+         color:var(--dim); font:600 13px var(--font); cursor:pointer; }
+  .tab:hover { border-color:var(--accent); }
+  .tab b { margin-left:6px; color:var(--red); }
+  .tab.is-active { background:var(--accent); color:#12140a; border-color:var(--accent); }
+  .tab.is-active b { color:#12140a; }
+  .opanel[hidden] { display:none; }
+  #orphan-search { margin-bottom:10px; }
   .pill { display:inline-block; font-size:11px; font-weight:700; border-radius:999px; padding:1px 9px; margin-left:8px; }
   .pill--bad { background:rgba(248,113,113,.16); color:#fca5a5; }
   .pill--amber { background:rgba(251,191,36,.16); color:#fcd34d; }
@@ -66,7 +78,7 @@
   table { width:100%; border-collapse:collapse; font-size:12.5px; margin:6px 0 12px; }
   th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
   th { color:var(--faint); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
-  td.art { font-family:ui-monospace,Menlo,monospace; }
+  td.art, .art { font-family:var(--font); }
   .bad { color:#fca5a5; }
   .exp { color:var(--green); }
   .empty { padding:22px; text-align:center; color:var(--faint); }
@@ -465,6 +477,25 @@ function tableFromRows(head, rows, render){
   return html;
 }
 
+// таблица «нет на Black Street» для одного магазина (строки помечены data-f для поиска)
+const CAP_ORPHAN = 4000;
+function orphanTable(store, d){
+  if (!d.orphan.length) return '<div class="empty">Все артикулы есть на Black Street ✓</div>';
+  const useName = d.useName;
+  const head = useName ? ['Артикул на магазине','База (для сверки)','Товар','Есть на Black Street как']
+                       : ['Артикул на магазине','База (для сверки)','Товар'];
+  let t = '<table><tr>'+head.map(x=>'<th>'+x+'</th>').join('')+'</tr>';
+  d.orphan.slice(0, CAP_ORPHAN).forEach(row=>{
+    const f = (row.sku+' '+row.base+' '+row.name+' '+(row.nameHit||'')).toLowerCase();
+    const hit = useName ? '<td class="exp">'+(row.nameHit?escapeHtml(row.nameHit):'<span class="muted">— нет</span>')+'</td>' : '';
+    t += '<tr data-f="'+escapeHtml(f)+'"><td class="art">'+escapeHtml(row.sku)+'</td><td class="art">'+escapeHtml(row.base)+
+         '</td><td>'+escapeHtml(row.name)+'</td>'+hit+'</tr>';
+  });
+  t += '</table>';
+  if (d.orphan.length>CAP_ORPHAN) t += '<div class="muted">Показаны первые '+CAP_ORPHAN+' из '+d.orphan.length+'. Полный список — в CSV.</div>';
+  return t;
+}
+
 function render(res){
   lastResult = res;
   const r1 = res.report1, r2 = res.report2;
@@ -488,11 +519,11 @@ function render(res){
   // ОТЧЁТ 1
   h += '<h3 class="sec">Отчёт 1 · разные артикулы на главном товаре и разновидностях</h3>';
   h += '<div class="subtle">Prom (Black Street, Bonna, Core22): база артикула должна совпадать у всех позиций одного товара. '+
-       'Blink: артикул разновидности должен начинаться с родительского артикула.</div>';
+       'Blink: артикул разновидности должен начинаться с родительского артикула. Нажмите магазин, чтобы раскрыть список.</div>';
   for (const s of STORE_KEYS){
     const rows = r1[s]||[];
     const pill = rows.length ? '<span class="pill pill--bad">'+rows.length+'</span>' : '<span class="pill pill--ok">0</span>';
-    h += '<details class="grp"'+(rows.length?' open':'')+'><summary>'+STORES[s].title+pill+'</summary>';
+    h += '<details class="grp"><summary>'+STORES[s].title+pill+' <span class="muted">— семейств с расхождением</span></summary>';
     h += tableFromRows(['Товар','Эталонный артикул','Проблемные артикулы (позиций)'], rows, row=>{
       const bad = row.bad.map(b=>'<span class="bad art">'+escapeHtml(b.art)+'</span>').join(', ');
       return '<tr><td>'+escapeHtml(row.name)+'</td><td class="art">'+escapeHtml(row.ref)+'</td><td>'+bad+' <span class="muted">('+row.bad.length+' из '+row.total+')</span></td></tr>';
@@ -500,40 +531,69 @@ function render(res){
     h += '</details>';
   }
 
-  // ОТЧЁТ 2
-  h += '<h3 class="sec">Отчёт 2 · сверка артикулов с Black Street</h3>';
-  h += '<div class="subtle">Эталон — '+res.refCount+' базовых артикулов Black Street. Артикул сверяется БЕЗ магазинной приставки: (B)/(В)/(Bon) у Bonna, (C)/(С)/(Cor) у Core22 отбрасываются, поэтому «ГЛА-105 (B)» = «ГЛА-105». '+
-       'Bonna и Core22 дополнительно сверяются по названию; у Blink название другое — только по артикулу.</div>';
-  for (const s of STORE_KEYS){
-    if (s===MAIN) continue;
+  // ОТЧЁТ 2 — артикулы, которых нет на Black Street (по магазинам, вкладками)
+  const nonMain = STORE_KEYS.filter(s => s !== MAIN);
+  h += '<h3 class="sec">Отчёт 2 · артикулы, которых нет на Black Street</h3>';
+  h += '<div class="subtle">Выберите магазин. Приставки (B)/(В)/(Bon) у Bonna и (C)/(С)/(Cor) у Core22 при сверке отбрасываются, на Blink учитываются хвосты разновидностей. '+
+       'Колонка «Есть на Black Street как» (Bonna/Core22) — если там артикул, значит товар на BS есть, просто перепутан артикул. Эталон — '+res.refCount+' артикулов Black Street.</div>';
+
+  h += '<div class="tabs" id="orphan-tabs">';
+  nonMain.forEach((s,i)=>{
+    h += '<button type="button" class="tab'+(i===0?' is-active':'')+'" data-store="'+s+'">'+
+         STORES[s].title+' <b>'+r2[s].orphan.length+'</b></button>';
+  });
+  h += '</div>';
+  h += '<input type="text" id="orphan-search" placeholder="Поиск: артикул или название…">';
+  h += '<div id="orphan-panels">';
+  nonMain.forEach((s,i)=>{
+    h += '<div class="opanel" data-store="'+s+'"'+(i===0?'':' hidden')+'>'+ orphanTable(s, r2[s]) +'</div>';
+  });
+  h += '</div>';
+
+  // Обратная проверка (второстепенное): есть на Black Street, но нет на магазине
+  h += '<details class="grp grp--sub" style="margin-top:16px"><summary>Обратная проверка · есть на Black Street, но нет на магазине</summary>';
+  for (const s of nonMain){
     const d = r2[s];
-    const bad = d.orphan.length;
-    const pill = bad ? '<span class="pill pill--bad">'+bad+'</span>' : '<span class="pill pill--ok">0</span>';
-    h += '<details class="grp"'+(bad?' open':'')+'><summary>'+STORES[s].title+pill+
-         ' <span class="muted">— на магазине '+d.storeCount+' артикулов</span></summary>';
-
-    h += '<div class="subtle"><span class="pill pill--bad">'+d.orphan.length+'</span> нет на Black Street (лишние/чужие артикулы)'+
-         (d.useName ? '. Колонка «На Black Street по названию» = похоже, товар там есть под этим артикулом (перепутан артикул).' : '')+'</div>';
-    h += tableFromRows(d.useName ? ['База артикула','Артикул на магазине','Товар','На Black Street по названию']
-                                 : ['База артикула','Артикул на магазине','Товар'], d.orphan, row=>{
-      const hit = d.useName ? '<td class="art exp">'+(row.nameHit?escapeHtml(row.nameHit):'<span class="muted">—</span>')+'</td>' : '';
-      return '<tr><td class="art">'+escapeHtml(row.base)+'</td><td class="art">'+escapeHtml(row.sku)+'</td><td>'+escapeHtml(row.name)+'</td>'+hit+'</tr>';
-    });
-
-    h += '<div class="subtle"><span class="pill pill--amber">'+d.missing.length+'</span> есть на Black Street, нет на '+STORES[s].title+
-         (d.useName ? '. Колонка «На '+STORES[s].title+' по названию» = товар, возможно, есть под другим артикулом.' : '')+'</div>';
+    h += '<details class="grp grp--sub"><summary>'+STORES[s].title+' <span class="pill pill--amber">'+d.missing.length+'</span></summary>';
+    if (d.useName) h += '<div class="subtle">Колонка «На '+STORES[s].title+' по названию»: товар, возможно, есть под другим артикулом.</div>';
     h += tableFromRows(d.useName ? ['База артикула','Товар (Black Street)','На '+STORES[s].title+' по названию']
                                  : ['База артикула','Товар (Black Street)'], d.missing, row=>{
-      const hit = d.useName ? '<td class="art exp">'+(row.storeHit?escapeHtml(row.storeHit):'<span class="muted">—</span>')+'</td>' : '';
+      const hit = d.useName ? '<td class="exp">'+(row.storeHit?escapeHtml(row.storeHit):'<span class="muted">—</span>')+'</td>' : '';
       return '<tr><td class="art">'+escapeHtml(row.base)+'</td><td>'+escapeHtml(row.name)+'</td>'+hit+'</tr>';
     });
-
     h += '</details>';
   }
+  h += '</details>';
 
   $('out').innerHTML = h;
   $('csv1').addEventListener('click', ()=>downloadCsv1(res));
   $('csv2').addEventListener('click', ()=>downloadCsv2(res));
+
+  // вкладки магазинов + живой поиск в списке «нет на Black Street»
+  const tabs = $('orphan-tabs'), search = $('orphan-search');
+  const activeStore = () => { const b = tabs && tabs.querySelector('.tab.is-active'); return b ? b.getAttribute('data-store') : null; };
+  function applyOrphanFilter(){
+    const q = (search && search.value || '').trim().toLowerCase();
+    const panel = document.querySelector('.opanel[data-store="'+activeStore()+'"]');
+    if (!panel) return;
+    let shown = 0;
+    panel.querySelectorAll('tr[data-f]').forEach(tr=>{
+      const ok = !q || tr.getAttribute('data-f').indexOf(q) !== -1;
+      tr.style.display = ok ? '' : 'none'; if (ok) shown++;
+    });
+    let info = panel.querySelector('.search-info');
+    if (!info){ info = document.createElement('div'); info.className='muted search-info'; panel.appendChild(info); }
+    info.textContent = q ? ('Найдено: '+shown) : '';
+  }
+  if (tabs) tabs.addEventListener('click', e=>{
+    const b = e.target.closest('.tab'); if (!b) return;
+    tabs.querySelectorAll('.tab').forEach(x=>x.classList.remove('is-active'));
+    b.classList.add('is-active');
+    const s = b.getAttribute('data-store');
+    document.querySelectorAll('#orphan-panels .opanel').forEach(p=>{ p.hidden = (p.getAttribute('data-store') !== s); });
+    applyOrphanFilter();
+  });
+  if (search) search.addEventListener('input', applyOrphanFilter);
 }
 
 /* ===================================================================== */

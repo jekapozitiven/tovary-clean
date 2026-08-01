@@ -154,6 +154,13 @@
   .msg--err  { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.25); color: #fca5a5; }
   .msg--warn { background: rgba(214,242,74,.06); border: 1px solid rgba(214,242,74,.2); color: var(--text-dim); }
   .msg pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; opacity: .85; }
+  .result { margin-top: 10px; }
+  .result > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+        padding: 11px 20px; border-radius: 999px; font-weight: 700; font-size: 14.5px; user-select: none; }
+  .result > summary::-webkit-details-marker { display: none; }
+  .result > summary.ok  { background: rgba(52,211,153,.16);  border: 1px solid #34d399; color: #6ee7b7; }
+  .result > summary.err { background: rgba(248,113,113,.16); border: 1px solid #f87171; color: #fca5a5; }
+  .result > summary:hover { filter: brightness(1.12); }
 
   .empty { padding: 36px 20px; text-align: center; color: var(--text-faint); font-size: 13.5px; }
   .hidden { display: none !important; }
@@ -1357,6 +1364,7 @@ async function applyChanges(items, vals, msgBox) {
 
   showMsg(msgBox, 'warn', 'Отправляю ' + total + ' позиций…');
   const report = [];
+  let anyFail = false, notAppliedTotal = 0;   // для кнопки-итога
 
   // реально ли применилось: перечитываем товар и сверяем цену/статус/скидку
   function reallyApplied(actual, upd) {
@@ -1404,9 +1412,11 @@ async function applyChanges(items, vals, msgBox) {
         editAccepted += ((res && res.processed_ids) || []).length;
         const errs = res && res.errors;
         if (errs && Object.keys(errs).length) {
+          anyFail = true;
           report.push(escapeHtml(STORES[store].title + ': ' + decodeMsg(JSON.stringify(errs)).slice(0, 400)));
         }
       } catch (e) {
+        anyFail = true;
         report.push(escapeHtml(STORES[store].title + ': ' + e.message));
       }
     }
@@ -1418,6 +1428,7 @@ async function applyChanges(items, vals, msgBox) {
 
     // Blink: Хорошоп поштучно по API не перечитать — отмечаем отправку + показываем настоящий ответ
     if (store === 'blink') {
+      if (blinkResp && blinkResp.status && String(blinkResp.status).toUpperCase() !== 'OK') anyFail = true;
       list.forEach(j => Object.assign(j.ref, j.upd));
       progress[store] = 'отправлено ' + list.length + ' (не проверяется)'; paint();
       report.unshift(escapeHtml(STORES[store].title + ': отправлено ' + list.length +
@@ -1463,7 +1474,7 @@ async function applyChanges(items, vals, msgBox) {
 
     let line = STORES[store].title + ': реально применилось ' + applied + ' из ' + verifiable.length +
       (tries > 1 ? ' (повторов ' + (tries - 1) + ')' : '');
-    if (applied < verifiable.length) line += ' · НЕ применилось ' + (verifiable.length - applied);
+    if (applied < verifiable.length) { line += ' · НЕ применилось ' + (verifiable.length - applied); anyFail = true; notAppliedTotal += (verifiable.length - applied); }
     if (unverifiable) line += ' · +' + unverifiable + ' (только наличие — по API не сверяется)';
     report.unshift(escapeHtml(line));
     if (pending.length) {
@@ -1484,7 +1495,16 @@ async function applyChanges(items, vals, msgBox) {
   // запускаем все магазины ОДНОВРЕМЕННО
   await Promise.all(STORE_KEYS.map(processStore));
 
-  showMsg(msgBox, 'ok', report.join('<br>'));
+  // Итог — кнопка: зелёная «Готово» / красная «Ошибка». Клик — детали.
+  const label = anyFail
+    ? ('⚠ Ошибка' + (notAppliedTotal ? ' — не применилось ' + notAppliedTotal : '') + ' · нажмите для деталей')
+    : '✓ Готово — всё применилось · нажмите для деталей';
+  msgBox.innerHTML =
+    '<details class="result">' +
+      '<summary class="result-btn ' + (anyFail ? 'err' : 'ok') + '">' + escapeHtml(label) + '</summary>' +
+      '<div class="msg msg--' + (anyFail ? 'err' : 'ok') + '" style="margin-top:8px;">' + report.join('<br>') + '</div>' +
+    '</details>';
+
   buildGroups(); applyFilter();
   if (current) renderEditor();
 }

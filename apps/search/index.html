@@ -106,6 +106,16 @@ const $ = (id)=>document.getElementById(id);
 const esc = (s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 const PRES_YES = ['В наличии','Под заказ','Ожидается поставка'];
+
+// Полноразмерное фото: у Prom в ссылке бывает размерная вставка (_w200_h200),
+// убираем её и получаем оригинал в полном качестве (как на сайте).
+function fullImg(u){
+  u = String(u||'');
+  if(u.indexOf('images.prom.ua') !== -1){
+    u = u.replace(/_w\d+/gi,'').replace(/_h\d+/gi,'').replace(/_fill|_square|_pad/gi,'');
+  }
+  return u;
+}
 let OWNER = !!localStorage.getItem('search:pass');
 let currentProduct = null;
 
@@ -159,7 +169,7 @@ async function loadDetail(d, needDesc, needImg){
     }
     if(needImg && j && j.ok && Array.isArray(j.images) && j.images.length){
       const g=document.getElementById('gallery-slot');
-      if(g){ g.innerHTML=galleryHtml(j.images); bindGallery(); }
+      if(g){ g.innerHTML=galleryHtml(j.images.map(fullImg)); bindGallery(); }
     }
   }catch(e){
     console.warn('detail ошибка сети:', e);
@@ -176,7 +186,7 @@ async function lookup(q){
 
 function render(p){
   currentProduct = p;
-  const imgs = Array.isArray(p.images)?p.images.filter(Boolean):[];
+  const imgs = (Array.isArray(p.images)?p.images.filter(Boolean):[]).map(fullImg);
   const gallery = '<div class="gallery" id="gallery-slot">'+galleryHtml(imgs)+'</div>';
 
   const fitLine  = p.fit ? '<div class="fit">'+esc(p.fit)+'</div>' : '';
@@ -216,6 +226,7 @@ function render(p){
     '</div>';
 
   bindGallery();
+  if(imgs[0]) console.log('[фото] показываю:', imgs[0], '| исходная:', (p.images&&p.images[0]));
   const co=$('chart-open'); if(co) co.addEventListener('click', ()=>openChart(p));
   if(OWNER){
     const sv=$('extra-save'); if(sv) sv.addEventListener('click', ()=>saveExtra(p));

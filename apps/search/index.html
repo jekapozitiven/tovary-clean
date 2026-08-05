@@ -62,7 +62,8 @@
   .desc-body img{max-width:100% !important;height:auto !important}
   .lightbox{position:fixed;inset:0;background:rgba(8,12,20,.92);display:none;align-items:center;justify-content:center;z-index:50;padding:12px}
   .lightbox.on{display:flex}
-  .lightbox img{width:auto;height:auto;max-width:97vw;max-height:97vh;object-fit:contain;border-radius:8px}
+  #lbcontent{max-width:97vw;max-height:97vh;overflow:auto;display:flex;flex-direction:column;gap:12px;align-items:center}
+  #lbcontent img{width:auto;height:auto;max-width:97vw;max-height:97vh;object-fit:contain;border-radius:8px}
   .fit{display:inline-block;margin:8px 0 0;font-size:14.5px;color:#8a5a00;background:#fdf3e0;border:1px solid #f2dcae;
     border-radius:8px;padding:6px 12px}
   .note{margin:8px 0 0;font-size:14px;color:var(--text);background:#f1f4f8;border:1px solid var(--line);
@@ -98,7 +99,7 @@
   <div id="result"></div>
 </div>
 
-<div class="lightbox" id="lb"><img id="lbimg" alt=""></div>
+<div class="lightbox" id="lb"><div id="lbcontent"></div></div>
 
 <script>
 const WORKER_URL = 'https://cold-sea-36e7tovary.bonnashops.workers.dev';
@@ -118,7 +119,7 @@ function fullImg(u){
 }
 let OWNER = !!localStorage.getItem('search:pass');
 let currentProduct = null;
-let pendingChart = null;   // подготовленное фото сетки (dataURL) до сохранения
+let pendingCharts = [];    // текущий набор фото сетки (dataURL), до 2 штук
 
 function money(v){
   if(v==null||v==='') return '—';
@@ -151,7 +152,12 @@ function bindGallery(){
     if(main) main.src=t.dataset.u;
     document.querySelectorAll('.thumbs img').forEach(x=>x.classList.remove('sel')); t.classList.add('sel');
   }));
-  if(main) main.addEventListener('click',()=>{ $('lbimg').src=main.src; $('lb').classList.add('on'); });
+  if(main) main.addEventListener('click',()=>openLightbox([main.src]));
+}
+function openLightbox(urls){
+  const box=$('lbcontent'); if(!box) return;
+  box.innerHTML=(urls||[]).filter(Boolean).map(u=>'<img src="'+esc(u)+'" alt="">').join('');
+  $('lb').classList.add('on');
 }
 async function loadDetail(d, needDesc, needImg){
   const slot = needDesc ? document.getElementById('desc-slot') : null;
@@ -200,15 +206,9 @@ function render(p){
       '<input id="fit-inp" type="text" value="'+esc(p.fit||'')+'" placeholder="напр. Маломерит — берите на размер больше">'+
       '<label>Замітки:</label>'+
       '<textarea id="note-inp" rows="3" placeholder="другая информация о товаре">'+esc(p.note||'')+'</textarea>'+
-      '<label>Размерная сетка (фото):</label>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
-        '<input id="chart-file" type="file" accept="image/*">'+
-        '<button class="obtn" id="chart-paste" type="button" style="background:#334155">Вставить из буфера</button>'+
-      '</div>'+
-      '<div class="ohint">'+(p.hasChart?'Фото сетки загружено.':'Фото сетки пока нет.')+' Выберите файл, либо скопируйте картинку и нажмите «Вставить из буфера» (или Ctrl+V прямо здесь).</div>'+
-      '<div id="chart-preview-wrap" style="display:none;margin-top:8px"><img id="chart-preview" style="max-width:200px;max-height:200px;border:1px solid var(--line);border-radius:8px"><div class="ohint">Новое фото готово — нажмите «Сохранить».</div></div>'+
-      '<div><button class="obtn" id="extra-save">Сохранить</button>'+
-      (p.hasChart?'<button class="obtn odel" id="chart-del">Удалить сетку</button>':'')+
+      '<label>Размерная сетка (до 2 фото):</label>'+
+      '<div id="chart-editor"></div>'+
+      '<div style="margin-top:10px"><button class="obtn" id="extra-save">Сохранить</button>'+
       '<span class="omsg" id="extra-msg"></span></div>'+
     '</div>'
   ) : '';
@@ -233,11 +233,10 @@ function render(p){
   bindGallery();
   const co=$('chart-open'); if(co) co.addEventListener('click', ()=>openChart(p));
   if(OWNER){
-    pendingChart = null;
+    pendingCharts = [];
+    renderChartEditor();
+    loadExistingCharts(p);
     const sv=$('extra-save'); if(sv) sv.addEventListener('click', ()=>saveExtra(p));
-    const dl=$('chart-del'); if(dl) dl.addEventListener('click', ()=>removeChart(p));
-    const cf=$('chart-file'); if(cf) cf.addEventListener('change', onChartFile);
-    const cp=$('chart-paste'); if(cp) cp.addEventListener('click', pasteChart);
   }
 
   // описания/фото нет в индексе — догружаем из карточки главного товара
@@ -255,15 +254,19 @@ function extraKey(p){
   return 'art:'+(p ? p.base : '');
 }
 
-/* ---- размерная сетка: открыть фото ---- */
+/* ---- размерная сетка: открыть фото (одно или два) ---- */
+async function fetchCharts(p){
+  const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/chart',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ key: p.ekey||extraKey(p), base: p.base })
+  });
+  const j=await res.json();
+  return (j && Array.isArray(j.charts)) ? j.charts : (j && j.chart ? [j.chart] : []);
+}
 async function openChart(p){
   try{
-    const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/chart',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ key: p.ekey||extraKey(p), base: p.base })
-    });
-    const j=await res.json();
-    if(j && j.ok && j.chart){ $('lbimg').src=j.chart; $('lb').classList.add('on'); }
+    const charts=await fetchCharts(p);
+    if(charts.length) openLightbox(charts);
     else alert('Фото размерной сетки не найдено.');
   }catch(e){ alert('Не удалось загрузить сетку: '+e.message); }
 }
@@ -294,54 +297,78 @@ async function extraSet(payload){
   });
   return res.json();
 }
-function showChartPreview(){
-  const wrap=$('chart-preview-wrap'), im=$('chart-preview');
-  if(wrap && im && pendingChart){ im.src=pendingChart; wrap.style.display='block'; }
+/* --- редактор фото сетки (до 2) --- */
+function renderChartEditor(){
+  const box=$('chart-editor'); if(!box) return;
+  let html='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
+  pendingCharts.forEach((u,i)=>{
+    html+='<div style="position:relative">'+
+      '<img src="'+esc(u)+'" style="width:120px;height:120px;object-fit:cover;border:1px solid var(--line);border-radius:8px">'+
+      '<button type="button" data-rm="'+i+'" title="Удалить" style="position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:0;background:#b91c1c;color:#fff;cursor:pointer;font-weight:700">✕</button>'+
+    '</div>';
+  });
+  html+='</div>';
+  if(pendingCharts.length<2){
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+      '<input id="chart-file" type="file" accept="image/*">'+
+      '<button class="obtn" id="chart-paste" type="button" style="background:#334155">Вставить из буфера</button>'+
+      '</div>'+
+      '<div class="ohint">Можно добавить ещё '+(2-pendingCharts.length)+'. Выберите файл, «Вставить из буфера» или Ctrl+V.</div>';
+  } else {
+    html+='<div class="ohint">Добавлено 2 фото (максимум). Удалите одно, чтобы заменить.</div>';
+  }
+  box.innerHTML=html;
+  box.querySelectorAll('[data-rm]').forEach(b=>b.addEventListener('click',()=>{ pendingCharts.splice(+b.dataset.rm,1); renderChartEditor(); }));
+  const cf=$('chart-file'); if(cf) cf.addEventListener('change', onChartFile);
+  const cp=$('chart-paste'); if(cp) cp.addEventListener('click', pasteChart);
+}
+function addChart(dataURL){
+  if(!dataURL) return;
+  if(pendingCharts.length>=2){ alert('Максимум 2 фото. Удалите одно, чтобы добавить другое.'); return; }
+  pendingCharts.push(dataURL); renderChartEditor();
+}
+async function loadExistingCharts(p){
+  if(!p.hasChart) return;
+  try{
+    const charts=await fetchCharts(p);
+    if(currentProduct===p && charts.length){ pendingCharts=charts.slice(0,2); renderChartEditor(); }
+  }catch(e){}
 }
 async function onChartFile(){
   const file=$('chart-file').files[0]; if(!file) return;
   if(file.size>15*1024*1024){ alert('Фото слишком большое (>15 МБ).'); return; }
-  pendingChart=await fileToDataURL(file, 1200); showChartPreview();
+  addChart(await fileToDataURL(file,1200));
 }
 async function pasteChart(){
-  // 1) пробуем современный доступ к буферу
   try{
     if(navigator.clipboard && navigator.clipboard.read){
       const items=await navigator.clipboard.read();
       for(const it of items){
         const type=(it.types||[]).find(t=>t.indexOf('image/')===0);
-        if(type){ const blob=await it.getType(type); pendingChart=await fileToDataURL(blob,1200); showChartPreview(); return; }
+        if(type){ const blob=await it.getType(type); addChart(await fileToDataURL(blob,1200)); return; }
       }
-      alert('В буфере нет картинки. Скопируйте изображение и попробуйте снова (или нажмите сюда и Ctrl+V).');
+      alert('В буфере нет картинки. Скопируйте изображение и попробуйте снова (или Ctrl+V).');
       return;
     }
-  }catch(e){ /* упадём в подсказку про Ctrl+V */ }
-  alert('Ваш браузер не даёт прочитать буфер кнопкой. Просто нажмите Ctrl+V в этом окне — фото вставится.');
+  }catch(e){}
+  alert('Браузер не даёт прочитать буфер кнопкой. Нажмите Ctrl+V в этом окне — фото вставится.');
 }
 async function saveExtra(p){
   const msg=$('extra-msg'); if(msg){ msg.style.color='var(--dim)'; msg.textContent='Сохраняю…'; }
   try{
     const fit=($('fit-inp').value||'').trim();
     const note=($('note-inp').value||'').trim();
-    // key — новый стабильный ключ; base — для совместимости со старой версией воркера
-    const payload={ key:p.ekey||extraKey(p), base:p.base, fit, note };
-    if(pendingChart) payload.chart=pendingChart;
+    // key — стабильный ключ; base — совместимость со старой версией воркера
+    const payload={ key:p.ekey||extraKey(p), base:p.base, fit, note, charts:pendingCharts.slice(0,2) };
     const j=await extraSet(payload);
     if(j && j.ok){
-      p.fit=fit; p.note=note; if(payload.chart) p.hasChart=true;
-      pendingChart=null;
+      p.fit=fit; p.note=note; p.hasChart=pendingCharts.length>0;
       if(msg){ msg.style.color='var(--ok)'; msg.textContent='Сохранено ✓'; }
       render(p);
     } else {
       if(msg){ msg.style.color='var(--err)'; msg.textContent='Ошибка: '+((j&&j.error)||'не сохранилось (пароль?)'); }
     }
   }catch(e){ if(msg){ msg.style.color='var(--err)'; msg.textContent='Сбой: '+e.message; } }
-}
-async function removeChart(p){
-  if(!confirm('Удалить фото размерной сетки для этого товара?')) return;
-  const j=await extraSet({ key:p.ekey||extraKey(p), base:p.base, chart:'' });
-  if(j && j.ok){ p.hasChart=false; render(p); }
-  else alert('Не удалось удалить (пароль?).');
 }
 
 /* ---- поиск по названию (по лёгкому списку из облака) ---- */
@@ -406,7 +433,7 @@ document.addEventListener('paste', async (e)=>{
   for(const it of items){
     if(it.type && it.type.indexOf('image/')===0){
       const blob=it.getAsFile();
-      if(blob){ pendingChart=await fileToDataURL(blob,1200); showChartPreview(); e.preventDefault(); }
+      if(blob){ e.preventDefault(); addChart(await fileToDataURL(blob,1200)); }
       return;
     }
   }

@@ -118,6 +118,7 @@ function fullImg(u){
 }
 let OWNER = !!localStorage.getItem('search:pass');
 let currentProduct = null;
+let pendingChart = null;   // подготовленное фото сетки (dataURL) до сохранения
 
 function money(v){
   if(v==null||v==='') return '—';
@@ -200,11 +201,15 @@ function render(p){
       '<label>Замітки:</label>'+
       '<textarea id="note-inp" rows="3" placeholder="другая информация о товаре">'+esc(p.note||'')+'</textarea>'+
       '<label>Размерная сетка (фото):</label>'+
-      '<input id="chart-file" type="file" accept="image/*">'+
-      '<div class="ohint">'+(p.hasChart?'Фото сетки загружено.':'Фото сетки пока нет.')+' Можно выбрать новое фото — оно заменит текущее.</div>'+
-      '<button class="obtn" id="extra-save">Сохранить</button>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+        '<input id="chart-file" type="file" accept="image/*">'+
+        '<button class="obtn" id="chart-paste" type="button" style="background:#334155">Вставить из буфера</button>'+
+      '</div>'+
+      '<div class="ohint">'+(p.hasChart?'Фото сетки загружено.':'Фото сетки пока нет.')+' Выберите файл, либо скопируйте картинку и нажмите «Вставить из буфера» (или Ctrl+V прямо здесь).</div>'+
+      '<div id="chart-preview-wrap" style="display:none;margin-top:8px"><img id="chart-preview" style="max-width:200px;max-height:200px;border:1px solid var(--line);border-radius:8px"><div class="ohint">Новое фото готово — нажмите «Сохранить».</div></div>'+
+      '<div><button class="obtn" id="extra-save">Сохранить</button>'+
       (p.hasChart?'<button class="obtn odel" id="chart-del">Удалить сетку</button>':'')+
-      '<span class="omsg" id="extra-msg"></span>'+
+      '<span class="omsg" id="extra-msg"></span></div>'+
     '</div>'
   ) : '';
 
@@ -226,11 +231,13 @@ function render(p){
     '</div>';
 
   bindGallery();
-  if(imgs[0]) console.log('[фото] показываю:', imgs[0], '| исходная:', (p.images&&p.images[0]));
   const co=$('chart-open'); if(co) co.addEventListener('click', ()=>openChart(p));
   if(OWNER){
+    pendingChart = null;
     const sv=$('extra-save'); if(sv) sv.addEventListener('click', ()=>saveExtra(p));
     const dl=$('chart-del'); if(dl) dl.addEventListener('click', ()=>removeChart(p));
+    const cf=$('chart-file'); if(cf) cf.addEventListener('change', onChartFile);
+    const cp=$('chart-paste'); if(cp) cp.addEventListener('click', pasteChart);
   }
 
   // описания/фото нет в индексе — догружаем из карточки главного товара
@@ -287,20 +294,42 @@ async function extraSet(payload){
   });
   return res.json();
 }
+function showChartPreview(){
+  const wrap=$('chart-preview-wrap'), im=$('chart-preview');
+  if(wrap && im && pendingChart){ im.src=pendingChart; wrap.style.display='block'; }
+}
+async function onChartFile(){
+  const file=$('chart-file').files[0]; if(!file) return;
+  if(file.size>15*1024*1024){ alert('Фото слишком большое (>15 МБ).'); return; }
+  pendingChart=await fileToDataURL(file, 1200); showChartPreview();
+}
+async function pasteChart(){
+  // 1) пробуем современный доступ к буферу
+  try{
+    if(navigator.clipboard && navigator.clipboard.read){
+      const items=await navigator.clipboard.read();
+      for(const it of items){
+        const type=(it.types||[]).find(t=>t.indexOf('image/')===0);
+        if(type){ const blob=await it.getType(type); pendingChart=await fileToDataURL(blob,1200); showChartPreview(); return; }
+      }
+      alert('В буфере нет картинки. Скопируйте изображение и попробуйте снова (или нажмите сюда и Ctrl+V).');
+      return;
+    }
+  }catch(e){ /* упадём в подсказку про Ctrl+V */ }
+  alert('Ваш браузер не даёт прочитать буфер кнопкой. Просто нажмите Ctrl+V в этом окне — фото вставится.');
+}
 async function saveExtra(p){
   const msg=$('extra-msg'); if(msg){ msg.style.color='var(--dim)'; msg.textContent='Сохраняю…'; }
   try{
     const fit=($('fit-inp').value||'').trim();
     const note=($('note-inp').value||'').trim();
-    const payload={ key:p.ekey||extraKey(p), fit, note };
-    const file=$('chart-file').files[0];
-    if(file){
-      if(file.size>8*1024*1024){ if(msg){msg.style.color='var(--err)';msg.textContent='Фото слишком большое (>8 МБ).';} return; }
-      payload.chart=await fileToDataURL(file, 1200);
-    }
+    // key — новый стабильный ключ; base — для совместимости со старой версией воркера
+    const payload={ key:p.ekey||extraKey(p), base:p.base, fit, note };
+    if(pendingChart) payload.chart=pendingChart;
     const j=await extraSet(payload);
     if(j && j.ok){
       p.fit=fit; p.note=note; if(payload.chart) p.hasChart=true;
+      pendingChart=null;
       if(msg){ msg.style.color='var(--ok)'; msg.textContent='Сохранено ✓'; }
       render(p);
     } else {
@@ -310,7 +339,7 @@ async function saveExtra(p){
 }
 async function removeChart(p){
   if(!confirm('Удалить фото размерной сетки для этого товара?')) return;
-  const j=await extraSet({ key:p.ekey||extraKey(p), chart:'' });
+  const j=await extraSet({ key:p.ekey||extraKey(p), base:p.base, chart:'' });
   if(j && j.ok){ p.hasChart=false; render(p); }
   else alert('Не удалось удалить (пароль?).');
 }
@@ -369,6 +398,19 @@ async function doSearch(){
 $('go').addEventListener('click',doSearch);
 $('q').addEventListener('keydown',e=>{ if(e.key==='Enter') doSearch(); });
 $('lb').addEventListener('click',()=>$('lb').classList.remove('on'));
+
+/* вставка фото сетки из буфера через Ctrl+V (в режиме владельца) */
+document.addEventListener('paste', async (e)=>{
+  if(!OWNER || !currentProduct) return;
+  const items = e.clipboardData && e.clipboardData.items; if(!items) return;
+  for(const it of items){
+    if(it.type && it.type.indexOf('image/')===0){
+      const blob=it.getAsFile();
+      if(blob){ pendingChart=await fileToDataURL(blob,1200); showChartPreview(); e.preventDefault(); }
+      return;
+    }
+  }
+});
 
 /* ---- вход/выход из режима владельца (шестерёнка) ---- */
 $('gear').addEventListener('click', ()=>{

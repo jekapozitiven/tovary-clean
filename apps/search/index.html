@@ -167,7 +167,11 @@ async function loadDetail(d, needDesc, needImg){
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
     });
     const j=await res.json();
-    console.log('[detail ответ] '+JSON.stringify({ ok:j&&j.ok, error:j&&j.error, descLen:(j&&j.description||'').length, keys:j&&j.keys }));
+    // укр. назва з картки товару — оновлюємо заголовок
+    if(j && j.ok && j.name){
+      const nm=document.querySelector('.name'); if(nm) nm.textContent=j.name;
+      if(currentProduct) currentProduct.name=j.name;
+    }
     if(j && j.ok){
       if(slot) slot.innerHTML = j.description ? descBlock(j.description) : '';   // товар без описания — тихо
     } else {
@@ -239,8 +243,8 @@ function render(p){
     const sv=$('extra-save'); if(sv) sv.addEventListener('click', ()=>saveExtra(p));
   }
 
-  // описания/фото нет в индексе — догружаем из карточки главного товара
-  if(p.detail && (!p.desc || !imgs.length)){
+  // укр. назва/опис/фото — тягнемо з картки товару (навіть якщо опис вже є)
+  if(p.detail){
     loadDetail(p.detail, !p.desc, !imgs.length);
   } else if(!p.desc && !p.detail){
     const slot=document.getElementById('desc-slot');

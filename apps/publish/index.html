@@ -151,6 +151,12 @@ function baseSku(sku, store){
   if(suf && s.endsWith(suf)) s=s.slice(0,-suf.length).trim();
   return s;
 }
+// назва українською (з мультимовного поля), інакше — звичайна
+function uaName(p){
+  const m=p && p.name_multilang;
+  if(m && (m.uk||m.ua)) return String(m.uk||m.ua);
+  return String((p && p.name) || '');
+}
 
 /* ===== загрузка магазинов ===== */
 async function loadProm(store, onProg){
@@ -280,14 +286,20 @@ async function run(){
     for(const store of order){
       const rep=representative(g.stores[store], store); if(!rep) continue;
       if(!base) base = baseSku(rep.sku,store) || String(rep.id);
-      if(!name || (rep.name && rep.name.length<name.length)) name = rep.name||name;
-      if(!desc && rep.description){
-        desc = (typeof rep.description==='object')
-          ? (rep.description.ru||rep.description.uk||rep.description.ua||'')
-          : String(rep.description);
+      const rn=uaName(rep);
+      if(!name || (rn && rn.length<name.length)) name = rn||name;
+      if(!desc){
+        const dm=rep.description_multilang;
+        if(dm && (dm.uk||dm.ua)){ desc=String(dm.uk||dm.ua); }
+        else if(STORES[store].type==='horoshop' && rep.description){
+          desc = (typeof rep.description==='object')
+            ? (rep.description.uk||rep.description.ua||rep.description.ru||'')
+            : String(rep.description);
+        }
+        // для Prom без укр. мультиполя лишаємо порожнім — підтягнеться через /detail українською
       }
       if(!images.length){ const im=firstImages(rep,6); if(im.length) images=im; }
-      if(!category){ const gr=rep.group; if(gr&&gr.name) category=gr.name; }
+      if(!category){ const gr=rep.group; if(gr){ const gm=gr.name_multilang; category=(gm&&(gm.uk||gm.ua))||gr.name||category; } }
       // откуда потом догрузить полное описание (Prom отдаёт его только в карточке)
       if(!detail && STORES[store].type==='prom' && rep.id!=null) detail={ store, id:String(rep.id) };
     }

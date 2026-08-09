@@ -1316,39 +1316,39 @@ async function applyChanges(items, vals, msgBox) {
     if (Object.keys(o).length > 1) jobs[store].push({ upd: o, ref: prod });
   }
 
-  for (const it of items) {
-    // выбранный магазин: правим ВСЕ товары с таким же артикулом (а не только
-    // разновидности одной карточки) — под одним артикулом бывает несколько товаров.
-    const hereBase = baseSku(it.product.sku, it.store);
-    const here = hereBase
-      ? (byStore[it.store] || []).filter(p => baseSku(p.sku, it.store) === hereBase)
-      : [it.product];
-    (here.length ? here : [it.product]).forEach(pr => addJob(it.store, pr, 0));
+  // вся вариационная семья товара в магазине: родитель + разновидности,
+  // связанные через variation_group_id (надёжно, не зависит от артикула).
+  function famMembers(store, prod) {
+    const arr = byStore[store] || [];
+    const id = String(prod.id);
+    const vg = prod.variation_group_id != null ? String(prod.variation_group_id) : null;
+    return arr.filter(function (p) {
+      const pvg = p.variation_group_id != null ? String(p.variation_group_id) : null;
+      return (vg && pvg === vg)          // тот же вариационный набор
+          || (pvg && pvg === id)         // p — разновидность выбранного (он родитель)
+          || (vg && vg === String(p.id));// p — родитель выбранного
+    });
+  }
+  function addWithFamily(store, pr, step) {
+    addJob(store, pr, step);
+    famMembers(store, pr).forEach(fp => addJob(store, fp, step));
+  }
 
+  for (const it of items) {
+    // находим ВЫБРАННУЮ карточку (группу), где лежит этот товар.
+    // Правим ТОЛЬКО товары этой карточки (+ их вариационную семью) — не другие
+    // товары с тем же артикулом.
+    const g = groups.find(gr => (gr.stores[it.store] || []).some(p => String(p.id) === String(it.product.id)))
+              || { stores: { [it.store]: [it.product] } };
+
+    // выбранный магазин — все товары карточки + вся вариационная семья, без шага
+    (g.stores[it.store] || [it.product]).forEach(pr => addWithFamily(it.store, pr, 0));
+
+    // дублирование на другие магазины
     if (useStores && it.store === MAIN) {
       for (const st of STORE_KEYS.filter(k => k !== MAIN)) {
-        // положительный шаг = насколько ДЕШЕВЛЕ Black Street (поэтому минус)
-        const step = -stepFor(st);
-
-        if (st === 'blink') {
-          // На Blink размеры не совпадают по букве — берём все с тем же
-          // родительским артикулом, что и у найденной пары.
-          const twin = findTwin(st, it.product);
-          if (twin) {
-            const family = [twin].concat(useVariants ? siblingsOf(st, twin) : []);
-            family.forEach(pr => addJob(st, pr, step));
-          }
-        } else {
-          // Prom: правим ВСЕ товары этого магазина с таким же артикулом,
-          // а не только один сопоставленный — под одним артикулом бывает
-          // несколько разных товаров, и раньше часть из них не менялась.
-          const baseArt = baseSku(it.product.sku, MAIN);
-          if (baseArt) {
-            (byStore[st] || []).forEach(function (pr) {
-              if (baseSku(pr.sku, st) === baseArt) addJob(st, pr, step);
-            });
-          }
-        }
+        const step = -stepFor(st);   // положительный шаг = насколько дешевле Black Street
+        (g.stores[st] || []).forEach(pr => addWithFamily(st, pr, step));
       }
     }
   }

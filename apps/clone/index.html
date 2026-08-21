@@ -472,7 +472,7 @@ function buildStore(suffix, step, taken) {
     var ua = uniqueArticle(baseCode, suffix, taken);
     if (ua.dup) dups++;
     var groupArticle = ua.art;
-    var canon = (C.img >= 0) ? swapFirstTwo(PROWS[card.mainIdx][C.img]) : '';
+    var canon = (C.img >= 0) ? String(PROWS[card.mainIdx][C.img] == null ? '' : PROWS[card.mainIdx][C.img]) : '';
     for (var j = 0; j < card.idxs.length; j++) {
       var r = PROWS[card.idxs[j]].slice();
       r[C.code] = groupArticle;

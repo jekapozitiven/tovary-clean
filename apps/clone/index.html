@@ -518,13 +518,59 @@ var BLINK_HDR = ['Артикул','Родительский артикул','А�
   'Отображать','Наличие','Фото','Поставщик','Описание товара(RU)','Описание товара(UA)',
   'Короткое описание(RU)','Короткое описание(UA)','Размеры','Цвет','HTML title(RU)',
   'HTML title(UA)','META keywords(RU)','META keywords(UA)','META description(RU)','META description(UA)'];
-var BLINK_SECTION = 'Взуття/Весняне взуття';
+/* Разделы Хорошоп по группе Prom (сопоставление по украинскому названию группы) */
+var BLINK_SECTION_RULES = [
+  ['Чоловічі літні костюми','Чоловічий одяг/Літні костюми'],
+  ['Чоловічі шорти','Чоловічий одяг/Шорти'],
+  ['Чоловічі футболки','Чоловічий одяг/Футболки'],
+  ['Кросівки-весняні-осінні-літні','Взуття/Весняне взуття'],
+  ['Зимові кросівки-черевики','Взуття/Зимове взуття'],
+  ['Кепки | Панамки','Аксесуари/Головні убори'],
+  ['Костюми','Чоловічий одяг/Спортивні костюми/Весняні-осінні костюми'],
+  ['Набори','Чоловічий одяг/Спортивні костюми/Весняні-осінні костюми'],
+  ['Веснянні-літні-осінні штани','Чоловічий одяг/Штани | Джинси/Штани весна | осінь'],
+  ['Зимові штани','Чоловічий одяг/Штани | Джинси/Штани на флісі'],
+  ['Зимові кофти','Чоловічий одяг/Кофти/На флісі'],
+  ['Кофти весняні-літні-осінні','Чоловічий одяг/Кофти/Весняні-осінні'],
+  ['Чоловічі сорочки','Чоловічий одяг/Сорочки'],
+  ['Бомбери / Анораки / Вітровки','Чоловічий одяг/Верхній одяг/Вітровки'],
+  ['Демісезонні куртки / Парки','Чоловічий одяг/Верхній одяг/Демісезонні куртки'],
+  ['Жилетки','Чоловічий одяг/Верхній одяг/Жилетки'],
+  ['Чоловічі пальта','Чоловічий одяг/Верхній одяг/Демісезонні куртки'],
+  ['Рюкзаки','Аксесуари/Сумки/Рюкзаки'],
+  ['Месенджери','Аксесуари/Сумки/Рюкзаки'],
+  ['Гаманці','Аксесуари/Сумки/Рюкзаки'],
+  ['Жіночі сумки','Аксесуари/Жіночі сумки'],
+  ['Жіноче взуття','Взуття/Жіноче взуття'],
+  ['Жіночі черевики-кросовки зима','Взуття/Жіноче взуття'],
+  ['Чоловічі зимові куртки','Чоловічий одяг/Верхній одяг/Зимові куртки'],
+  ['Зимові утеплені костюми','Чоловічий одяг/Верхній одяг/Зимові спортивні костюми']
+];
+function normGroup(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
+var BLINK_SECTION_MAP = {};
+(function () { for (var i = 0; i < BLINK_SECTION_RULES.length; i++) BLINK_SECTION_MAP[normGroup(BLINK_SECTION_RULES[i][0])] = BLINK_SECTION_RULES[i][1]; })();
 
 function buildBlink(taken) {
   var cCols = charCols();
   var virob = idx(PH, 'Виробник'), opis = idx(PH, 'Опис'), opisuk = idx(PH, 'Опис_укр'), avail = idx(PH, 'Наявність');
   var fpx = parseInt(($('blink-font') && $('blink-font').value) || '14', 10) || 14;
   var selected = cards.filter(function (c) { return picked.has(c.key); });
+
+  // карта Номер_групи -> названия группы (укр/рус) с листа групп — для определения раздела
+  var gnc = idx(GH, 'Номер_групи'), guk = idx(GH, 'Назва_групи_укр'), gru = idx(GH, 'Назва_групи');
+  var groupNameByNum = {};
+  for (var gi = 0; gi < GROWS.length; gi++) {
+    var gn = String(GROWS[gi][gnc]);
+    groupNameByNum[gn] = { uk: guk >= 0 ? String(GROWS[gi][guk] || '') : '', ru: gru >= 0 ? String(GROWS[gi][gru] || '') : '' };
+  }
+  var unmapped = {};
+  function sectionFor(main) {
+    var num = (C.gnum >= 0) ? String(main[C.gnum] == null ? '' : main[C.gnum]) : '';
+    var e = groupNameByNum[num] || { uk: '', ru: (C.gname >= 0 ? String(main[C.gname] || '') : '') };
+    var sect = BLINK_SECTION_MAP[normGroup(e.uk)] || BLINK_SECTION_MAP[normGroup(e.ru)] || '';
+    if (!sect) unmapped[(e.uk || e.ru || ('група ' + num))] = 1;
+    return sect;
+  }
 
   // характеристики по товару; включаем только непустые поля
   var specVals = [];
@@ -545,6 +591,7 @@ function buildBlink(taken) {
     var pa = uniqueArticle(baseParent, '', taken);
     if (pa.dup) dups++;
     var parent = pa.art;
+    var sect = sectionFor(main);
     var imgs = '';
     if (C.img >= 0) {
       imgs = String(main[C.img] || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean).join(';');
@@ -566,7 +613,7 @@ function buildBlink(taken) {
       var pav = (avail >= 0) ? String(r[avail] || '').trim() : '';
       var naly = (pav === '-') ? 'Немає в наявності' : 'В наявності';
       var row = [
-        art, parent, parent, nameRu, nameUa, nameRu, nameUa, '', brand, BLINK_SECTION, '',
+        art, parent, parent, nameRu, nameUa, nameRu, nameUa, '', brand, sect, '',
         price, price, 'UAH', 'да', naly, imgs, '', descRu, descUa, '', '', size, color,
         '', '', '', '', '', ''
       ];
@@ -579,7 +626,7 @@ function buildBlink(taken) {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header].concat(out)), 'Sheet1');
   var bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
   return { blob: new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-           rows: out.length, titles: titles, dups: dups, skipped: skipped };
+           rows: out.length, titles: titles, dups: dups, skipped: skipped, unmapped: Object.keys(unmapped) };
 }
 
 /* =====================================================================
@@ -640,6 +687,10 @@ $('make').addEventListener('click', async function () {
     line('Bonna', bonna, takenBonna) + '<br>' +
     line('Core22', core, takenCore) + '<br>' +
     line('Blink', blink, takenBlink) + '</div>';
+  if (blink.unmapped && blink.unmapped.length) {
+    statsHtml += '<div class="msg msg--err"><b>Blink: без раздела (нет правила для группы):</b><br>' +
+      blink.unmapped.map(escapeHtml).join('<br>') + '</div>';
+  }
 
   var tprev = '';
   if (blink.titles && blink.titles.length) {

@@ -209,6 +209,20 @@ async function existingArticles(store) {
   } catch (e) {}
   return set;
 }
+/* Когда магазин последний раз обновляли в «Цены и наличие» (savedAt из кэша) */
+async function cacheStamp(store) {
+  try {
+    var head = await cacheGet(store);
+    if (head && head.savedAt) return head.savedAt;
+    var first = await cacheGet(store + ':0');
+    return (first && first.savedAt) ? first.savedAt : null;
+  } catch (e) { return null; }
+}
+function fmtWhen(ms) {
+  if (!ms) return 'нет данных';
+  var d = new Date(ms), p = function (n) { return (n < 10 ? '0' : '') + n; };
+  return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
 /* Уникальный артикул: (копN) ставится ПЕРЕД суффиксом магазина: base + ' (копN)' + suffix */
 function uniqueArticle(base, suffix, taken) {
   var art = base + suffix;
@@ -674,6 +688,9 @@ $('make').addEventListener('click', async function () {
   var takenBonna = await existingArticles('bonna');
   var takenCore  = await existingArticles('core22');
   var takenBlink = await existingArticles('blink');
+  var stampBonna = await cacheStamp('bonna');
+  var stampCore  = await cacheStamp('core22');
+  var stampBlink = await cacheStamp('blink');
 
   var bonna = buildStore(SUF_B, sb, takenBonna);
   var core  = buildStore(SUF_C, sc, takenCore);
@@ -693,15 +710,17 @@ $('make').addEventListener('click', async function () {
   }
 
   // статистика
-  function line(nm, res, taken) {
-    var noCache = taken.size ? '' : ' <span style="color:#e0c060">(нет данных магазина — проверка дублей не выполнялась; нажмите «Обновить товары» в «Цены и наличие»)</span>';
+  function line(nm, res, taken, stamp) {
+    var check = taken.size
+      ? ' <span style="color:#6ee7b7">✓ наличие проверено по данным от ' + fmtWhen(stamp) + '</span>'
+      : ' <span style="color:#e0c060">⚠ нет данных магазина — проверка дублей не выполнялась; нажмите «Обновить товары» в «Цены и наличие»</span>';
     var skip = res.skipped.length ? ', не добавлено ' + res.skipped.length + ' (' + res.skipped.map(function (x) { return escapeHtml(x.reason); }).join(', ') + ')' : ', не добавлено 0';
-    return nm + ': выбрано ' + picked.size + ', в файл ' + res.rows + ' позиций, дублей→(коп) ' + res.dups + skip + noCache;
+    return nm + ': выбрано ' + picked.size + ', в файл ' + res.rows + ' позиций, дублей→(коп) ' + res.dups + skip + check;
   }
   var statsHtml = '<div class="msg msg--warn"><b>Статистика:</b><br>' +
-    line('Bonna', bonna, takenBonna) + '<br>' +
-    line('Core22', core, takenCore) + '<br>' +
-    line('Blink', blink, takenBlink) + '</div>';
+    line('Bonna', bonna, takenBonna, stampBonna) + '<br>' +
+    line('Core22', core, takenCore, stampCore) + '<br>' +
+    line('Blink', blink, takenBlink, stampBlink) + '</div>';
   if (blink.unmapped && blink.unmapped.length) {
     statsHtml += '<div class="msg msg--err"><b>Blink: без раздела (нет правила для группы):</b><br>' +
       blink.unmapped.map(escapeHtml).join('<br>') + '</div>';

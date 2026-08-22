@@ -69,6 +69,13 @@
   .fcard h3 { margin: 0 0 4px; font-size: 14px; }
   .fcard .fmeta { font-size: 12px; color: var(--text-faint); margin-bottom: 10px; }
 
+  table.cat { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.cat th, table.cat td { border: 1px solid var(--border); padding: 5px 7px; text-align: left; vertical-align: middle; }
+  table.cat th { color: var(--text-faint); font-weight: 600; font-size: 11px; }
+  table.cat td.cat-bs { color: var(--text-dim); white-space: nowrap; }
+  table.cat input { width: 100%; font-size: 12px; padding: 5px 7px; }
+  .cat-scroll { max-height: 340px; overflow: auto; margin-top: 8px; }
+
   .empty { padding: 36px 20px; text-align: center; color: var(--text-faint); font-size: 13.5px; }
   .hidden { display: none !important; }
 </style>
@@ -118,6 +125,14 @@
       <label class="f"><span>Blink: размер шрифта описания, px</span>
         <input type="number" id="blink-font" value="14" step="1" min="8"></label>
     </div>
+
+    <details style="margin: 4px 0 12px">
+      <summary style="cursor: pointer; font-size: 13px; color: var(--text-dim)">Категории по магазинам (можно менять названия перед выгрузкой)</summary>
+      <p class="muted" style="margin: 8px 0 0">Слева — группа Black Street. Справа — как назвать раздел на каждом магазине
+        (Blink — полный путь через «/»). Пусто = не менять (на Prom оставит исходную группу). Изменения сохраняются в браузере.</p>
+      <div class="cat-scroll" id="cat-table"></div>
+      <button class="btn btn--ghost btn--sm" id="cat-reset" style="margin-top: 8px">Сбросить к стандартным</button>
+    </details>
 
     <div class="toolbar">
       <input type="text" class="search" id="q" placeholder="Поиск по названию или артикулу…">
@@ -411,6 +426,7 @@ function parseWb(bytes) {
     showMsg($('load-msg'), 'err', 'Не те колонки. Экспортируйте с языком полей «Українська».'); return;
   }
   buildCards();
+  addExportGroups(); renderCatTable();
   $('work').classList.remove('hidden');
   showMsg($('load-msg'), 'ok', 'Загружено позиций: ' + PROWS.length + ', товаров: ' + cards.length + '.');
   fillCats(); applyFilter();
@@ -491,8 +507,9 @@ $('pick-none').addEventListener('click', function () { picked.clear(); render();
 /* =====================================================================
    Сборка Prom-файла (Bonna / Core22)
    ===================================================================== */
-function buildStore(suffix, step, taken) {
-  var out = [], used = {}, dups = 0, skipped = [];
+function buildStore(suffix, step, taken, storeKey) {
+  var out = [], used = {}, dups = 0, skipped = [], renamed = {};
+  var gmap = groupNamesByNum();
   var selected = cards.filter(function (c) { return picked.has(c.key); });
   for (var s = 0; s < selected.length; s++) {
     var card = selected[s];
@@ -502,6 +519,7 @@ function buildStore(suffix, step, taken) {
     if (ua.dup) dups++;
     var groupArticle = ua.art;
     var canon = (C.img >= 0) ? String(PROWS[card.mainIdx][C.img] == null ? '' : PROWS[card.mainIdx][C.img]) : '';
+    var newCat = catTarget(bsGroupName(PROWS[card.mainIdx], gmap), storeKey); // '' = не переименовывать
     for (var j = 0; j < card.idxs.length; j++) {
       var r = PROWS[card.idxs[j]].slice();
       r[C.code] = groupArticle;
@@ -519,16 +537,19 @@ function buildStore(suffix, step, taken) {
       if (C.gnum >= 0)  r[C.gnum]  = '';        // Номер_групи очищаем
       if (C.idtov >= 0) r[C.idtov] = prodId;    // Ідентифікатор_товару ← Унікальний_ідентифікатор
       if (C.uid >= 0)   r[C.uid]   = '';        // Унікальний_ідентифікатор очищаем
-      if (groupId !== '' && groupId != null) used[String(groupId)] = 1;
+      if (newCat && C.gname >= 0) r[C.gname] = newCat; // переименование категории (Назва_групи)
+      if (groupId !== '' && groupId != null) { used[String(groupId)] = 1; if (newCat) renamed[String(groupId)] = newCat; }
       if (C.site >= 0) r[C.site] = '';
       if (C.img >= 0) r[C.img] = canon;
       out.push(r);
     }
   }
   var prodAoA = [PH].concat(out);
-  var grpAoA = [GH].concat(GROWS.filter(function (g) {
-    var gc = idx(GH, 'Номер_групи');
-    return gc >= 0 && used[String(g[gc])];
+  var gc = idx(GH, 'Номер_групи'), gnu = idx(GH, 'Назва_групи_укр'), gnr = idx(GH, 'Назва_групи');
+  var grpAoA = [GH].concat(GROWS.filter(function (g) { return gc >= 0 && used[String(g[gc])]; }).map(function (g) {
+    var num = String(g[gc]);
+    if (renamed[num]) { var gg = g.slice(); if (gnr >= 0) gg[gnr] = renamed[num]; if (gnu >= 0) gg[gnu] = renamed[num]; return gg; }
+    return g;
   }));
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(prodAoA), PSHEET);
@@ -547,37 +568,96 @@ var BLINK_HDR = ['Артикул','Родительский артикул','А�
   'Отображать','Наличие','Фото','Поставщик','Описание товара(RU)','Описание товара(UA)',
   'Короткое описание(RU)','Короткое описание(UA)','Размеры','Цвет','HTML title(RU)',
   'HTML title(UA)','META keywords(RU)','META keywords(UA)','META description(RU)','META description(UA)'];
-/* Разделы Хорошоп по группе Prom (сопоставление по украинскому названию группы) */
-var BLINK_SECTION_RULES = [
-  ['Чоловічі літні костюми','Чоловічий одяг/Літні костюми'],
-  ['Чоловічі шорти','Чоловічий одяг/Шорти'],
-  ['Чоловічі футболки','Чоловічий одяг/Футболки'],
-  ['Кросівки-весняні-осінні-літні','Взуття/Весняне взуття'],
-  ['Зимові кросівки-черевики','Взуття/Зимове взуття'],
-  ['Кепки | Панамки','Аксесуари/Головні убори'],
-  ['Костюми','Чоловічий одяг/Спортивні костюми/Весняні-осінні костюми'],
-  ['Набори','Чоловічий одяг/Спортивні костюми/Весняні-осінні костюми'],
-  ['Веснянні-літні-осінні штани','Чоловічий одяг/Штани | Джинси/Штани весна | осінь'],
-  ['Зимові штани','Чоловічий одяг/Штани | Джинси/Штани на флісі'],
-  ['Зимові кофти','Чоловічий одяг/Кофти/На флісі'],
-  ['Кофти весняні-літні-осінні','Чоловічий одяг/Кофти/Весняні-осінні'],
-  ['Чоловічі сорочки','Чоловічий одяг/Сорочки'],
-  ['Бомбери / Анораки / Вітровки','Чоловічий одяг/Верхній одяг/Вітровки'],
-  ['Демісезонні куртки / Парки','Чоловічий одяг/Верхній одяг/Демісезонні куртки'],
-  ['Жилетки','Чоловічий одяг/Верхній одяг/Жилетки'],
-  ['Чоловічі пальта','Чоловічий одяг/Верхній одяг/Демісезонні куртки'],
-  ['Рюкзаки','Аксесуари/Сумки/Рюкзаки'],
-  ['Месенджери','Аксесуари/Сумки/Рюкзаки'],
-  ['Гаманці','Аксесуари/Сумки/Рюкзаки'],
-  ['Жіночі сумки','Аксесуари/Жіночі сумки'],
-  ['Жіноче взуття','Взуття/Жіноче взуття'],
-  ['Жіночі черевики-кросовки зима','Взуття/Жіноче взуття'],
-  ['Чоловічі зимові куртки','Чоловічий одяг/Верхній одяг/Зимові куртки'],
-  ['Зимові утеплені костюми','Чоловічий одяг/Верхній одяг/Зимові спортивні костюми']
-];
+/* =====================================================================
+   Категории по магазинам (редактируемые, сохраняются в браузере).
+   Ключ — украинское имя группы Black Street; значения — как назвать/куда
+   положить на Bonna, Core22 (Prom) и Blink (Хорошоп, путь через /).
+   ===================================================================== */
 function normGroup(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
-var BLINK_SECTION_MAP = {};
-(function () { for (var i = 0; i < BLINK_SECTION_RULES.length; i++) BLINK_SECTION_MAP[normGroup(BLINK_SECTION_RULES[i][0])] = BLINK_SECTION_RULES[i][1]; })();
+var CAT_KEY = 'tovary:clone:catmap';
+var CAT_DEFAULTS = [
+  { bs:'Чоловічі літні костюми', bonna:'Чоловічі літні костюми футболка + шорти + штани', core22:'', blink:'Чоловічий одяг/Літні костюми' },
+  { bs:'Чоловічі шорти', bonna:'Чоловічі шорти', core22:'', blink:'Чоловічий одяг/Шорти' },
+  { bs:'Чоловічі футболки', bonna:'Чоловічі футболки', core22:'', blink:'Чоловічий одяг/Футболки' },
+  { bs:'Кросівки-весняні-осінні-літні', bonna:'Кросівки весняні осінні літні', core22:'', blink:'Взуття/Весняне взуття' },
+  { bs:'Зимові кросівки-черевики', bonna:'Зимове взуття', core22:'', blink:'Взуття/Зимове взуття' },
+  { bs:'Кепки | Панамки', bonna:'Кепки', core22:'', blink:'Аксесуари/Головні убори' },
+  { bs:'Костюми', bonna:'Чоловічі спортивні костюми весняно-осінні', core22:'', blink:'Чоловічий одяг/Спортивні костюми/Весняні-осінні костюми' },
+  { bs:'Набори', bonna:'Чоловічі спортивні костюми весняно-осінні', core22:'', blink:'Чоловічий одяг/Спортивні костюми/Весняні-осінні костюми' },
+  { bs:'Веснянні-літні-осінні штани', bonna:'Чоловічі спортивні штани', core22:'', blink:'Чоловічий одяг/Штани/Штани весна осінь' },
+  { bs:'Зимові штани', bonna:'Зимові-утепленні', core22:'', blink:'Чоловічий одяг/Штани/Штани на флісі' },
+  { bs:'Зимові кофти', bonna:'Зимові кофти', core22:'', blink:'Чоловічий одяг/Кофти/На флісі' },
+  { bs:'Кофти весняні-літні-осінні', bonna:'Чоловічі кофти веснянні-літні-осінні', core22:'', blink:'Чоловічий одяг/Кофти/Весняні-осінні' },
+  { bs:'Чоловічі сорочки', bonna:'Чоловічі сорочки', core22:'', blink:'Чоловічий одяг/Сорочки' },
+  { bs:'Бомбери / Анораки / Вітровки', bonna:'Анораки/ Ветровки', core22:'', blink:'Чоловічий одяг/Верхній одяг/Вітровки' },
+  { bs:'Демісезонні куртки / Парки', bonna:'Демісезонні куртки', core22:'', blink:'Чоловічий одяг/Верхній одяг/Демісезонні куртки' },
+  { bs:'Жилетки', bonna:'Желетки', core22:'', blink:'Чоловічий одяг/Верхній одяг/Жилетки' },
+  { bs:'Чоловічі пальта', bonna:'Пальта', core22:'', blink:'Чоловічий одяг/Верхній одяг/Демісезонні куртки' },
+  { bs:'Рюкзаки', bonna:'Рюкзаки-сумки-бананки-месенджери', core22:'', blink:'Аксесуари/Сумки та Рюкзаки' },
+  { bs:'Месенджери', bonna:'Рюкзаки-сумки-бананки-месенджери', core22:'', blink:'Аксесуари/Сумки та Рюкзаки' },
+  { bs:'Гаманці', bonna:'Гаманці', core22:'', blink:'Аксесуари/Сумки та Рюкзаки' },
+  { bs:'Жіночі сумки', bonna:'Жіночі сумки', core22:'', blink:'Аксесуари/Жіночі сумки' },
+  { bs:'Жіноче взуття', bonna:'Жіночі кросівки демісезонні', core22:'', blink:'Взуття/Жіноче взуття' },
+  { bs:'Жіночі черевики-кросовки зима', bonna:'Зимове взуття', core22:'', blink:'Взуття/Жіноче взуття' },
+  { bs:'Чоловічі зимові куртки', bonna:'Чоловічі зимові куртки', core22:'', blink:'Чоловічий одяг/Верхній одяг/Зимові куртки' },
+  { bs:'Зимові утеплені костюми', bonna:'Зимові утеплені костюми', core22:'', blink:'Чоловічий одяг/Верхній одяг/Зимові спортивні костюми' }
+];
+var catMap = {};
+function loadCatMap() {
+  catMap = {};
+  for (var i = 0; i < CAT_DEFAULTS.length; i++) { var d = CAT_DEFAULTS[i]; catMap[normGroup(d.bs)] = { bs: d.bs, bonna: d.bonna, core22: d.core22, blink: d.blink }; }
+  try {
+    var saved = JSON.parse(localStorage.getItem(CAT_KEY) || '{}');
+    for (var k in saved) {
+      if (!catMap[k]) catMap[k] = { bs: saved[k].bs || k, bonna: '', core22: '', blink: '' };
+      if (saved[k].bs) catMap[k].bs = saved[k].bs;
+      ['bonna', 'core22', 'blink'].forEach(function (st) { if (saved[k][st] !== undefined) catMap[k][st] = saved[k][st]; });
+    }
+  } catch (e) {}
+}
+function saveCatMap() { try { localStorage.setItem(CAT_KEY, JSON.stringify(catMap)); } catch (e) {} }
+loadCatMap();
+
+function groupNamesByNum() {
+  var gnc = idx(GH, 'Номер_групи'), guk = idx(GH, 'Назва_групи_укр'), gru = idx(GH, 'Назва_групи');
+  var m = {};
+  for (var i = 0; i < GROWS.length; i++) {
+    var gn = String(GROWS[i][gnc]);
+    m[gn] = { uk: guk >= 0 ? String(GROWS[i][guk] || '') : '', ru: gru >= 0 ? String(GROWS[i][gru] || '') : '' };
+  }
+  return m;
+}
+function bsGroupName(main, gmap) {
+  var num = (C.gnum >= 0) ? String(main[C.gnum] == null ? '' : main[C.gnum]) : '';
+  var e = gmap[num] || { uk: '', ru: (C.gname >= 0 ? String(main[C.gname] || '') : '') };
+  return e.uk || e.ru || '';
+}
+function catTarget(name, storeKey) { var rec = catMap[normGroup(name)]; return rec ? (rec[storeKey] || '') : ''; }
+function addExportGroups() {
+  var guk = idx(GH, 'Назва_групи_укр'), gru = idx(GH, 'Назва_групи');
+  for (var i = 0; i < GROWS.length; i++) {
+    var nm = (guk >= 0 ? String(GROWS[i][guk] || '') : '') || (gru >= 0 ? String(GROWS[i][gru] || '') : '');
+    if (!nm) continue;
+    var key = normGroup(nm);
+    if (!catMap[key]) catMap[key] = { bs: nm, bonna: '', core22: '', blink: '' };
+  }
+}
+function renderCatTable() {
+  var box = $('cat-table'); if (!box) return;
+  var keys = Object.keys(catMap).sort(function (a, b) { return (catMap[a].bs || a).localeCompare(catMap[b].bs || b, 'ru'); });
+  var rows = keys.map(function (k) {
+    var c = catMap[k];
+    function inp(st) { return '<input type="text" data-k="' + escapeHtml(k) + '" data-st="' + st + '" value="' + escapeHtml(c[st] || '') + '">'; }
+    return '<tr><td class="cat-bs">' + escapeHtml(c.bs || k) + '</td><td>' + inp('bonna') + '</td><td>' + inp('core22') + '</td><td>' + inp('blink') + '</td></tr>';
+  }).join('');
+  box.innerHTML = '<table class="cat"><tr><th>Black Street (группа)</th><th>Bonna (Prom)</th><th>Core22 (Prom)</th><th>Blink (Хорошоп, путь через /)</th></tr>' + rows + '</table>';
+  Array.prototype.forEach.call(box.querySelectorAll('input'), function (el) {
+    el.addEventListener('input', function () {
+      var k = el.getAttribute('data-k'), st = el.getAttribute('data-st');
+      if (catMap[k]) { catMap[k][st] = el.value; saveCatMap(); }
+    });
+  });
+}
 
 function buildBlink(taken) {
   var cCols = charCols();
@@ -585,19 +665,12 @@ function buildBlink(taken) {
   var fpx = parseInt(($('blink-font') && $('blink-font').value) || '14', 10) || 14;
   var selected = cards.filter(function (c) { return picked.has(c.key); });
 
-  // карта Номер_групи -> названия группы (укр/рус) с листа групп — для определения раздела
-  var gnc = idx(GH, 'Номер_групи'), guk = idx(GH, 'Назва_групи_укр'), gru = idx(GH, 'Назва_групи');
-  var groupNameByNum = {};
-  for (var gi = 0; gi < GROWS.length; gi++) {
-    var gn = String(GROWS[gi][gnc]);
-    groupNameByNum[gn] = { uk: guk >= 0 ? String(GROWS[gi][guk] || '') : '', ru: gru >= 0 ? String(GROWS[gi][gru] || '') : '' };
-  }
+  var gmap = groupNamesByNum();
   var unmapped = {};
   function sectionFor(main) {
-    var num = (C.gnum >= 0) ? String(main[C.gnum] == null ? '' : main[C.gnum]) : '';
-    var e = groupNameByNum[num] || { uk: '', ru: (C.gname >= 0 ? String(main[C.gname] || '') : '') };
-    var sect = BLINK_SECTION_MAP[normGroup(e.uk)] || BLINK_SECTION_MAP[normGroup(e.ru)] || '';
-    if (!sect) unmapped[(e.uk || e.ru || ('група ' + num))] = 1;
+    var nm = bsGroupName(main, gmap);
+    var sect = catTarget(nm, 'blink');
+    if (!sect) unmapped[nm || 'без группи'] = 1;
     return sect;
   }
 
@@ -692,8 +765,8 @@ $('make').addEventListener('click', async function () {
   var stampCore  = await cacheStamp('core22');
   var stampBlink = await cacheStamp('blink');
 
-  var bonna = buildStore(SUF_B, sb, takenBonna);
-  var core  = buildStore(SUF_C, sc, takenCore);
+  var bonna = buildStore(SUF_B, sb, takenBonna, 'bonna');
+  var core  = buildStore(SUF_C, sc, takenCore, 'core22');
   var blink = buildBlink(takenBlink);
 
   window._files = {
@@ -747,6 +820,13 @@ $('make').addEventListener('click', async function () {
   Array.prototype.forEach.call($('out').querySelectorAll('[data-dl]'), function (b) {
     b.addEventListener('click', function () { var n = b.getAttribute('data-dl'); download(n, window._files[n]); });
   });
+});
+
+/* редактор категорий: первичная отрисовка и сброс к стандартным */
+renderCatTable();
+if ($('cat-reset')) $('cat-reset').addEventListener('click', function () {
+  try { localStorage.removeItem(CAT_KEY); } catch (e) {}
+  loadCatMap(); addExportGroups(); renderCatTable();
 });
 
 /* выбор папки (Chrome/Edge) */

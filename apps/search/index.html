@@ -1,4 +1,4 @@
-<!doctype html>
+  <!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
@@ -388,19 +388,22 @@ async function ensureCatalog(){
 }
 function renderResults(matches, total){
   const html = matches.map(m=>
-    '<button class="ritem" data-b="'+esc(m.b)+'">'+
+    '<button class="ritem" data-k="'+esc(m.k||m.b)+'">'+
       (m.img?'<img src="'+esc(m.img)+'" alt="">':'<img alt="">')+
-      '<span><span class="rn">'+esc(m.n)+'</span><br><span class="ra">Артикул: '+esc(m.b)+'</span></span>'+  /* UA */
+      '<span><span class="rn">'+esc(m.n)+'</span><br><span class="ra">Артикул: '+esc(m.b)+'</span></span>'+
     '</button>').join('');
   $('result').innerHTML='<div class="results">'+html+'</div>';
-  document.querySelectorAll('.ritem').forEach(b=>b.addEventListener('click',()=>openBase(b.dataset.b)));
+  document.querySelectorAll('.ritem').forEach(b=>b.addEventListener('click',()=>openResult(b.dataset.k)));
   $('status').style.display='block';
   setStatus('Знайдено за назвою: '+total+(total>matches.length?(' (показані перші '+matches.length+')'):'')+'. Натисніть на товар.');
 }
-async function openBase(base){
+async function openResult(key){
   $('result').innerHTML=''; setStatus('Відкриваю…'); $('status').style.display='block';
   try{
-    const data=await lookup(base);
+    const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/lookup',{
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ key })
+    });
+    const data=await res.json();
     if(data && data.found && data.product){ $('status').style.display='none'; render(data.product); }
     else setStatus('Не вдалося відкрити товар.', true);
   }catch(e){ setStatus('Помилка зв\'язку: '+e.message, true); }
@@ -419,7 +422,7 @@ async function doSearch(){
     const list=await ensureCatalog();
     const ql=q.toLowerCase();
     const found=list.filter(m=> (m.n&&m.n.toLowerCase().indexOf(ql)!==-1) || (m.b&&m.b.toLowerCase().indexOf(ql)!==-1));
-    if(found.length===1){ await openBase(found[0].b); return; }
+    if(found.length===1){ await openResult(found[0].k||found[0].b); return; }
     if(found.length>1){ renderResults(found.slice(0,60), found.length); return; }
     setStatus('Нічого не знайдено за запитом «'+q+'». Перевірте артикул/назву або оновіть публікацію.', true);
   }catch(e){ setStatus('Помилка зв\'язку: '+e.message, true); }

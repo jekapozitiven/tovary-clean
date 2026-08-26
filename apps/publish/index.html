@@ -330,8 +330,12 @@ async function run(){
     if(images.length) withImg++; if(desc) withDesc++;
     // сам base тоже ищется
     const nb=normArt(base); aliasShards[shardOf(nb)][nb]=base;
-    idxShards[shardOf(base)][base]=record;
-    list.push({ b:base, n:record.name, img:images[0]||'' });
+    // унікальний ключ картки: якщо різні товари мають однаковий артикул —
+    // не перезаписуємо одне одного, кожен зберігаємо окремо (base, base #2, #3…)
+    let ukey=base, n2=2;
+    while(idxShards[shardOf(ukey)][ukey]){ ukey=base+' #'+n2; n2++; }
+    idxShards[shardOf(ukey)][ukey]=record;
+    list.push({ k:ukey, b:base, n:record.name, img:images[0]||'' });
   }
   setProg(55);
   log('  с фото: '+withImg+', с описанием: '+withDesc);

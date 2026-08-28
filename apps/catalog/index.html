@@ -474,7 +474,7 @@ async function loadFromCache() {
   }
   if (!any) return false;
   cacheAge = oldest;
-  buildGroups(); showStats(); applyFilter(); refineByPhoto();
+  buildGroups(); showStats(); applyFilter();
   return true;
 }
 
@@ -718,7 +718,7 @@ async function loadAll() {
 
   prog.firstElementChild.style.width = '100%';
   cacheAge = Date.now();
-  buildGroups(); showStats(); applyFilter(); refineByPhoto();
+  buildGroups(); showStats(); applyFilter();
   if (problems.length) {
     $('stats').innerHTML += '<div class="msg msg--err">' + problems.map(escapeHtml).join('<br>') + '</div>';
   }
@@ -786,39 +786,62 @@ function imgDHash(url) {
     setTimeout(() => finish(null), 8000);
   });
 }
-// считаем отпечатки только там, где артикул размазан на несколько листингов главного,
-// затем пересобираем группы уже с учётом фото
+function _vgKey(p) { return p.variation_group_id != null ? ('v' + p.variation_group_id) : ('i' + p.id); }
+
+// Фото-сверка РАЗДЕЛЯЕТ карточку по артикулу на разные, если под ним лежат разные
+// товары (дубли с другим фото). Одинаковое фото — остаётся в одной карточке.
+// Работаем только по тому, что сейчас на экране (shown) — чтобы не грузить всё сразу.
+let _photoBusy = false;
 async function refineByPhoto() {
+  if (_photoBusy || typeof document === 'undefined') return;
+  _photoBusy = true;
   try {
-    if (typeof document === 'undefined') return;
-    const mainByArt = new Map();  // артикул -> [товары главного]
-    for (const p of (byStore[MAIN] || [])) {
-      const s = baseSku(p.sku, MAIN); if (!s) continue;
-      if (!mainByArt.has(s)) mainByArt.set(s, []); mainByArt.get(s).push(p);
-    }
-    const ambig = new Set();      // артикулы с ≥2 листингами главного
-    for (const [art, mains] of mainByArt) {
-      const keys = new Set(mains.map(m => m.variation_group_id != null ? 'v' + m.variation_group_id : 'i' + m.id));
-      if (keys.size >= 2) ambig.add(art);
-    }
-    if (!ambig.size) return;
-    const cands = [];
-    for (const art of ambig) for (const m of mainByArt.get(art)) cands.push(m);
-    for (const st of STORE_KEYS) {
-      if (st === MAIN) continue;
-      for (const p of (byStore[st] || [])) {
-        const s = baseSku(p.sku, st);
-        if (s && ambig.has(s)) cands.push(p);
+    const targets = (shown && shown.length ? shown : groups) || [];
+    let changed = false, budget = 160;   // лимит загрузок фото за один проход
+    for (const g of targets) {
+      // собрать все товары карточки и их листинги
+      const list = [];
+      for (const st of STORE_KEYS) for (const p of (g.stores[st] || [])) list.push({ store: st, p: p });
+      const vgs = new Set(list.map(x => _vgKey(x.p)));
+      if (vgs.size < 2) continue;        // один листинг — делить нечего
+      // хеши (главный магазин первым — стабильные представители)
+      const order = list.slice().sort((a, b) => (a.store === MAIN ? 0 : 1) - (b.store === MAIN ? 0 : 1));
+      for (const x of order) {
+        if (x.p._phash !== undefined) continue;
+        if (budget-- <= 0) break;
+        x.p._phash = await imgDHash(firstImage(x.p));
+      }
+      // жадная кластеризация листингов по фото
+      const clusters = [];                // [{hash}]
+      const listingCluster = new Map();   // vgKey -> индекс кластера
+      for (const x of order) {
+        const vk = _vgKey(x.p);
+        if (listingCluster.has(vk)) continue;
+        const h = x.p._phash;
+        let ci;
+        if (!h) { if (!clusters.length) clusters.push({ hash: null }); ci = 0; }
+        else {
+          ci = -1;
+          for (let i = 0; i < clusters.length; i++)
+            if (clusters[i].hash && hamming(h, clusters[i].hash) <= PHOTO_MAX_DIST) { ci = i; break; }
+          if (ci === -1) { clusters.push({ hash: h }); ci = clusters.length - 1; }
+        }
+        listingCluster.set(vk, ci);
+      }
+      const art = g.base || (g.key || '').replace(/^s/, '');
+      if (clusters.length <= 1) {
+        // всё одно фото — фото-ключ не нужен
+        for (const x of list) if (x.p._photoKey) { delete x.p._photoKey; changed = true; }
+      } else {
+        for (const x of list) {
+          const nk = 's' + art + '#' + listingCluster.get(_vgKey(x.p));
+          if (x.p._photoKey !== nk) { x.p._photoKey = nk; changed = true; }
+        }
       }
     }
-    let changed = false;
-    for (const p of cands) {
-      if (p._phash !== undefined) continue;
-      p._phash = await imgDHash(firstImage(p));
-      if (p._phash) changed = true;
-    }
     if (changed) { buildGroups(); applyFilter(); }
-  } catch (e) { /* фото недоступны (CORS) — тихо остаёмся на артикуле+связи Prom */ }
+  } catch (e) { /* фото недоступны (CORS) — тихо остаёмся на артикуле */ }
+  finally { _photoBusy = false; }
 }
 
 function buildGroups() {
@@ -827,41 +850,24 @@ function buildGroups() {
     byId[s] = new Map();
     for (const p of (byStore[s] || [])) byId[s].set(String(p.id), p);
   }
+  // Главный ключ карточки — базовый артикул (один артикул = одна карточка).
+  // Если фото-сверка нашла под артикулом РАЗНЫЕ товары (дубли), она проставляет
+  // товару _photoKey, и такие товары уходят в разные карточки.
   function localKey(p, store) {
-    if (p.variation_group_id != null) return 'v' + p.variation_group_id;
+    if (p._photoKey) return p._photoKey;
     const s = baseSku(p.sku, store);
-    return s ? ('s' + s) : ('p' + p.id);
+    if (s) return 's' + s;
+    if (p.variation_group_id != null) return 'v' + p.variation_group_id;
+    return 'p' + p.id;
   }
-  // листинги главного магазина под каждым артикулом
-  const skuKeys = new Map();  // артикул -> Set(localKey)
-  const skuMains = new Map(); // артикул -> [товары главного магазина]
-  for (const p of (byStore[MAIN] || [])) {
-    const s = baseSku(p.sku, MAIN);
-    if (!s) continue;
-    if (!skuKeys.has(s)) skuKeys.set(s, new Set());
-    skuKeys.get(s).add(localKey(p, MAIN));
-    if (!skuMains.has(s)) skuMains.set(s, []);
-    skuMains.get(s).push(p);
-  }
-  // по артикулу связываем магазины только если он однозначный (ровно один листинг главного)
-  const skuToKey = new Map();
-  for (const [s, set] of skuKeys) { if (set.size === 1) skuToKey.set(s, Array.from(set)[0]); }
   function globalKey(p, store) {
+    if (p._photoKey) return p._photoKey;
     if (store === MAIN) return localKey(p, store);
-    // 1) надёжная связь Prom
+    const s = baseSku(p.sku, store);
+    if (s) return 's' + s;   // один артикул = одна карточка
+    // артикула нет — пробуем связь Prom, иначе своя карточка
     const ext = p.external_id != null ? String(p.external_id) : '';
     if (ext) { const src = byId[MAIN].get(ext); if (src) return localKey(src, MAIN); }
-    const s = baseSku(p.sku, store);
-    // 2) однозначный артикул
-    if (s && skuToKey.has(s)) return skuToKey.get(s);
-    // 3) артикул размазан на несколько листингов — выбираем нужный по фото
-    if (s && p._phash && skuMains.has(s)) {
-      const mains = skuMains.get(s);
-      let best = null, bd = 999;
-      for (const m of mains) { const d = hamming(p._phash, m._phash); if (d < bd) { bd = d; best = m; } }
-      if (best && bd <= PHOTO_MAX_DIST) { p._matchedBy = 'photo'; return localKey(best, MAIN); }
-    }
-    // не удалось надёжно связать — своя карточка
     return localKey(p, store);
   }
 
@@ -987,6 +993,7 @@ function applyFilter() {
     if ($('sel-all-chk')) $('sel-all-chk').checked = !!allSel;
   }
   renderList();
+  refineByPhoto();   // фото-сверка разнесёт дубли с разным фото по разным карточкам
 }
 
 /* ===================================================================== */

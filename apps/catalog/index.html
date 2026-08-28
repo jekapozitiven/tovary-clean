@@ -730,14 +730,15 @@ async function loadAll() {
 /*  Группировка                                                           */
 /* ===================================================================== */
 function baseSku(sku, store) {
-  let s = (sku || '').trim();
-  // Bonna в данных бывает с суффиксом «(Bon)» ИЛИ «(B)», Core22 — «(С)» ИЛИ «(C)».
-  // Срезаем оба варианта, иначе часть товаров не сцепляется по артикулу.
-  if (store === 'bonna')  return s.replace(/\s*\((?:Bon|B)\)\s*$/i, '').trim();
-  if (store === 'core22') return s.replace(/\s*\((?:Cor|С|C)\)\s*$/i, '').trim();
-  const suf = (STORES[store].suffix || '').trim();
-  if (suf && s.endsWith(suf)) s = s.slice(0, -suf.length).trim();
-  return s;
+  let s = (sku || '').trim(), prev;
+  // Любые хвостовые пометки — это тот же товар на другом магазине или копия:
+  // «(B)», «(Bon)», «(С)», «(C)», «(коп1)», «(В)», «/Мой» и т.п. Срезаем их все.
+  do {
+    prev = s;
+    s = s.replace(/\s*\([^()]*\)\s*$/, '').trim();    // хвостовая скобка
+    s = s.replace(/\s*[\/\\][^\/\\]*$/, '').trim();   // хвост через слэш
+  } while (s && s !== prev);
+  return s || (sku || '').trim();
 }
 function firstImage(p) {
   if (Array.isArray(p.images) && p.images.length) return p.images[0].thumbnail_url || p.images[0].url || '';

@@ -782,7 +782,10 @@ function imgDHash(url) {
         finish(bits);
       } catch (e) { finish(null); }
     };
-    img.src = url;
+    // читаем фото через воркер-прокси — иначе браузер не даст сравнить пиксели (CORS)
+    img.src = (cfg && cfg.url)
+      ? (cfg.url.replace(/\/+$/, '') + '/img?u=' + encodeURIComponent(url))
+      : url;
     setTimeout(() => finish(null), 8000);
   });
 }

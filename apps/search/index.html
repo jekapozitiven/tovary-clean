@@ -66,6 +66,8 @@
   #lbcontent img{width:auto;height:auto;max-width:97vw;max-height:97vh;object-fit:contain;border-radius:8px}
   .fit{display:inline-block;margin:8px 0 0;font-size:14.5px;color:#8a5a00;background:#fdf3e0;border:1px solid #f2dcae;
     border-radius:8px;padding:6px 12px}
+  .ship{display:inline-block;margin:8px 8px 0 0;font-size:14.5px;color:#0f5132;background:#e7f6ec;border:1px solid #bfe3cb;
+    border-radius:8px;padding:6px 12px}
   .note{margin:8px 0 0;font-size:14px;color:var(--text);background:#f1f4f8;border:1px solid var(--line);
     border-radius:8px;padding:8px 12px;white-space:pre-wrap}
   .note b{font-weight:600}
@@ -93,6 +95,24 @@
   <div class="searchbar">
     <input id="q" type="text" placeholder="Артикул або назва, напр. Ads-160 або «куртка»" autocomplete="off" enterkeyhint="search">
     <button id="go">Знайти</button>
+  </div>
+
+  <div id="bulkbox" class="ownerbox" style="display:none;margin-top:14px">
+    <h3 style="margin:0 0 8px;font-size:15px">Масове редагування</h3>
+    <label>Початок артикулу:</label>
+    <input id="bulk-prefix" type="text" placeholder="напр. Ads-">
+    <button class="obtn" id="bulk-find" type="button">Знайти товари</button>
+    <span class="ohint" id="bulk-count" style="margin-left:8px"></span>
+    <label style="margin-top:10px">Поле:</label>
+    <select id="bulk-field" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+      <option value="ship">Відправка (днів)</option>
+      <option value="fit">Примітка про розмір</option>
+      <option value="note">Примітки</option>
+    </select>
+    <label>Значення:</label>
+    <input id="bulk-value" type="text" placeholder="напр. 3">
+    <div style="margin-top:10px"><button class="obtn" id="bulk-apply" type="button">Застосувати до всіх</button>
+    <span class="omsg" id="bulk-msg"></span></div>
   </div>
 
   <div id="status" class="status">Введіть артикул або назву та натисніть «Знайти».</div>
@@ -201,6 +221,8 @@ function render(p){
   const gallery = '<div class="gallery" id="gallery-slot">'+galleryHtml(imgs)+'</div>';
 
   const fitLine  = p.fit ? '<div class="fit">'+esc(p.fit)+'</div>' : '';
+  const shipTxt  = /^\d+$/.test(p.ship||'') ? (p.ship+' дн.') : (p.ship||'');
+  const shipLine = p.ship ? '<div class="ship"><b>Відправка:</b> '+esc(shipTxt)+'</div>' : '';
   const noteLine = p.note ? '<div class="note"><b>Примітки:</b> '+esc(p.note).replace(/\n/g,'<br>')+'</div>' : '';
   const chartBtn = p.hasChart ? '<button class="chartbtn" id="chart-open">Розмірна сітка</button>' : '';
 
@@ -208,6 +230,8 @@ function render(p){
     '<div class="ownerbox">'+
       '<label>Примітка про розмір (маломірить / більшемірить):</label>'+
       '<input id="fit-inp" type="text" value="'+esc(p.fit||'')+'" placeholder="напр. Маломірить — беріть на розмір більше">'+
+      '<label>Відправка (скільки днів):</label>'+
+      '<input id="ship-inp" type="text" value="'+esc(p.ship||'')+'" placeholder="напр. 3">'+
       '<label>Примітки:</label>'+
       '<textarea id="note-inp" rows="3" placeholder="інша інформація про товар">'+esc(p.note||'')+'</textarea>'+
       '<label>Розмірна сітка (до 2 фото):</label>'+
@@ -227,6 +251,7 @@ function render(p){
           '<div class="name">'+esc(p.name)+'</div>'+
           '<p class="art">Артикул: <b>'+esc(p.base)+'</b></p>'+  /* UA: Артикул */
           fitLine +
+          shipLine +
           noteLine +
           (chartBtn?'<div>'+chartBtn+'</div>':'')+
           ownerPanel +
@@ -362,11 +387,12 @@ async function saveExtra(p){
   try{
     const fit=($('fit-inp').value||'').trim();
     const note=($('note-inp').value||'').trim();
+    const ship=($('ship-inp').value||'').trim();
     // key — стабильный ключ; base — совместимость со старой версией воркера
-    const payload={ key:p.ekey||extraKey(p), base:p.base, fit, note, charts:pendingCharts.slice(0,2) };
+    const payload={ key:p.ekey||extraKey(p), base:p.base, fit, note, ship, charts:pendingCharts.slice(0,2) };
     const j=await extraSet(payload);
     if(j && j.ok){
-      p.fit=fit; p.note=note; p.hasChart=pendingCharts.length>0;
+      p.fit=fit; p.note=note; p.ship=ship; p.hasChart=pendingCharts.length>0;
       if(msg){ msg.style.color='var(--ok)'; msg.textContent='Збережено ✓'; }
       render(p);
     } else {
@@ -446,16 +472,56 @@ document.addEventListener('paste', async (e)=>{
   }
 });
 
+/* ---- масове редагування (режим власника) ---- */
+let bulkMatched=[];
+function updateOwnerUI(){ const b=$('bulkbox'); if(b) b.style.display=OWNER?'block':'none'; }
+async function bulkFind(){
+  const pref=($('bulk-prefix').value||'').trim().toLowerCase();
+  const c=$('bulk-count');
+  if(!pref){ c.textContent='Введіть початок артикулу.'; bulkMatched=[]; return; }
+  c.textContent='Шукаю…';
+  const list=await ensureCatalog();
+  bulkMatched=list.filter(m=> m.b && m.b.toLowerCase().indexOf(pref)===0);
+  c.textContent='Знайдено: '+bulkMatched.length+' товар(ів).';
+}
+async function bulkApply(){
+  const msg=$('bulk-msg');
+  if(!bulkMatched.length){ msg.style.color='var(--err)'; msg.textContent='Спочатку «Знайти товари».'; return; }
+  const field=$('bulk-field').value;
+  const value=$('bulk-value').value;
+  if(!confirm('Записати значення у поле для '+bulkMatched.length+' товар(ів)?')) return;
+  const items=bulkMatched.map(m=> m.e || m.k).filter(Boolean);
+  msg.style.color='var(--dim)'; msg.textContent='Застосовую…';
+  try{
+    let updated=0;
+    for(let i=0;i<items.length;i+=150){
+      const chunk=items.slice(i,i+150);
+      const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/extra-bulk',{
+        method:'POST', headers:{'Content-Type':'application/json','X-App-Password':ownerPass()},
+        body:JSON.stringify({ items:chunk, field, value })
+      });
+      const j=await res.json();
+      if(!j || !j.ok){ msg.style.color='var(--err)'; msg.textContent='Помилка: '+((j&&j.error)||'не збережено (пароль?)'); return; }
+      updated+=j.updated||0;
+      msg.textContent='Застосовую… '+updated+'/'+items.length;
+    }
+    msg.style.color='var(--ok)'; msg.textContent='Оновлено: '+updated+' товар(ів) ✓';
+  }catch(e){ msg.style.color='var(--err)'; msg.textContent='Збій: '+e.message; }
+}
+
 /* ---- вход/выход из режима владельца (шестерёнка) ---- */
 $('gear').addEventListener('click', ()=>{
   if(OWNER){
-    if(confirm('Вийти з режиму власника?')){ localStorage.removeItem('search:pass'); OWNER=false; $('gear').style.color=''; if(currentProduct) render(currentProduct); }
+    if(confirm('Вийти з режиму власника?')){ localStorage.removeItem('search:pass'); OWNER=false; $('gear').style.color=''; updateOwnerUI(); if(currentProduct) render(currentProduct); }
     return;
   }
   const p=prompt('Пароль власника (APP_PASSWORD):');
-  if(p){ localStorage.setItem('search:pass', p); OWNER=true; $('gear').style.color='#2563eb'; if(currentProduct) render(currentProduct); }
+  if(p){ localStorage.setItem('search:pass', p); OWNER=true; $('gear').style.color='#2563eb'; updateOwnerUI(); if(currentProduct) render(currentProduct); }
 });
+$('bulk-find').addEventListener('click', bulkFind);
+$('bulk-apply').addEventListener('click', bulkApply);
 if(OWNER) $('gear').style.color='#2563eb';
+updateOwnerUI();
 $('q').focus();
 </script>
 </body>

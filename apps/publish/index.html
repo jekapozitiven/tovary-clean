@@ -157,6 +157,11 @@ function uaName(p){
   if(m && (m.uk||m.ua)) return String(m.uk||m.ua);
   return String((p && p.name) || '');
 }
+// стабільний ключ доп-полів (та сама формула, що в worker.js і в пошуку)
+function ekeyOf(record){
+  const d=record && record.detail;
+  return (d && d.id) ? ('pid:'+d.store+':'+d.id) : ('art:'+(record ? record.base : ''));
+}
 
 /* ===== загрузка магазинов ===== */
 async function loadProm(store, onProg){
@@ -335,7 +340,7 @@ async function run(){
     let ukey=base, n2=2;
     while(idxShards[shardOf(ukey)][ukey]){ ukey=base+' #'+n2; n2++; }
     idxShards[shardOf(ukey)][ukey]=record;
-    list.push({ k:ukey, b:base, n:record.name, img:images[0]||'' });
+    list.push({ k:ukey, b:base, n:record.name, img:images[0]||'', e:ekeyOf(record) });
   }
   setProg(55);
   log('  с фото: '+withImg+', с описанием: '+withDesc);

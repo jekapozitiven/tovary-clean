@@ -201,26 +201,20 @@ async function loadBlink(onProg){
 }
 
 /* ===== группировка (как в «Цены и наличие») ===== */
+// прибираємо мітки копій: "(коп)", "(коп1)", "(коп2)"… де б вони не стояли
+function stripCopy(s){
+  return String(s||'').replace(/\s*\(коп\d*\)/gi,'').replace(/\s+/g,' ').trim();
+}
+// «чистий» артикул для об'єднання: без суфікса магазину (B)/(С) і без міток копій.
+// Усі копії та однакові артикули зливаються в одну картку.
+function mergeKey(sku, store){
+  return stripCopy(baseSku(sku, store));
+}
 function buildGroups(byStore){
-  const byId={};
-  for(const s of STORE_KEYS){ byId[s]=new Map(); for(const p of (byStore[s]||[])) byId[s].set(String(p.id),p); }
-  function localKey(p,store){
-    if(p.variation_group_id!=null) return 'v'+p.variation_group_id;
-    const s=baseSku(p.sku,store); return s?('s'+s):('p'+p.id);
-  }
-  const skuToKey=new Map();
-  for(const p of (byStore[MAIN]||[])){ const s=baseSku(p.sku,MAIN); if(s&&!skuToKey.has(s)) skuToKey.set(s,localKey(p,MAIN)); }
-  function globalKey(p,store){
-    if(store===MAIN) return localKey(p,store);
-    const ext=p.external_id!=null?String(p.external_id):'';
-    if(ext){ const src=byId[MAIN].get(ext); if(src) return localKey(src,MAIN); }
-    const s=baseSku(p.sku,store); if(s&&skuToKey.has(s)) return skuToKey.get(s);
-    return s?('s'+s):localKey(p,store);
-  }
   const map=new Map();
   for(const store of STORE_KEYS){
     for(const p of (byStore[store]||[])){
-      const key=globalKey(p,store);
+      const key = mergeKey(p.sku, store) || ('id:'+store+':'+p.id);
       if(!map.has(key)) map.set(key,{ key, stores:{} });
       const g=map.get(key); (g.stores[store]=g.stores[store]||[]).push(p);
     }
@@ -288,9 +282,11 @@ async function run(){
     // базовый артикул, название, описание, фото
     let base='', name='', desc='', images=[], category='', detail=null;
     const order=[MAIN].concat(STORE_KEYS.filter(k=>k!==MAIN));
+    // чистий артикул групи (без (B)/(С) і без копій)
+    base = (g.key && g.key.indexOf('id:')!==0) ? g.key : '';
     for(const store of order){
       const rep=representative(g.stores[store], store); if(!rep) continue;
-      if(!base) base = baseSku(rep.sku,store) || String(rep.id);
+      if(!base) base = stripCopy(baseSku(rep.sku,store)) || String(rep.id);
       const rn=uaName(rep);
       if(!name || (rn && rn.length<name.length)) name = rn||name;
       if(!desc){

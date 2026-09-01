@@ -877,24 +877,25 @@ function buildGroups() {
     byId[s] = new Map();
     for (const p of (byStore[s] || [])) byId[s].set(String(p.id), p);
   }
-  // Главный ключ карточки — базовый артикул (один артикул = одна карточка).
-  // Если фото-сверка нашла под артикулом РАЗНЫЕ товары, она проставляет
-  // товару _photoKey — и такие товары уходят в разные карточки.
+  // Главный ключ карточки — ЛИСТИНГ (variation_group_id из Prom).
+  // Каждый листинг = своя карточка. Разные фото на сайтах — это разные
+  // листинги, значит и разные карточки. Магазины связываются между собой
+  // только по надёжной связи Prom (external_id) при совпадении артикула.
   function localKey(p, store) {
-    if (p._photoKey) return p._photoKey;
-    const s = baseSku(p.sku, store);
-    if (s) return 's' + s;
     if (p.variation_group_id != null) return 'v' + p.variation_group_id;
-    return 'p' + p.id;
+    const s = baseSku(p.sku, store);
+    return s ? ('s' + s) : ('p' + p.id);
   }
   function globalKey(p, store) {
-    if (p._photoKey) return p._photoKey;
     if (store === MAIN) return localKey(p, store);
     const s = baseSku(p.sku, store);
-    if (s) return 's' + s;   // один артикул = одна карточка
-    // артикула нет — пробуем связь Prom, иначе своя карточка
+    // связь Prom — только если базовый артикул совпадает (кривые связи игнорируем)
     const ext = p.external_id != null ? String(p.external_id) : '';
-    if (ext) { const src = byId[MAIN].get(ext); if (src) return localKey(src, MAIN); }
+    if (ext) {
+      const src = byId[MAIN].get(ext);
+      if (src && baseSku(src.sku, MAIN) === s) return localKey(src, MAIN);
+    }
+    // иначе — свой листинг, своя карточка
     return localKey(p, store);
   }
 
@@ -1020,7 +1021,6 @@ function applyFilter() {
     if ($('sel-all-chk')) $('sel-all-chk').checked = !!allSel;
   }
   renderList();
-  refineByPhoto();   // разнести дубли с разным фото (быстро: параллельно + кэш)
 }
 
 /* ===================================================================== */

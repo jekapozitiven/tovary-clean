@@ -39,7 +39,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Публикация для колл-центра</h1>
+  <h1>Публикация для колл-центра <span style="font-size:12px;color:#4ade80;font-weight:600">v2 · об’єднання копій</span></h1>
   <p class="sub">Собирает свежие данные со всех магазинов и выкладывает их в облако, чтобы поиск колл-центра видел актуальные цены, наличие, фото и описания. Запускать после того, как обновили цены/наличие в «Цены и наличие».</p>
 
   <div class="card">
@@ -267,9 +267,10 @@ async function run(){
   }));
   setProg(35);
 
-  log('Группирую по базовому артикулу…');
+  log('Групую за чистим артикулом (копії (копN) і суфікси (B)/(С) — в одну картку)…');
   const groups = buildGroups(byStore);
-  log('  карточек: '+groups.length,'ok');
+  const totalPositions = active.reduce((s,k)=>s+(byStore[k]?byStore[k].length:0),0);
+  log('  позицій усього: '+totalPositions+' → карток після об’єднання: '+groups.length,'ok');
   setProg(45);
 
   // строим индекс: полки idx:* (base→карточка) и alias:* (артикул→base)

@@ -103,6 +103,11 @@
     <input id="bulk-prefix" type="text" placeholder="напр. Ads-">
     <button class="obtn" id="bulk-find" type="button">Знайти товари</button>
     <span class="ohint" id="bulk-count" style="margin-left:8px"></span>
+    <div id="bulk-list-wrap" style="display:none;margin-top:10px">
+      <label style="display:flex;align-items:center;gap:7px;color:var(--text);font-size:14px;margin:0 0 6px;cursor:pointer">
+        <input type="checkbox" id="bulk-all" checked> Вибрати всі (<span id="bulk-sel">0</span>)</label>
+      <div id="bulk-list" style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff;padding:6px"></div>
+    </div>
     <label style="margin-top:10px">Поле:</label>
     <select id="bulk-field" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px">
       <option value="ship">Відправка (днів)</option>
@@ -111,7 +116,7 @@
     </select>
     <label>Значення:</label>
     <input id="bulk-value" type="text" placeholder="напр. 3">
-    <div style="margin-top:10px"><button class="obtn" id="bulk-apply" type="button">Застосувати до всіх</button>
+    <div style="margin-top:10px"><button class="obtn" id="bulk-apply" type="button">Застосувати до вибраних</button>
     <span class="omsg" id="bulk-msg"></span></div>
   </div>
 
@@ -505,22 +510,44 @@ async function enterOwner(){
     alert('Невірний пароль.');
   }
 }
+function bulkSelectedCount(){
+  return document.querySelectorAll('.bulk-chk:checked').length;
+}
+function updateBulkSel(){ const s=$('bulk-sel'); if(s) s.textContent=bulkSelectedCount(); }
 async function bulkFind(){
   const pref=($('bulk-prefix').value||'').trim().toLowerCase();
   const c=$('bulk-count');
-  if(!pref){ c.textContent='Введіть початок артикулу.'; bulkMatched=[]; return; }
+  if(!pref){ c.textContent='Введіть початок артикулу.'; bulkMatched=[]; $('bulk-list-wrap').style.display='none'; return; }
   c.textContent='Шукаю…';
   const list=await ensureCatalog();
   bulkMatched=list.filter(m=> m.b && m.b.toLowerCase().indexOf(pref)===0);
   c.textContent='Знайдено: '+bulkMatched.length+' товар(ів).';
+  // список із галочками (усі вибрані за замовчуванням)
+  const box=$('bulk-list');
+  box.innerHTML=bulkMatched.map((m,i)=>
+    '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;border-bottom:1px solid #eef1f5;font-size:13.5px;cursor:pointer">'+
+      '<input type="checkbox" class="bulk-chk" data-i="'+i+'" checked>'+
+      (m.img?'<img src="'+esc(m.img)+'" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:0 0 34px">':'<span style="width:34px;flex:0 0 34px"></span>')+
+      '<span style="flex:1"><b>'+esc(m.b)+'</b> — '+esc(m.n||'')+'</span>'+
+    '</label>').join('') || '<div class="ohint">Нічого не знайдено.</div>';
+  $('bulk-list-wrap').style.display = bulkMatched.length?'block':'none';
+  $('bulk-all').checked = true;
+  box.querySelectorAll('.bulk-chk').forEach(ch=>ch.addEventListener('change', ()=>{
+    updateBulkSel();
+    $('bulk-all').checked = bulkSelectedCount()===bulkMatched.length;
+  }));
+  updateBulkSel();
 }
 async function bulkApply(){
   const msg=$('bulk-msg');
   if(!bulkMatched.length){ msg.style.color='var(--err)'; msg.textContent='Спочатку «Знайти товари».'; return; }
+  const chosen=[];
+  document.querySelectorAll('.bulk-chk').forEach(ch=>{ if(ch.checked) chosen.push(bulkMatched[+ch.dataset.i]); });
+  if(!chosen.length){ msg.style.color='var(--err)'; msg.textContent='Не вибрано жодного товару.'; return; }
   const field=$('bulk-field').value;
   const value=$('bulk-value').value;
-  if(!confirm('Записати значення у поле для '+bulkMatched.length+' товар(ів)?')) return;
-  const items=bulkMatched.map(m=> m.e || m.k).filter(Boolean);
+  if(!confirm('Записати значення у поле для '+chosen.length+' товар(ів)?')) return;
+  const items=chosen.map(m=> m.e || m.k).filter(Boolean);
   msg.style.color='var(--dim)'; msg.textContent='Застосовую…';
   try{
     let updated=0;
@@ -547,6 +574,11 @@ $('gear').addEventListener('click', ()=>{
 });
 $('bulk-find').addEventListener('click', bulkFind);
 $('bulk-apply').addEventListener('click', bulkApply);
+$('bulk-all').addEventListener('change', ()=>{
+  const on=$('bulk-all').checked;
+  document.querySelectorAll('.bulk-chk').forEach(ch=>{ ch.checked=on; });
+  updateBulkSel();
+});
 
 // ПРИХОВАНИЙ вхід для власника: Ctrl+Alt+O  або  адреса з #admin
 document.addEventListener('keydown', (e)=>{

@@ -781,33 +781,39 @@ function imgDHash(url) {
   return new Promise(function (resolve) {
     if (!url || typeof document === 'undefined') return resolve(null);
     if (_phashCache.has(url)) return resolve(_phashCache.get(url));
-    let done = false;
+    let done = false, triedProxy = false;
     const finish = (h) => { if (done) return; done = true; _phashCache.set(url, h); if (h) savePhash(); resolve(h); };
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.decoding = 'async';
-    img.onerror = () => finish(null);
-    img.onload = function () {
-      try {
-        const W = 9, H = 8;
-        const c = document.createElement('canvas'); c.width = W; c.height = H;
-        const ctx = c.getContext('2d');
-        ctx.drawImage(img, 0, 0, W, H);
-        const d = ctx.getImageData(0, 0, W, H).data;
-        let bits = '';
-        for (let y = 0; y < H; y++) for (let x = 0; x < W - 1; x++) {
-          const i = (y * W + x) * 4, j = (y * W + x + 1) * 4;
-          const gi = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-          const gj = d[j] * 0.299 + d[j + 1] * 0.587 + d[j + 2] * 0.114;
-          bits += (gi > gj ? '1' : '0');
-        }
-        finish(bits);
-      } catch (e) { finish(null); }
+    const proxyUrl = (cfg && cfg.url) ? (cfg.url.replace(/\/+$/, '') + '/img?u=' + encodeURIComponent(url)) : null;
+    const fallback = () => {
+      if (!triedProxy && proxyUrl) { triedProxy = true; attempt(proxyUrl); }
+      else finish(null);
     };
-    img.src = (cfg && cfg.url)
-      ? (cfg.url.replace(/\/+$/, '') + '/img?u=' + encodeURIComponent(url))
-      : url;
-    setTimeout(() => finish(null), 6000);
+    function attempt(src) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.decoding = 'async';
+      img.onerror = fallback;
+      img.onload = function () {
+        try {
+          const W = 9, H = 8;
+          const c = document.createElement('canvas'); c.width = W; c.height = H;
+          const ctx = c.getContext('2d');
+          ctx.drawImage(img, 0, 0, W, H);
+          const d = ctx.getImageData(0, 0, W, H).data;   // бросит ошибку при CORS-запрете
+          let bits = '';
+          for (let y = 0; y < H; y++) for (let x = 0; x < W - 1; x++) {
+            const i = (y * W + x) * 4, j = (y * W + x + 1) * 4;
+            const gi = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+            const gj = d[j] * 0.299 + d[j + 1] * 0.587 + d[j + 2] * 0.114;
+            bits += (gi > gj ? '1' : '0');
+          }
+          finish(bits);
+        } catch (e) { fallback(); }   // не прочиталось напрямую — пробуем через прокси
+      };
+      img.src = src;
+    }
+    attempt(url);                     // сначала НАПРЯМУЮ (как было, для Prom работает)
+    setTimeout(() => finish(null), 7000);
   });
 }
 // параллельная загрузка отпечатков (пул воркеров)

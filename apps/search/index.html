@@ -75,8 +75,8 @@
   .chartbtn{display:inline-block;margin:10px 8px 0 0;font-size:15px;font-weight:600;border:0;border-radius:10px;
     padding:10px 18px;background:#0f766e;color:#fff;cursor:pointer}
   .chartbtn:hover{background:#0b5f58}
-  .gear{position:absolute;top:14px;right:16px;font-size:20px;background:none;border:0;cursor:pointer;opacity:.35}
-  .gear:hover{opacity:.8}
+  .gear{display:none;position:absolute;top:14px;right:16px;font-size:20px;background:none;border:0;cursor:pointer;opacity:.5}
+  .gear:hover{opacity:1}
   .ownerbox{margin-top:12px;padding:12px;border:1px dashed var(--accent);border-radius:10px;background:#f5f8ff}
   .ownerbox label{display:block;font-size:12.5px;color:var(--dim);margin:8px 0 3px}
   .ownerbox input[type=text]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px}
@@ -88,7 +88,7 @@
 </head>
 <body>
 <div class="wrap">
-  <button id="gear" class="gear" title="Режим власника">⚙</button>
+  <button id="gear" class="gear" title="Вийти з режиму власника">⚙</button>
   <h1>Пошук товару</h1>
   <p class="sub">Введіть артикул або назву — покажемо фото, назву, опис і наявність.</p>
 
@@ -137,7 +137,7 @@ function fullImg(u){
   }
   return u;
 }
-let OWNER = !!localStorage.getItem('search:pass');
+let OWNER = false;   // вмикається лише після перевірки пароля на сервері
 let currentProduct = null;
 let pendingCharts = [];    // текущий набор фото сетки (dataURL), до 2 штук
 
@@ -421,7 +421,7 @@ function renderResults(matches, total){
   $('result').innerHTML='<div class="results">'+html+'</div>';
   document.querySelectorAll('.ritem').forEach(b=>b.addEventListener('click',()=>openResult(b.dataset.k)));
   $('status').style.display='block';
-  setStatus('Знайдено за назвою: '+total+(total>matches.length?(' (показані перші '+matches.length+')'):'')+'. Натисніть на товар.');
+  setStatus('Знайдено: '+total+(total>matches.length?(' (показані перші '+matches.length+')'):'')+'. Натисніть на товар, щоб побачити параметри.');
 }
 async function openResult(key){
   $('result').innerHTML=''; setStatus('Відкриваю…'); $('status').style.display='block';
@@ -440,16 +440,23 @@ async function doSearch(){
   if(!q){ setStatus('Введіть артикул або назву.'); return; }
   $('go').disabled=true; $('result').innerHTML=''; setStatus('Шукаю…'); $('status').style.display='block';
   try{
-    // 1) точный поиск по артикулу
-    const data=await lookup(q);
-    if(data && data.found && data.product){ $('status').style.display='none'; render(data.product); return; }
-
-    // 2) поиск по названию (и по части артикула) в списке
     const list=await ensureCatalog();
     const ql=q.toLowerCase();
-    const found=list.filter(m=> (m.n&&m.n.toLowerCase().indexOf(ql)!==-1) || (m.b&&m.b.toLowerCase().indexOf(ql)!==-1));
+    // збіги за артикулом або назвою (показуємо ВСІ, зокрема з однаковим артикулом)
+    let found=list.filter(m=> (m.b&&m.b.toLowerCase().indexOf(ql)!==-1) || (m.n&&m.n.toLowerCase().indexOf(ql)!==-1));
+
+    // якщо підрядком нічого — пробуємо точний артикул (розмірні хвости qN/…M/… 26)
+    if(!found.length){
+      const data=await lookup(q);
+      if(data && data.found && data.product){
+        const base=(data.product.base||'').toLowerCase();
+        found=list.filter(m=> m.b && m.b.toLowerCase()===base);
+        if(!found.length){ $('status').style.display='none'; render(data.product); return; }
+      }
+    }
+
     if(found.length===1){ await openResult(found[0].k||found[0].b); return; }
-    if(found.length>1){ renderResults(found.slice(0,60), found.length); return; }
+    if(found.length>1){ renderResults(found.slice(0,100), found.length); return; }
     setStatus('Нічого не знайдено за запитом «'+q+'». Перевірте артикул/назву або оновіть публікацію.', true);
   }catch(e){ setStatus('Помилка зв\'язку: '+e.message, true); }
   finally{ $('go').disabled=false; }
@@ -474,7 +481,30 @@ document.addEventListener('paste', async (e)=>{
 
 /* ---- масове редагування (режим власника) ---- */
 let bulkMatched=[];
-function updateOwnerUI(){ const b=$('bulkbox'); if(b) b.style.display=OWNER?'block':'none'; }
+function updateOwnerUI(){
+  const b=$('bulkbox'); if(b) b.style.display=OWNER?'block':'none';
+  const g=$('gear'); if(g) g.style.display=OWNER?'block':'none';   // шестерня — тільки для входу власника (вихід)
+}
+// перевірка пароля на сервері (щоб панель не відкривалась випадковим значенням)
+async function verifyPass(pass){
+  try{
+    const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/ping',{
+      method:'POST', headers:{'Content-Type':'application/json','X-App-Password':pass}, body:'{}'
+    });
+    const j=await res.json().catch(()=>({}));
+    return res.ok && j && j.ok;
+  }catch(e){ return false; }
+}
+async function enterOwner(){
+  const pass=prompt('Пароль власника:');
+  if(!pass) return;
+  if(await verifyPass(pass)){
+    localStorage.setItem('search:pass', pass); OWNER=true; updateOwnerUI();
+    if(currentProduct) render(currentProduct);
+  } else {
+    alert('Невірний пароль.');
+  }
+}
 async function bulkFind(){
   const pref=($('bulk-prefix').value||'').trim().toLowerCase();
   const c=$('bulk-count');
@@ -510,17 +540,29 @@ async function bulkApply(){
 }
 
 /* ---- вход/выход из режима владельца (шестерёнка) ---- */
+// вихід із режиму власника (шестерня видима лише власнику)
 $('gear').addEventListener('click', ()=>{
-  if(OWNER){
-    if(confirm('Вийти з режиму власника?')){ localStorage.removeItem('search:pass'); OWNER=false; $('gear').style.color=''; updateOwnerUI(); if(currentProduct) render(currentProduct); }
-    return;
-  }
-  const p=prompt('Пароль власника (APP_PASSWORD):');
-  if(p){ localStorage.setItem('search:pass', p); OWNER=true; $('gear').style.color='#2563eb'; updateOwnerUI(); if(currentProduct) render(currentProduct); }
+  if(!OWNER) return;
+  if(confirm('Вийти з режиму власника?')){ localStorage.removeItem('search:pass'); OWNER=false; updateOwnerUI(); if(currentProduct) render(currentProduct); }
 });
 $('bulk-find').addEventListener('click', bulkFind);
 $('bulk-apply').addEventListener('click', bulkApply);
-if(OWNER) $('gear').style.color='#2563eb';
+
+// ПРИХОВАНИЙ вхід для власника: Ctrl+Alt+O  або  адреса з #admin
+document.addEventListener('keydown', (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.altKey && (e.key==='o'||e.key==='O'||e.code==='KeyO')){ e.preventDefault(); if(!OWNER) enterOwner(); }
+});
+if(location.hash==='#admin'){ history.replaceState(null,'',location.pathname+location.search); enterOwner(); }
+
+// якщо пароль вже збережений у цьому браузері — тихо перевіряємо на сервері
+(async ()=>{
+  const saved=localStorage.getItem('search:pass');
+  if(saved){
+    if(await verifyPass(saved)){ OWNER=true; updateOwnerUI(); if(currentProduct) render(currentProduct); }
+    else localStorage.removeItem('search:pass');
+  }
+})();
+
 updateOwnerUI();
 $('q').focus();
 </script>

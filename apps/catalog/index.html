@@ -13,7 +13,25 @@
 <link rel="stylesheet" href="../../assets/portal.css">
 
 <style>
-  .wrap { max-width: 1500px; }
+  /* на всю ширину экрана, а не узкая середина */
+  .wrap { max-width: none; width: 100%; box-sizing: border-box;
+          padding-left: clamp(14px, 2vw, 34px); padding-right: clamp(14px, 2vw, 34px); }
+
+  /* заметки на карточке */
+  .note-btn { flex: none; background: transparent; border: 1px solid var(--border);
+              border-radius: 999px; color: var(--text-faint); cursor: pointer;
+              font-size: 13px; line-height: 1; padding: 5px 8px; }
+  .note-btn:hover { border-color: var(--border-hover); color: var(--text); }
+  .note-btn.has { border-color: var(--accent); color: var(--accent); }
+  .note-chip { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+               font-size: 11px; font-weight: 700; color: #0a0a0b; background: var(--accent);
+               vertical-align: middle; }
+
+  /* постраничная навигация */
+  .pager { display: flex; gap: 10px; align-items: center; justify-content: center;
+           flex-wrap: wrap; padding: 12px 8px 4px; }
+  .pager__info { font-size: 12.5px; color: var(--text-faint); }
+  .pager .btn--sm { padding: 6px 14px; }
 
   .panel { background: var(--panel); border: 1px solid var(--border);
            border-radius: var(--radius); padding: clamp(16px, 3vw, 24px); margin-bottom: 14px; }
@@ -204,6 +222,7 @@
       <input type="text" class="search" id="search" placeholder="Артикул или название (можно несколько артикулов через запятую)…">
       <select id="fstatus"><option value="">Все статусы</option></select>
       <select id="fcat"><option value="">Все категории</option></select>
+      <select id="fnote"><option value="">Все заметки</option></select>
       <button class="btn btn--ghost btn--sm" id="sel-all">Выбрать найденные</button>
       <button class="btn btn--ghost btn--sm" id="sel-all-loaded">Выбрать все</button>
       <button class="btn btn--ghost btn--sm" id="sel-none">Снять выбор</button>
@@ -290,6 +309,7 @@
           <input type="checkbox" id="sel-all-chk"> Выбрать все найденные
           <span class="muted">(товары применятся ко всем магазинам и размерам)</span></label>
         <div class="list" id="list"><div class="empty">Нажмите «Обновить из Prom»</div></div>
+        <div class="pager" id="pager"></div>
       </div>
       <div class="panel" id="editor"><div class="empty">Выберите позицию слева</div></div>
     </div>
@@ -336,6 +356,15 @@ let openKey = null;
 let picked = new Set();      // "store:id"
 let cacheAge = null;
 let cacheReport = [];
+
+// заметки на карточках: { ключ_карточки: "текст заметки" } — хранятся на устройстве
+const NOTES_KEY = 'tovary:prices:notes';
+let notes = loadJSON(NOTES_KEY, {});
+const saveNotes = () => saveJSON(NOTES_KEY, notes);
+
+// постраничный вывод
+const PAGE_SIZE = 150;
+let page = 0;
 
 const DB_NAME = 'tovary-prices';
 const DB_STORE = 'stores';
@@ -474,7 +503,7 @@ async function loadFromCache() {
   }
   if (!any) return false;
   cacheAge = oldest;
-  buildGroups(); showStats(); applyFilter();
+  buildGroups(); showStats(); refreshNoteFilter(); applyFilter();
   return true;
 }
 
@@ -718,7 +747,7 @@ async function loadAll() {
 
   prog.firstElementChild.style.width = '100%';
   cacheAge = Date.now();
-  buildGroups(); showStats(); applyFilter();
+  buildGroups(); showStats(); refreshNoteFilter(); applyFilter();
   if (problems.length) {
     $('stats').innerHTML += '<div class="msg msg--err">' + problems.map(escapeHtml).join('<br>') + '</div>';
   }
@@ -993,11 +1022,28 @@ $('search').addEventListener('input', function () {
 $('search').addEventListener('input', debounce(applyFilter, 250));
 $('fstatus').addEventListener('change', applyFilter);
 if ($('fcat')) $('fcat').addEventListener('change', applyFilter);
+if ($('fnote')) $('fnote').addEventListener('change', applyFilter);
+
+// заполнить выпадающий список заметок (все существующие)
+function refreshNoteFilter() {
+  const sel = $('fnote'); if (!sel) return;
+  const prev = sel.value;
+  const set = {};
+  for (const k in notes) { const t = (notes[k] || '').trim(); if (t) set[t] = (set[t] || 0) + 1; }
+  const opts = Object.keys(set).sort((a, b) => a.localeCompare(b))
+    .map(t => '<option value="' + escapeAttr(t) + '">🏷 ' + escapeHtml(t) + ' (' + set[t] + ')</option>').join('');
+  sel.innerHTML = '<option value="">Все заметки</option>' +
+    '<option value="any">📌 С любой заметкой</option>' + opts;
+  sel.value = Array.from(sel.options).some(o => o.value === prev) ? prev : '';
+  sel.style.display = opts ? '' : 'none';   // прячем, пока заметок нет
+}
 
 function applyFilter() {
+  page = 0;   // новый фильтр — на первую страницу
   const raw = $('search').value.trim().toLowerCase();
   const st = $('fstatus').value;
   const cat = $('fcat') ? $('fcat').value : '';
+  const note = $('fnote') ? $('fnote').value : '';
   // можно вписать несколько артикулов через запятую/точку с запятой/новую строку —
   // товар подойдёт, если совпал ЛЮБОЙ из них. Без разделителей — обычный поиск.
   const terms = raw.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
@@ -1009,6 +1055,11 @@ function applyFilter() {
   shown = groups.filter(function (g) {
     if (st && !STORE_KEYS.some(k => (g.stores[k] || []).some(p => (p.status || '—') === st))) return false;
     if (cat && (g.category || '') !== cat) return false;
+    if (note) {
+      const nt = (notes[g.key] || '').trim();
+      if (note === 'any') { if (!nt) return false; }
+      else if (nt !== note) return false;
+    }
     if (!terms.length) return true;
     return terms.some(q => hit(g, q));
   });
@@ -1095,10 +1146,16 @@ function priceCell(p) {
 
 function renderList() {
   const box = $('list');
+  const pagerBox = $('pager');
+  if (pagerBox) pagerBox.innerHTML = '';
   if (!groups.length) { box.innerHTML = '<div class="empty">Нажмите «Обновить из Prom»</div>'; return; }
   if (!shown.length) { box.innerHTML = '<div class="empty">Ничего не найдено</div>'; return; }
 
-  const slice = shown.slice(0, 150);
+  const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  if (page >= pageCount) page = pageCount - 1;
+  if (page < 0) page = 0;
+  const start = page * PAGE_SIZE;
+  const slice = shown.slice(start, start + PAGE_SIZE);
   box.innerHTML = slice.map(function (g, gi) {
     const pickable = groupPickable(g);
     const allPicked = pickable.length && pickable.every(it => picked.has(pickKey(it.store, it.p)));
@@ -1141,6 +1198,8 @@ function renderList() {
              rows + '</div>';
     }).join('');
 
+    const noteTxt = (notes[g.key] || '').trim();
+    const noteChip = noteTxt ? '<span class="note-chip">' + escapeHtml(noteTxt) + '</span>' : '';
     return '<div class="grp' + (openKey === g.key ? ' is-open' : '') + '">' +
       '<div class="grp__top">' +
         '<input type="checkbox" class="grp__chk" data-g="' + gi + '"' + (allPicked ? ' checked' : '') + '>' +
@@ -1148,15 +1207,15 @@ function renderList() {
           (g.image ? '<img class="grp__img" src="' + escapeAttr(g.image) + '" loading="lazy" alt="">'
                    : '<span class="grp__img"></span>') +
           '<span class="grp__body">' +
-            '<span class="grp__name">' + escapeHtml(g.name) + '</span>' +
+            '<span class="grp__name">' + escapeHtml(g.name) + noteChip + '</span>' +
             '<span class="grp__meta">' + escapeHtml(g.base) + ' · ' + counts + '</span>' +
           '</span>' +
           '<span class="grp__chev">▶</span>' +
         '</button>' +
+        '<button class="note-btn' + (noteTxt ? ' has' : '') + '" data-note="' + gi + '" title="Заметка">🏷</button>' +
       '</div>' +
       '<div class="grp__kids">' + kids + '</div></div>';
-  }).join('') + (shown.length > 150
-    ? '<div class="empty">Показано 150 из ' + shown.length + '. Уточните поиск.</div>' : '');
+  }).join('');
 
   Array.from(box.querySelectorAll('[data-open]')).forEach(function (el) {
     el.addEventListener('click', function () {
@@ -1189,6 +1248,36 @@ function renderList() {
       renderList(); renderEditor();
     });
   });
+  // заметка на карточке
+  Array.from(box.querySelectorAll('.note-btn')).forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      e.stopPropagation();
+      const g = slice[Number(el.dataset.note)];
+      const cur = notes[g.key] || '';
+      const val = prompt('Заметка для «' + g.name + '»\n(пусто — убрать заметку):', cur);
+      if (val === null) return;                 // отмена
+      const t = val.trim();
+      if (t) notes[g.key] = t; else delete notes[g.key];
+      saveNotes(); refreshNoteFilter(); renderList();
+    });
+  });
+
+  // постраничная навигация
+  if (pagerBox) {
+    if (pageCount > 1) {
+      pagerBox.innerHTML =
+        '<button class="btn btn--ghost btn--sm" id="pg-prev"' + (page <= 0 ? ' disabled' : '') + '>◀ Назад</button>' +
+        '<span class="pager__info">Стр. ' + (page + 1) + ' из ' + pageCount +
+          ' · всего ' + shown.length + '</span>' +
+        '<button class="btn btn--ghost btn--sm" id="pg-next"' + (page >= pageCount - 1 ? ' disabled' : '') + '>Вперёд ▶</button>';
+      const go = (d) => { page += d; picked.clear(); updateMass(); renderList();
+                          const l = $('list'); if (l) l.scrollTop = 0; };
+      if ($('pg-prev')) $('pg-prev').addEventListener('click', () => go(-1));
+      if ($('pg-next')) $('pg-next').addEventListener('click', () => go(1));
+    } else {
+      pagerBox.innerHTML = '<span class="pager__info">всего ' + shown.length + '</span>';
+    }
+  }
 }
 
 /* ===================================================================== */

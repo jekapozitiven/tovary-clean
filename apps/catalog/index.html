@@ -33,6 +33,24 @@
   .pager__info { font-size: 12.5px; color: var(--text-faint); }
   .pager .btn--sm { padding: 6px 14px; }
 
+  /* поднять интерфейс выше — меньше пустот сверху */
+  header.topbar { padding-top: 8px; padding-bottom: 8px; }
+  main.wrap { padding-top: 8px; }
+  #work .toolbar { margin-bottom: 8px; }
+  .opts-card { margin-bottom: 8px; }
+
+  /* массовая заметка в панели правки */
+  .w-note { width: 150px; }
+  .mass .note-apply { color: #0a0a0b; background: var(--accent); }
+
+  /* панель управления заметкой */
+  .notebar { display: none; gap: 10px; flex-wrap: wrap; align-items: center;
+             padding: 10px 14px; margin-bottom: 8px; border-radius: var(--radius-sm);
+             background: rgba(214,242,74,.06); border: 1px solid rgba(214,242,74,.25); }
+  .notebar.is-on { display: flex; }
+  .notebar__t { font-size: 13.5px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+  .notebar select { width: auto; }
+
   .panel { background: var(--panel); border: 1px solid var(--border);
            border-radius: var(--radius); padding: clamp(16px, 3vw, 24px); margin-bottom: 14px; }
   .panel h2 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
@@ -104,10 +122,21 @@
   .progress { height: 3px; background: #1e1e22; border-radius: 999px; overflow: hidden; margin-bottom: 10px; }
   .progress i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
 
-  .cols { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(0,1fr); gap: 14px; align-items: start; }
-  @media (max-width: 1050px) { .cols { grid-template-columns: 1fr; } }
+  /* список на всю ширину; редактор появляется справа только при выборе позиции */
+  .cols { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+  .cols.has-editor { grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); }
+  .cols:not(.has-editor) #editor { display: none; }
+  @media (max-width: 1050px) { .cols.has-editor { grid-template-columns: 1fr; } }
 
-  .list { max-height: 74vh; overflow-y: auto; }
+  .list { max-height: calc(100vh - 230px); overflow-y: auto; }
+
+  /* больше товаров сразу: карточки в 2 колонки на широком экране */
+  @media (min-width: 1250px) {
+    .cols:not(.has-editor) .list { display: grid; grid-template-columns: 1fr 1fr;
+                                   column-gap: 16px; align-content: start; }
+    .cols:not(.has-editor) .list .grp.is-open { grid-column: 1 / -1; }
+    .cols:not(.has-editor) .list .empty { grid-column: 1 / -1; }
+  }
 
   .grp { border-bottom: 1px solid var(--border); }
   .grp:last-child { border-bottom: none; }
@@ -298,6 +327,21 @@
         </select></label>
       <button class="btn" id="m-apply">Применить к выбранным</button>
       <button class="btn btn--ghost btn--sm" id="m-clear-disc">Убрать скидку</button>
+      <label class="f"><span>Заметка (новая или из списка)</span>
+        <input type="text" class="w-note" id="m-note" list="note-list" placeholder="напр. вернуть"></label>
+      <datalist id="note-list"></datalist>
+      <button class="btn btn--sm note-apply" id="m-note-apply">🏷 Пометить выбранные</button>
+    </div>
+
+    <!-- Управление выбранной заметкой -->
+    <div class="notebar" id="notebar">
+      <span class="notebar__t" id="notebar-t"></span>
+      <button class="btn btn--ghost btn--sm" id="nb-del">Удалить заметку</button>
+      <span class="muted">с выбранными:</span>
+      <button class="btn btn--ghost btn--sm" id="nb-remove">Убрать из заметки</button>
+      <span class="step">перенести в
+        <input type="text" id="nb-move" list="note-list" placeholder="другая заметка" style="width:150px"></span>
+      <button class="btn btn--ghost btn--sm" id="nb-move-btn">Перенести</button>
     </div>
 
     <div class="progress hidden" id="prog"><i></i></div>
@@ -1036,7 +1080,71 @@ function refreshNoteFilter() {
     '<option value="any">📌 С любой заметкой</option>' + opts;
   sel.value = Array.from(sel.options).some(o => o.value === prev) ? prev : '';
   sel.style.display = opts ? '' : 'none';   // прячем, пока заметок нет
+  const dl = $('note-list');
+  if (dl) dl.innerHTML = Object.keys(set).sort((a, b) => a.localeCompare(b))
+    .map(t => '<option value="' + escapeAttr(t) + '">').join('');
 }
+
+// ключи карточек, у которых сейчас выбрана хоть одна позиция
+function pickedGroupKeys() {
+  const keys = new Set();
+  for (const g of groups) {
+    for (const k of STORE_KEYS) {
+      if ((g.stores[k] || []).some(p => picked.has(pickKey(k, p)))) { keys.add(g.key); break; }
+    }
+  }
+  return keys;
+}
+
+// пометить выбранные товары заметкой
+function applyNoteToPicked(text) {
+  const t = (text || '').trim();
+  const keys = pickedGroupKeys();
+  if (!keys.size) { alert('Сначала отметьте товары галочками.'); return; }
+  keys.forEach(k => { if (t) notes[k] = t; else delete notes[k]; });
+  saveNotes(); refreshNoteFilter(); renderNoteBar(); renderList();
+}
+
+// панель управления заметкой (видна, когда выбрана конкретная заметка в фильтре)
+function renderNoteBar() {
+  const bar = $('notebar'); if (!bar) return;
+  const val = $('fnote') ? $('fnote').value : '';
+  const isNote = val && val !== 'any';
+  bar.classList.toggle('is-on', !!isNote);
+  if (isNote) {
+    let cnt = 0; for (const k in notes) if ((notes[k] || '').trim() === val) cnt++;
+    $('notebar-t').textContent = 'Заметка «' + val + '» · ' + cnt + ' тов.';
+  }
+}
+
+if ($('m-note-apply')) $('m-note-apply').addEventListener('click', function () {
+  const t = ($('m-note').value || '').trim();
+  if (!t) { alert('Впишите текст заметки.'); return; }
+  applyNoteToPicked(t);
+});
+if ($('nb-remove')) $('nb-remove').addEventListener('click', function () {
+  const cur = $('fnote').value;
+  const keys = pickedGroupKeys();
+  if (!keys.size) { alert('Отметьте товары галочками.'); return; }
+  keys.forEach(k => { if ((notes[k] || '').trim() === cur) delete notes[k]; });
+  saveNotes(); picked.clear(); updateMass(); refreshNoteFilter(); applyFilter();
+});
+if ($('nb-move-btn')) $('nb-move-btn').addEventListener('click', function () {
+  const dest = ($('nb-move').value || '').trim();
+  if (!dest) { alert('Впишите, в какую заметку перенести.'); return; }
+  const keys = pickedGroupKeys();
+  if (!keys.size) { alert('Отметьте товары галочками.'); return; }
+  keys.forEach(k => { notes[k] = dest; });
+  saveNotes(); picked.clear(); updateMass(); refreshNoteFilter(); applyFilter();
+});
+if ($('nb-del')) $('nb-del').addEventListener('click', function () {
+  const cur = $('fnote').value;
+  if (!cur || cur === 'any') return;
+  let cnt = 0; for (const k in notes) if ((notes[k] || '').trim() === cur) cnt++;
+  if (!confirm('Удалить заметку «' + cur + '» у всех ' + cnt + ' товаров? Сами товары не тронутся.')) return;
+  for (const k in notes) if ((notes[k] || '').trim() === cur) delete notes[k];
+  saveNotes(); $('fnote').value = ''; refreshNoteFilter(); applyFilter();
+});
 
 function applyFilter() {
   page = 0;   // новый фильтр — на первую страницу
@@ -1071,6 +1179,7 @@ function applyFilter() {
       groupPickable(g).every(it => picked.has(pickKey(it.store, it.p))));
     if ($('sel-all-chk')) $('sel-all-chk').checked = !!allSel;
   }
+  renderNoteBar();
   renderList();
 }
 
@@ -1369,6 +1478,8 @@ function finalPrice(price, disc) {
 /* ===================================================================== */
 function renderEditor() {
   const box = $('editor');
+  const cols = document.querySelector('.cols');
+  if (cols) cols.classList.toggle('has-editor', !!current);
   if (!current) { box.innerHTML = '<div class="empty">Выберите позицию слева</div>'; return; }
   const store = current.store, p = current.product;
   const d = p.discount || null;
@@ -1388,6 +1499,8 @@ function renderEditor() {
   const sibs = siblingsOf(store, p);
 
   box.innerHTML =
+    '<div class="bar" style="border:none;margin:0 0 10px;padding:0;justify-content:flex-end;">' +
+      '<button class="btn btn--ghost btn--sm" id="e-close">✕ Закрыть</button></div>' +
     '<div class="ed__head">' +
       (firstImage(p) ? '<img class="ed__thumb" src="' + escapeAttr(firstImage(p)) + '" alt="">' : '<span class="ed__thumb"></span>') +
       '<div><div class="ed__title">' + escapeHtml(p.name || '') + '</div>' +
@@ -1445,6 +1558,10 @@ function renderEditor() {
   }
   ['e-price', 'e-disc', 'e-disc-type'].forEach(id => $(id).addEventListener('input', upd));
   upd();
+
+  if ($('e-close')) $('e-close').addEventListener('click', function () {
+    current = null; renderList(); renderEditor();
+  });
 
   $('save').addEventListener('click', function () {
     const price = $('e-price').value.trim();

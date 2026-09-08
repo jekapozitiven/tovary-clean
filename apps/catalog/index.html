@@ -23,9 +23,22 @@
               font-size: 13px; line-height: 1; padding: 5px 8px; }
   .note-btn:hover { border-color: var(--border-hover); color: var(--text); }
   .note-btn.has { border-color: var(--accent); color: var(--accent); }
-  .note-chip { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  .note-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px;
+               padding: 1px 4px 1px 8px; border-radius: 999px;
                font-size: 11px; font-weight: 700; color: #0a0a0b; background: var(--accent);
                vertical-align: middle; }
+  .note-x { display: inline-flex; align-items: center; justify-content: center;
+            width: 15px; height: 15px; border-radius: 50%; cursor: pointer;
+            background: rgba(0,0,0,.18); color: #0a0a0b; font-size: 10px; }
+  .note-x:hover { background: rgba(0,0,0,.4); color: #fff; }
+
+  /* аккуратные выпадающие списки */
+  select { appearance: none; -webkit-appearance: none; cursor: pointer;
+           padding-right: 30px; border-radius: 8px;
+           background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a8a8a2' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+           background-repeat: no-repeat; background-position: right 10px center; }
+  select:hover { border-color: var(--border-hover); }
+  select option { background: #141416; color: var(--text); }
 
   /* постраничная навигация */
   .pager { display: flex; gap: 10px; align-items: center; justify-content: center;
@@ -1314,7 +1327,8 @@ function renderList() {
     }).join('');
 
     const noteTxt = (notes[g.key] || '').trim();
-    const noteChip = noteTxt ? '<span class="note-chip">' + escapeHtml(noteTxt) + '</span>' : '';
+    const noteChip = noteTxt ? '<span class="note-chip">' + escapeHtml(noteTxt) +
+      '<span class="note-x" data-delnote="' + gi + '" title="Убрать заметку">✕</span></span>' : '';
     return '<div class="grp' + (openKey === g.key ? ' is-open' : '') + '">' +
       '<div class="grp__top">' +
         '<input type="checkbox" class="grp__chk" data-g="' + gi + '"' + (allPicked ? ' checked' : '') + '>' +
@@ -1361,6 +1375,15 @@ function renderList() {
       const store = el.dataset.s;
       current = { store: store, product: g.stores[store][Number(el.dataset.i)] };
       renderList(); renderEditor();
+    });
+  });
+  // убрать заметку крестиком на метке
+  Array.from(box.querySelectorAll('.note-x')).forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      e.stopPropagation();
+      const g = slice[Number(el.dataset.delnote)];
+      delete notes[g.key];
+      saveNotes(); refreshNoteFilter(); renderNoteBar(); applyFilter();
     });
   });
   // заметка на карточке

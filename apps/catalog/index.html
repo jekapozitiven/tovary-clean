@@ -350,6 +350,7 @@
         <input type="text" class="w-note" id="m-note" list="note-list" placeholder="напр. вернуть"></label>
       <datalist id="note-list"></datalist>
       <button class="btn btn--sm note-apply" id="m-note-apply">🏷 Пометить выбранные</button>
+      <button class="btn btn--ghost btn--sm" id="m-note-clear">✕ Убрать заметку</button>
     </div>
 
     <!-- Управление выбранной заметкой -->
@@ -1140,6 +1141,13 @@ if ($('m-note-apply')) $('m-note-apply').addEventListener('click', function () {
   const t = ($('m-note').value || '').trim();
   if (!t) { alert('Впишите текст заметки.'); return; }
   applyNoteToPicked(t);
+});
+if ($('m-note-clear')) $('m-note-clear').addEventListener('click', function () {
+  const keys = pickedGroupKeys();
+  if (!keys.size) { alert('Сначала отметьте товары галочками.'); return; }
+  if (!confirm('Убрать заметку с ' + keys.size + ' выбранных товаров?')) return;
+  keys.forEach(k => delete notes[k]);
+  saveNotes(); refreshNoteFilter(); renderNoteBar(); applyFilter();
 });
 if ($('nb-remove')) $('nb-remove').addEventListener('click', function () {
   const cur = $('fnote').value;

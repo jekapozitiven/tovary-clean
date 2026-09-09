@@ -363,7 +363,7 @@
       <div class="panel" style="padding:6px;">
         <label class="chk" id="sel-all-wrap" style="padding:6px 8px; display:none;">
           <input type="checkbox" id="sel-all-chk"> Выбрать все найденные
-          <span class="muted">(товары применятся ко всем магазинам и размерам)</span></label>
+          <span class="muted">(галочка магазина — только он; галочка карточки — все магазины)</span></label>
         <div class="list" id="list"><div class="empty">Нажмите «Обновить из Prom»</div></div>
         <div class="pager" id="pager"></div>
       </div>
@@ -1206,19 +1206,30 @@ function applyFilter() {
 /* ===================================================================== */
 function pickKey(store, p) { return store + ':' + p.id; }
 
-/* какие позиции группы участвуют в выделении: главный магазин, иначе первый доступный */
+/* представитель магазина в карточке — самый короткий по названию товар */
+function storeRep(g, store) {
+  const arr = g.stores[store] || [];
+  if (!arr.length) return null;
+  let mi = 0;
+  for (let i = 1; i < arr.length; i++) if ((arr[i].name || '').length < (arr[mi].name || '').length) mi = i;
+  return { store: store, p: arr[mi] };
+}
+
+/* какие позиции даёт галочка КАРТОЧКИ:
+   — «Дублировать на другие магазины» включено → все магазины карточки;
+   — выключено → только главный (Black Street), иначе первый доступный.
+   Галочку одного магазина ставит пользователь отдельно (тогда меняется только он). */
 function groupPickable(g) {
-  const store = (g.stores[MAIN] && g.stores[MAIN].length) ? MAIN
-              : STORE_KEYS.find(k => (g.stores[k] || []).length);
-  if (!store) return [];
-  const arr = g.stores[store];
-  // берём только главный товар — самый короткий по названию.
-  // Разновидности подхватит переключатель «Применять ко всем разновидностям».
-  let mainIdx = 0;
-  for (let i = 1; i < arr.length; i++) {
-    if ((arr[i].name || '').length < (arr[mainIdx].name || '').length) mainIdx = i;
+  const useStores = $('opt-stores') ? $('opt-stores').checked : true;
+  const out = [];
+  if (useStores) {
+    for (const st of STORE_KEYS) { const r = storeRep(g, st); if (r) out.push(r); }
+  } else {
+    const st = (g.stores[MAIN] && g.stores[MAIN].length) ? MAIN
+             : STORE_KEYS.find(k => (g.stores[k] || []).length);
+    const r = st ? storeRep(g, st) : null; if (r) out.push(r);
   }
-  return [{ store: store, p: arr[mainIdx] }];
+  return out;
 }
 
 function updateMass() {
@@ -1759,22 +1770,15 @@ async function applyChanges(items, vals, msgBox) {
   }
 
   for (const it of items) {
-    // находим ВЫБРАННУЮ карточку (группу), где лежит этот товар.
-    // Правим ТОЛЬКО товары этой карточки (+ их вариационную семью) — не другие
-    // товары с тем же артикулом.
+    // находим карточку (группу), где лежит этот товар.
     const g = groups.find(gr => (gr.stores[it.store] || []).some(p => String(p.id) === String(it.product.id)))
               || { stores: { [it.store]: [it.product] } };
 
-    // выбранный магазин — все товары карточки + вся вариационная семья, без шага
-    (g.stores[it.store] || [it.product]).forEach(pr => addWithFamily(it.store, pr, 0));
-
-    // дублирование на другие магазины
-    if (useStores && it.store === MAIN) {
-      for (const st of STORE_KEYS.filter(k => k !== MAIN)) {
-        const step = -stepFor(st);   // положительный шаг = насколько дешевле Black Street
-        (g.stores[st] || []).forEach(pr => addWithFamily(st, pr, step));
-      }
-    }
+    // меняем ТОЛЬКО выбранный магазин (его товары в карточке + их размеры).
+    // Другие магазины трогаются только если пользователь их тоже отметил
+    // (галочка магазина или галочка карточки при «Дублировать на другие магазины»).
+    const step = (it.store === MAIN) ? 0 : -stepFor(it.store);
+    (g.stores[it.store] || [it.product]).forEach(pr => addWithFamily(it.store, pr, step));
   }
 
   // «Обновлять»: снятые магазины не трогаем (ни запись, ни отчёт)

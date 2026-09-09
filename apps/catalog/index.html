@@ -144,15 +144,7 @@
   .cols:not(.has-editor) #editor { display: none; }
   @media (max-width: 1050px) { .cols.has-editor { grid-template-columns: 1fr; } }
 
-  .list { max-height: calc(100vh - 230px); overflow-y: auto; }
-
-  /* больше товаров сразу: карточки в 2 колонки на широком экране */
-  @media (min-width: 1250px) {
-    .cols:not(.has-editor) .list { display: grid; grid-template-columns: 1fr 1fr;
-                                   column-gap: 16px; align-content: start; }
-    .cols:not(.has-editor) .list .grp.is-open { grid-column: 1 / -1; }
-    .cols:not(.has-editor) .list .empty { grid-column: 1 / -1; }
-  }
+  .list { max-height: calc(100vh - 210px); overflow-y: auto; }
 
   .grp { border-bottom: 1px solid var(--border); }
   .grp:last-child { border-bottom: none; }
@@ -970,25 +962,22 @@ function buildGroups() {
     byId[s] = new Map();
     for (const p of (byStore[s] || [])) byId[s].set(String(p.id), p);
   }
-  // Главный ключ карточки — ЛИСТИНГ (variation_group_id из Prom).
-  // Каждый листинг = своя карточка. Разные фото на сайтах — это разные
-  // листинги, значит и разные карточки. Магазины связываются между собой
-  // только по надёжной связи Prom (external_id) при совпадении артикула.
+  // Главный ключ карточки — АРТИКУЛ. Один артикул = одна карточка; все магазины
+  // и все листинги под этим артикулом собираются в неё. Внутри карточки (при
+  // раскрытии) показываем разбивку по магазинам и по фото/листингам.
   function localKey(p, store) {
-    if (p.variation_group_id != null) return 'v' + p.variation_group_id;
     const s = baseSku(p.sku, store);
-    return s ? ('s' + s) : ('p' + p.id);
+    if (s) return 's' + s;
+    if (p.variation_group_id != null) return 'v' + p.variation_group_id;
+    return 'p' + p.id;
   }
   function globalKey(p, store) {
     if (store === MAIN) return localKey(p, store);
     const s = baseSku(p.sku, store);
-    // связь Prom — только если базовый артикул совпадает (кривые связи игнорируем)
+    if (s) return 's' + s;   // один артикул = одна карточка
+    // артикула нет — пробуем надёжную связь Prom, иначе своя карточка
     const ext = p.external_id != null ? String(p.external_id) : '';
-    if (ext) {
-      const src = byId[MAIN].get(ext);
-      if (src && baseSku(src.sku, MAIN) === s) return localKey(src, MAIN);
-    }
-    // иначе — свой листинг, своя карточка
+    if (ext) { const src = byId[MAIN].get(ext); if (src) return localKey(src, MAIN); }
     return localKey(p, store);
   }
 
@@ -1083,10 +1072,10 @@ function debounce(fn, ms) { let t; return function () { clearTimeout(t); t = set
 $('search').addEventListener('input', function () {
   if (picked.size) { picked.clear(); updateMass(); }
 });
-$('search').addEventListener('input', debounce(applyFilter, 250));
-$('fstatus').addEventListener('change', applyFilter);
-if ($('fcat')) $('fcat').addEventListener('change', applyFilter);
-if ($('fnote')) $('fnote').addEventListener('change', applyFilter);
+$('search').addEventListener('input', debounce(resetAndFilter, 250));
+$('fstatus').addEventListener('change', resetAndFilter);
+if ($('fcat')) $('fcat').addEventListener('change', resetAndFilter);
+if ($('fnote')) $('fnote').addEventListener('change', resetAndFilter);
 
 // заполнить выпадающий список заметок (все существующие)
 function refreshNoteFilter() {
@@ -1173,8 +1162,10 @@ if ($('nb-del')) $('nb-del').addEventListener('click', function () {
   saveNotes(); $('fnote').value = ''; refreshNoteFilter(); applyFilter();
 });
 
+// смена фильтра/поиска — на первую страницу; обычная перерисовка страницу сохраняет
+function resetAndFilter() { page = 0; applyFilter(); }
+
 function applyFilter() {
-  page = 0;   // новый фильтр — на первую страницу
   const raw = $('search').value.trim().toLowerCase();
   const st = $('fstatus').value;
   const cat = $('fcat') ? $('fcat').value : '';
@@ -1309,28 +1300,41 @@ function renderList() {
       }
       const suf = (STORES[k].suffix || '').trim();
       const clean = (n) => { let x = (n || '').trim(); if (suf && x.endsWith(suf)) x = x.slice(0, -suf.length).trim(); return x; };
-      let mainIdx = 0;
-      for (let i = 1; i < arr.length; i++) if (clean(arr[i].name).length < clean(arr[mainIdx].name).length) mainIdx = i;
-      const mainName = clean(arr[mainIdx].name);
 
-      // показываем только главный товар — разновидности меняются вместе с ним
-      const p = arr[mainIdx];
-      const key = pickKey(k, p);
-      const active = (current && current.store === k && current.product.id === p.id) ? ' is-active' : '';
-      const kimg = firstImage(p);
-      const rows = '<div class="kid' + active + '">' +
-        '<input type="checkbox" class="kid__chk" data-key="' + escapeAttr(key) + '"' +
-          (picked.has(key) ? ' checked' : '') + '>' +
-        '<button class="kid__btn" data-g="' + gi + '" data-s="' + k + '" data-i="' + mainIdx + '">' +
-          (kimg ? '<img class="kid__img" src="' + escapeAttr(kimg) + '" loading="lazy" alt="">'
-                : '<span class="kid__img"></span>') +
-          '<span class="dot ' + (isVisible(p) ? 'dot-on' : 'dot-off') + '"></span>' +
-          '<span class="kid__name">' + escapeHtml(p.name || '') + '</span>' +
-          priceCell(p) +
-        '</button></div>';
+      // делим товары магазина на ЛИСТИНГИ (по variation_group_id, иначе по имени+фото) —
+      // это и есть разделение «по фото»: каждый листинг со своим фото отдельной строкой
+      const byListing = new Map();
+      arr.forEach(function (p) {
+        const lk = (p.variation_group_id != null)
+          ? ('v' + p.variation_group_id)
+          : ('n' + clean(p.name) + '|' + firstImage(p));
+        if (!byListing.has(lk)) byListing.set(lk, []);
+        byListing.get(lk).push(p);
+      });
 
-      const more = arr.length > 1 ? ' <span style="opacity:.6">+ ' + (arr.length - 1) + ' размер.</span>' : '';
-      return '<div class="sb"><div class="sb__t"><b>' + STORES[k].title + '</b>' + more + '</div>' +
+      let rows = '';
+      byListing.forEach(function (sub) {
+        let mi = 0;
+        for (let i = 1; i < sub.length; i++) if (clean(sub[i].name).length < clean(sub[mi].name).length) mi = i;
+        const p = sub[mi];
+        const realIdx = arr.indexOf(p);
+        const key = pickKey(k, p);
+        const active = (current && current.store === k && current.product.id === p.id) ? ' is-active' : '';
+        const kimg = firstImage(p);
+        const more = sub.length > 1 ? ' <span style="opacity:.6">+ ' + (sub.length - 1) + ' размер.</span>' : '';
+        rows += '<div class="kid' + active + '">' +
+          '<input type="checkbox" class="kid__chk" data-key="' + escapeAttr(key) + '"' +
+            (picked.has(key) ? ' checked' : '') + '>' +
+          '<button class="kid__btn" data-g="' + gi + '" data-s="' + k + '" data-i="' + realIdx + '">' +
+            (kimg ? '<img class="kid__img" src="' + escapeAttr(kimg) + '" loading="lazy" alt="">'
+                  : '<span class="kid__img"></span>') +
+            '<span class="dot ' + (isVisible(p) ? 'dot-on' : 'dot-off') + '"></span>' +
+            '<span class="kid__name">' + escapeHtml(p.name || '') + '</span>' +
+            priceCell(p) + more +
+          '</button></div>';
+      });
+      const photoCnt = byListing.size > 1 ? ' <span style="opacity:.6">· ' + byListing.size + ' фото</span>' : '';
+      return '<div class="sb"><div class="sb__t"><b>' + STORES[k].title + '</b>' + photoCnt + '</div>' +
              rows + '</div>';
     }).join('');
 
@@ -1620,9 +1624,18 @@ function renderEditor() {
 /* ===================================================================== */
 /*  items: [{store, product}]                                             */
 /*  vals:  { price|null, discount: 'clear'|{...}|null, presence, status }  */
+// отмена применения по API
+let applyCancel = false;
+function cancelApply() {
+  applyCancel = true;
+  const b = document.getElementById('apply-cancel');
+  if (b) { b.disabled = true; b.textContent = 'Останавливаю…'; }
+}
+
 async function applyChanges(items, vals, msgBox) {
   const useVariants = $('opt-variants').checked;
   const useStores = $('opt-stores').checked;
+  applyCancel = false;
 
   // собираем задания по магазинам
   const jobs = {};
@@ -1660,6 +1673,25 @@ async function applyChanges(items, vals, msgBox) {
     return { value: dval, type: vals.discount.type, date_start: promDate(from), date_end: promDate(to) };
   }
 
+  // существующая скидка товара с продлением дат (Prom не отдаёт старые даты,
+  // поэтому ставим свежие: из панели, иначе сегодня → +30 дней)
+  function existingDiscount(prod, step) {
+    const ed = prod.discount;
+    const ev = ed ? Number(ed.value != null ? ed.value : ed.amount) : 0;
+    if (!(ev > 0)) return undefined;
+    const type = ed.type === 'percent' ? 'percent' : 'amount';
+    // даты продления — как задал пользователь (поля «Скидка с/по»),
+    // иначе панель «Параметры применения», иначе сегодня → +30 дней
+    let from = (vals.discDates && vals.discDates.from) || defStart();
+    let to   = (vals.discDates && vals.discDates.to)   || defEnd();
+    const iso = (d) => d.toISOString().slice(0, 10);
+    if (!from) from = iso(new Date());
+    if (!to)   to   = iso(new Date(Date.now() + 30 * 86400000));
+    let dval = ev;
+    if (step && type === 'amount') dval = money(ev - step);
+    return { value: dval, type: type, date_start: promDate(from), date_end: promDate(to) };
+  }
+
   // store — магазин, prod — товар, step — шаг цены этого магазина (0 у выбранного)
   function addJob(store, prod, step) {
     const key = store + ':' + prod.id;
@@ -1686,11 +1718,26 @@ async function applyChanges(items, vals, msgBox) {
       }
       if (vals.discount === 'clear') o.discount = null;
       else if (hasDisc) o.discount = discountObj(step);
+      // ПУБЛИКАЦИЯ: если скидку не трогали, но у товара она есть — подтягиваем/продлеваем,
+      // иначе Prom иногда публикует товар без скидки.
+      if (vals.status === 'on_display' && o.discount === undefined) {
+        const ex = existingDiscount(prod, step);
+        if (ex) o.discount = ex;
+      }
     }
 
     if (vals.presence) o.presence = vals.presence;
     if (vals.status) o.status = vals.status;
-    if (Object.keys(o).length > 1) jobs[store].push({ upd: o, ref: prod });
+    if (Object.keys(o).length > 1) {
+      // снимок старых значений — чтобы вернуть как было при «Отмене»
+      const orig = { id: prod.id };
+      if ('price' in o)     orig.price = prod.price;
+      if ('old_price' in o) orig.old_price = (prod.old_price != null ? prod.old_price : prod.price);
+      if ('presence' in o)  orig.presence = prod.presence;
+      if ('status' in o)    orig.status = prod.status || 'on_display';
+      if ('discount' in o)  orig.discount = existingDiscount(prod, 0) || null;
+      jobs[store].push({ upd: o, ref: prod, orig: orig, sent: false });
+    }
   }
 
   // вся вариационная семья товара в магазине: родитель + разновидности,
@@ -1739,7 +1786,11 @@ async function applyChanges(items, vals, msgBox) {
   const total = STORE_KEYS.reduce((n, k) => n + jobs[k].length, 0);
   if (!total) { showMsg(msgBox, 'warn', 'Нечего менять — не выбран ни один магазин или не заданы значения.'); return; }
 
-  showMsg(msgBox, 'warn', 'Отправляю ' + total + ' позиций…');
+  const cancelBtnHTML = () => '<br><button class="btn btn--ghost btn--sm" id="apply-cancel"' +
+    (applyCancel ? ' disabled' : '') + ' onclick="cancelApply()" style="margin-top:8px;">' +
+    (applyCancel ? 'Останавливаю…' : '✕ Отмена') + '</button>';
+
+  showMsg(msgBox, 'warn', 'Отправляю ' + total + ' позиций…' + cancelBtnHTML());
   const report = [];
   let anyFail = false, notAppliedTotal = 0;   // для кнопки-итога
 
@@ -1769,7 +1820,8 @@ async function applyChanges(items, vals, msgBox) {
   function paint() {
     const parts = STORE_KEYS.filter(k => jobs[k].length)
       .map(k => STORES[k].title + ': ' + (progress[k] || '…'));
-    showMsg(msgBox, 'warn', 'Отправляю и проверяю по API (все магазины сразу):<br>' + parts.join('<br>'));
+    showMsg(msgBox, 'warn', 'Отправляю и проверяю по API (все магазины сразу):<br>' +
+      parts.join('<br>') + cancelBtnHTML());
   }
 
   async function processStore(store) {
@@ -1782,9 +1834,11 @@ async function applyChanges(items, vals, msgBox) {
     // 1) отправка (чанками по 100)
     progress[store] = 'отправка…'; paint();
     for (let i = 0; i < list.length; i += 100) {
+      if (applyCancel) { progress[store] = 'отменено'; paint(); return; }
       const chunk = list.slice(i, i + 100);
       try {
         const res = await api('/edit', { store: store, products: chunk.map(j => j.upd) });
+        chunk.forEach(j => { j.sent = true; });
         if (store === 'blink') blinkResp = res && res.horoshop;
         editAccepted += ((res && res.processed_ids) || []).length;
         const errs = res && res.errors;
@@ -1797,6 +1851,7 @@ async function applyChanges(items, vals, msgBox) {
         report.push(escapeHtml(STORES[store].title + ': ' + e.message));
       }
     }
+    if (applyCancel) { progress[store] = 'отменено'; paint(); return; }
     // диагностика: что вернула САМА правка (processed_ids) — сравнить магазины
     if (store !== 'blink') {
       report.push(escapeHtml(STORES[store].title + ' — Prom на отправку правки принял (processed_ids): ' +
@@ -1825,11 +1880,12 @@ async function applyChanges(items, vals, msgBox) {
     let pending = verifiable.slice();
     let applied = 0, tries = 0;
     let sampleGot = null, sampleUpd = null;   // для диагностики: что отправили vs что в Prom
-    while (pending.length && tries < 3) {
+    while (pending.length && tries < 3 && !applyCancel) {
       tries++;
       const wrong = [];
       let n = 0;
       for (const j of pending) {
+        if (applyCancel) break;
         n++;
         progress[store] = 'проверяю ' + n + '/' + pending.length +
           (tries > 1 ? ' (повтор ' + (tries - 1) + ')' : ''); paint();
@@ -1840,14 +1896,16 @@ async function applyChanges(items, vals, msgBox) {
         else wrong.push(j);
       }
       pending = wrong;
-      if (!pending.length) break;
+      if (!pending.length || applyCancel) break;
       if (tries < 3) {   // повторно отправляем не применившиеся
         for (let i = 0; i < pending.length; i += 100) {
+          if (applyCancel) break;
           const chunk = pending.slice(i, i + 100);
           try { await api('/edit', { store: store, products: chunk.map(j => j.upd) }); } catch (e) {}
         }
       }
     }
+    if (applyCancel) { progress[store] = 'отменено'; paint(); return; }
 
     let line = STORES[store].title + ': реально применилось ' + applied + ' из ' + verifiable.length +
       (tries > 1 ? ' (повторов ' + (tries - 1) + ')' : '');
@@ -1871,6 +1929,29 @@ async function applyChanges(items, vals, msgBox) {
 
   // запускаем все магазины ОДНОВРЕМЕННО
   await Promise.all(STORE_KEYS.map(processStore));
+
+  // ОТМЕНА: возвращаем как было всё, что успели отправить
+  if (applyCancel) {
+    showMsg(msgBox, 'warn', 'Отмена… возвращаю изменённое как было.');
+    let reverted = 0, revFail = 0;
+    await Promise.all(STORE_KEYS.map(async function (store) {
+      const sent = (jobs[store] || []).filter(j => j.sent);
+      for (let i = 0; i < sent.length; i += 100) {
+        const chunk = sent.slice(i, i + 100);
+        try {
+          await api('/edit', { store: store, products: chunk.map(j => j.orig) });
+          chunk.forEach(j => { Object.assign(j.ref, j.orig); reverted++; });
+        } catch (e) { revFail += chunk.length; }
+      }
+    }));
+    msgBox.innerHTML = '<div class="msg msg--warn">✕ Отменено. Возвращено как было: ' + reverted +
+      ' позиц.' + (revFail ? (' · не удалось вернуть: ' + revFail) : '') +
+      (reverted ? '<br><span class="muted">Скидки восстановлены со свежими датами. Нажмите «Обновить из Prom» для точных данных.</span>' : '') +
+      '</div>';
+    buildGroups(); applyFilter();
+    if (current) renderEditor();
+    return;
+  }
 
   // Итог — кнопка: зелёная «Готово» / красная «Ошибка». Клик — детали.
   const label = anyFail
@@ -1929,6 +2010,8 @@ function runMass(clearDiscount) {
               }),
     presence: $('m-presence').value,
     status: $('m-status').value,
+    // даты для продления авто-подтянутой скидки при публикации
+    discDates: { from: $('m-disc-from').value, to: $('m-disc-to').value },
   };
 
   const what = [];

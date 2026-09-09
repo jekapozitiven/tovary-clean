@@ -140,7 +140,8 @@
 
   /* список на всю ширину; редактор появляется справа только при выборе позиции */
   .cols { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
-  .cols.has-editor { grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); }
+  .cols.has-editor { grid-template-columns: minmax(0,1.15fr) minmax(0,1fr); }
+  .cols.has-editor #editor { position: sticky; top: 8px; max-height: calc(100vh - 90px); overflow-y: auto; }
   .cols:not(.has-editor) #editor { display: none; }
   @media (max-width: 1050px) { .cols.has-editor { grid-template-columns: 1fr; } }
 
@@ -161,9 +162,8 @@
                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .grp__meta { display: block; font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
   .grp__chev { color: var(--text-faint); font-size: 11px; flex: none; }
-  .grp.is-open .grp__chev { transform: rotate(90deg); }
-  .grp__kids { display: none; padding: 0 12px 12px 38px; }
-  .grp.is-open .grp__kids { display: block; }
+  .grp.is-sel { background: rgba(214,242,74,.07); }
+  .grp.is-sel .grp__chev { color: var(--accent); }
 
   .sb { margin-top: 8px; }
   .sb__t { font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
@@ -418,6 +418,33 @@ const NOTES_KEY = 'tovary:prices:notes';
 let notes = loadJSON(NOTES_KEY, {});
 const saveNotes = () => saveJSON(NOTES_KEY, notes);
 
+// Заметки хранятся по ключу карточки. Раньше ключ был по листингу ('v'+vgid) или id,
+// теперь по артикулу ('s'+артикул). Переносим старые ключи на артикул, чтобы
+// заметки не «терялись» после смены группировки.
+function migrateNotes() {
+  try {
+    if (!Object.keys(notes).length) return;
+    const byVg = new Map(), byId = new Map();
+    for (const s of STORE_KEYS) for (const p of (byStore[s] || [])) {
+      const base = baseSku(p.sku, s);
+      if (!base) continue;
+      if (p.variation_group_id != null) byVg.set('v' + p.variation_group_id, base);
+      byId.set('p' + p.id, base);
+    }
+    let changed = false;
+    for (const k of Object.keys(notes)) {
+      if (k[0] === 's') continue;                 // уже по артикулу
+      let base = byVg.has(k) ? byVg.get(k) : (byId.has(k) ? byId.get(k) : null);
+      if (!base) continue;                        // не нашли товар — оставляем как есть
+      const nk = 's' + base;
+      if (!notes[nk]) notes[nk] = notes[k];       // не затираем существующую заметку
+      delete notes[k];
+      changed = true;
+    }
+    if (changed) { saveNotes(); }
+  } catch (e) {}
+}
+
 // постраничный вывод
 const PAGE_SIZE = 150;
 let page = 0;
@@ -559,7 +586,7 @@ async function loadFromCache() {
   }
   if (!any) return false;
   cacheAge = oldest;
-  buildGroups(); showStats(); refreshNoteFilter(); applyFilter();
+  buildGroups(); migrateNotes(); showStats(); refreshNoteFilter(); applyFilter();
   return true;
 }
 
@@ -803,7 +830,7 @@ async function loadAll() {
 
   prog.firstElementChild.style.width = '100%';
   cacheAge = Date.now();
-  buildGroups(); showStats(); refreshNoteFilter(); applyFilter();
+  buildGroups(); migrateNotes(); showStats(); refreshNoteFilter(); applyFilter();
   if (problems.length) {
     $('stats').innerHTML += '<div class="msg msg--err">' + problems.map(escapeHtml).join('<br>') + '</div>';
   }
@@ -1303,56 +1330,10 @@ function renderList() {
       return n ? STORES[k].title + ': ' + n : null;
     }).filter(Boolean).join(' · ');
 
-    const kids = STORE_KEYS.map(function (k) {
-      const arr = g.stores[k] || [];
-      if (!arr.length) {
-        return '<div class="sb"><div class="sb__t"><b>' + STORES[k].title + '</b></div>' +
-               '<div class="miss">— нет</div></div>';
-      }
-      const suf = (STORES[k].suffix || '').trim();
-      const clean = (n) => { let x = (n || '').trim(); if (suf && x.endsWith(suf)) x = x.slice(0, -suf.length).trim(); return x; };
-
-      // делим товары магазина на ЛИСТИНГИ (по variation_group_id, иначе по имени+фото) —
-      // это и есть разделение «по фото»: каждый листинг со своим фото отдельной строкой
-      const byListing = new Map();
-      arr.forEach(function (p) {
-        const lk = (p.variation_group_id != null)
-          ? ('v' + p.variation_group_id)
-          : ('n' + clean(p.name) + '|' + firstImage(p));
-        if (!byListing.has(lk)) byListing.set(lk, []);
-        byListing.get(lk).push(p);
-      });
-
-      let rows = '';
-      byListing.forEach(function (sub) {
-        let mi = 0;
-        for (let i = 1; i < sub.length; i++) if (clean(sub[i].name).length < clean(sub[mi].name).length) mi = i;
-        const p = sub[mi];
-        const realIdx = arr.indexOf(p);
-        const key = pickKey(k, p);
-        const active = (current && current.store === k && current.product.id === p.id) ? ' is-active' : '';
-        const kimg = firstImage(p);
-        const more = sub.length > 1 ? ' <span style="opacity:.6">+ ' + (sub.length - 1) + ' размер.</span>' : '';
-        rows += '<div class="kid' + active + '">' +
-          '<input type="checkbox" class="kid__chk" data-key="' + escapeAttr(key) + '"' +
-            (picked.has(key) ? ' checked' : '') + '>' +
-          '<button class="kid__btn" data-g="' + gi + '" data-s="' + k + '" data-i="' + realIdx + '">' +
-            (kimg ? '<img class="kid__img" src="' + escapeAttr(kimg) + '" loading="lazy" alt="">'
-                  : '<span class="kid__img"></span>') +
-            '<span class="dot ' + (isVisible(p) ? 'dot-on' : 'dot-off') + '"></span>' +
-            '<span class="kid__name">' + escapeHtml(p.name || '') + '</span>' +
-            priceCell(p) + more +
-          '</button></div>';
-      });
-      const photoCnt = byListing.size > 1 ? ' <span style="opacity:.6">· ' + byListing.size + ' фото</span>' : '';
-      return '<div class="sb"><div class="sb__t"><b>' + STORES[k].title + '</b>' + photoCnt + '</div>' +
-             rows + '</div>';
-    }).join('');
-
     const noteTxt = (notes[g.key] || '').trim();
     const noteChip = noteTxt ? '<span class="note-chip">' + escapeHtml(noteTxt) +
       '<span class="note-x" data-delnote="' + gi + '" title="Убрать заметку">✕</span></span>' : '';
-    return '<div class="grp' + (openKey === g.key ? ' is-open' : '') + '">' +
+    return '<div class="grp' + (openKey === g.key ? ' is-sel' : '') + '">' +
       '<div class="grp__top">' +
         '<input type="checkbox" class="grp__chk" data-g="' + gi + '"' + (allPicked ? ' checked' : '') + '>' +
         '<button class="grp__btn" data-open="' + gi + '">' +
@@ -1365,15 +1346,15 @@ function renderList() {
           '<span class="grp__chev">▶</span>' +
         '</button>' +
         '<button class="note-btn' + (noteTxt ? ' has' : '') + '" data-note="' + gi + '" title="Заметка">🏷</button>' +
-      '</div>' +
-      '<div class="grp__kids">' + kids + '</div></div>';
+      '</div></div>';
   }).join('');
 
+  // клик по карточке — показать её товары справа
   Array.from(box.querySelectorAll('[data-open]')).forEach(function (el) {
     el.addEventListener('click', function () {
       const g = slice[Number(el.dataset.open)];
-      openKey = (openKey === g.key) ? null : g.key;
-      renderList();
+      openKey = g.key; current = null;
+      renderList(); renderRight();
     });
   });
   Array.from(box.querySelectorAll('.grp__chk')).forEach(function (el) {
@@ -1384,20 +1365,6 @@ function renderList() {
         if (el.checked) picked.add(k); else picked.delete(k);
       });
       updateMass(); renderList();
-    });
-  });
-  Array.from(box.querySelectorAll('.kid__chk')).forEach(function (el) {
-    el.addEventListener('change', function () {
-      if (el.checked) picked.add(el.dataset.key); else picked.delete(el.dataset.key);
-      updateMass(); renderList();
-    });
-  });
-  Array.from(box.querySelectorAll('.kid__btn')).forEach(function (el) {
-    el.addEventListener('click', function () {
-      const g = slice[Number(el.dataset.g)];
-      const store = el.dataset.s;
-      current = { store: store, product: g.stores[store][Number(el.dataset.i)] };
-      renderList(); renderEditor();
     });
   });
   // убрать заметку крестиком на метке
@@ -1528,11 +1495,92 @@ function finalPrice(price, disc) {
 /* ===================================================================== */
 /*  Одиночный редактор                                                    */
 /* ===================================================================== */
+// разбивка карточки по магазинам и фото (для правой панели)
+function buildKids(g) {
+  return STORE_KEYS.map(function (k) {
+    const arr = g.stores[k] || [];
+    if (!arr.length) {
+      return '<div class="sb"><div class="sb__t"><b>' + STORES[k].title + '</b></div>' +
+             '<div class="miss">— нет</div></div>';
+    }
+    const suf = (STORES[k].suffix || '').trim();
+    const clean = (n) => { let x = (n || '').trim(); if (suf && x.endsWith(suf)) x = x.slice(0, -suf.length).trim(); return x; };
+    const byListing = new Map();
+    arr.forEach(function (p) {
+      const lk = (p.variation_group_id != null)
+        ? ('v' + p.variation_group_id)
+        : ('n' + clean(p.name) + '|' + firstImage(p));
+      if (!byListing.has(lk)) byListing.set(lk, []);
+      byListing.get(lk).push(p);
+    });
+    let rows = '';
+    byListing.forEach(function (sub) {
+      let mi = 0;
+      for (let i = 1; i < sub.length; i++) if (clean(sub[i].name).length < clean(sub[mi].name).length) mi = i;
+      const p = sub[mi];
+      const realIdx = arr.indexOf(p);
+      const key = pickKey(k, p);
+      const active = (current && current.store === k && current.product.id === p.id) ? ' is-active' : '';
+      const kimg = firstImage(p);
+      const more = sub.length > 1 ? ' <span style="opacity:.6">+ ' + (sub.length - 1) + ' размер.</span>' : '';
+      rows += '<div class="kid' + active + '">' +
+        '<input type="checkbox" class="kid__chk" data-key="' + escapeAttr(key) + '"' +
+          (picked.has(key) ? ' checked' : '') + '>' +
+        '<button class="kid__btn" data-s="' + k + '" data-i="' + realIdx + '">' +
+          (kimg ? '<img class="kid__img" src="' + escapeAttr(kimg) + '" loading="lazy" alt="">'
+                : '<span class="kid__img"></span>') +
+          '<span class="dot ' + (isVisible(p) ? 'dot-on' : 'dot-off') + '"></span>' +
+          '<span class="kid__name">' + escapeHtml(p.name || '') + '</span>' +
+          priceCell(p) + more +
+        '</button></div>';
+    });
+    const photoCnt = byListing.size > 1 ? ' <span style="opacity:.6">· ' + byListing.size + ' фото</span>' : '';
+    return '<div class="sb"><div class="sb__t"><b>' + STORES[k].title + '</b>' + photoCnt + '</div>' + rows + '</div>';
+  }).join('');
+}
+
+// правая панель: разбивка выбранной карточки; если выбрана позиция — редактор
+function renderRight() {
+  const box = $('editor');
+  const cols = document.querySelector('.cols');
+  const g = openKey ? groups.find(x => x.key === openKey) : null;
+  if (cols) cols.classList.toggle('has-editor', !!(g || current));
+  if (current) { renderEditor(); return; }
+  if (!g) { box.innerHTML = '<div class="empty">Нажмите на карточку слева — здесь появятся все её товары по магазинам</div>'; return; }
+  const counts = STORE_KEYS.map(k => { const n = (g.stores[k] || []).length; return n ? STORES[k].title + ': ' + n : null; }).filter(Boolean).join(' · ');
+  box.innerHTML =
+    '<div class="bar" style="border:none;margin:0 0 10px;padding:0;justify-content:flex-end;">' +
+      '<button class="btn btn--ghost btn--sm" id="cd-close">✕ Закрыть</button></div>' +
+    '<div class="ed__head">' +
+      (g.image ? '<img class="ed__thumb" src="' + escapeAttr(g.image) + '" alt="">' : '<span class="ed__thumb"></span>') +
+      '<div><div class="ed__title">' + escapeHtml(g.name) + '</div>' +
+      '<div class="ed__id">' + escapeHtml(g.base) + ' · ' + counts + '</div></div>' +
+    '</div>' +
+    '<div class="muted" style="margin-bottom:8px;">Товары под этим артикулом — по магазинам и фото. Нажмите на товар, чтобы изменить цену/скидку.</div>' +
+    buildKids(g);
+  if ($('cd-close')) $('cd-close').addEventListener('click', function () {
+    openKey = null; current = null; renderList(); renderRight();
+  });
+  Array.from(box.querySelectorAll('.kid__chk')).forEach(function (el) {
+    el.addEventListener('change', function () {
+      if (el.checked) picked.add(el.dataset.key); else picked.delete(el.dataset.key);
+      updateMass(); renderList(); renderRight();
+    });
+  });
+  Array.from(box.querySelectorAll('.kid__btn')).forEach(function (el) {
+    el.addEventListener('click', function () {
+      const store = el.dataset.s;
+      current = { store: store, product: g.stores[store][Number(el.dataset.i)] };
+      renderEditor();
+    });
+  });
+}
+
 function renderEditor() {
   const box = $('editor');
   const cols = document.querySelector('.cols');
-  if (cols) cols.classList.toggle('has-editor', !!current);
-  if (!current) { box.innerHTML = '<div class="empty">Выберите позицию слева</div>'; return; }
+  if (cols) cols.classList.toggle('has-editor', !!(current || openKey));
+  if (!current) { renderRight(); return; }
   const store = current.store, p = current.product;
   const d = p.discount || null;
   const dVal = d ? (d.value != null ? d.value : (d.amount != null ? d.amount : '')) : '';
@@ -1551,7 +1599,8 @@ function renderEditor() {
   const sibs = siblingsOf(store, p);
 
   box.innerHTML =
-    '<div class="bar" style="border:none;margin:0 0 10px;padding:0;justify-content:flex-end;">' +
+    '<div class="bar" style="border:none;margin:0 0 10px;padding:0;justify-content:space-between;">' +
+      '<button class="btn btn--ghost btn--sm" id="e-back">← К товарам</button>' +
       '<button class="btn btn--ghost btn--sm" id="e-close">✕ Закрыть</button></div>' +
     '<div class="ed__head">' +
       (firstImage(p) ? '<img class="ed__thumb" src="' + escapeAttr(firstImage(p)) + '" alt="">' : '<span class="ed__thumb"></span>') +
@@ -1611,8 +1660,13 @@ function renderEditor() {
   ['e-price', 'e-disc', 'e-disc-type'].forEach(id => $(id).addEventListener('input', upd));
   upd();
 
+  // ← К товарам: вернуться к разбивке карточки (карточка остаётся выбранной)
+  if ($('e-back')) $('e-back').addEventListener('click', function () {
+    current = null; renderRight();
+  });
+  // ✕ Закрыть: закрыть правую панель совсем
   if ($('e-close')) $('e-close').addEventListener('click', function () {
-    current = null; renderList(); renderEditor();
+    current = null; openKey = null; renderList(); renderRight();
   });
 
   $('save').addEventListener('click', function () {
@@ -1953,7 +2007,7 @@ async function applyChanges(items, vals, msgBox) {
       (reverted ? '<br><span class="muted">Скидки восстановлены со свежими датами. Нажмите «Обновить из Prom» для точных данных.</span>' : '') +
       '</div>';
     buildGroups(); applyFilter();
-    if (current) renderEditor();
+    renderRight();
     return;
   }
 
@@ -1968,7 +2022,7 @@ async function applyChanges(items, vals, msgBox) {
     '</details>';
 
   buildGroups(); applyFilter();
-  if (current) renderEditor();
+  renderRight();
 }
 
 /* ===================================================================== */

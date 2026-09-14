@@ -1850,7 +1850,7 @@ async function applyChanges(items, vals, msgBox) {
 
   showMsg(msgBox, 'warn', 'Отправляю ' + total + ' позиций…' + cancelBtnHTML());
   const report = [];
-  let anyFail = false, notAppliedTotal = 0;   // для кнопки-итога
+  let anyFail = false, notAppliedTotal = 0, goneTotal = 0;   // для кнопки-итога
 
   // реально ли применилось: перечитываем товар и сверяем цену/статус/скидку
   function reallyApplied(actual, upd) {
@@ -1883,11 +1883,12 @@ async function applyChanges(items, vals, msgBox) {
   }
 
   async function processStore(store) {
-    const list = jobs[store];
+    let list = jobs[store];
     if (!list.length) return;
 
     let blinkResp = null;   // для диагностики Blink
     let editAccepted = 0;   // сколько Prom реально принял в processed_ids (ответ самой правки)
+    const goneIds = new Set();   // товары, которых уже нет в Prom («Продукт не найден»)
 
     // 1) отправка (чанками по 100)
     progress[store] = 'отправка…'; paint();
@@ -1901,8 +1902,15 @@ async function applyChanges(items, vals, msgBox) {
         editAccepted += ((res && res.processed_ids) || []).length;
         const errs = res && res.errors;
         if (errs && Object.keys(errs).length) {
-          anyFail = true;
-          report.push(escapeHtml(STORES[store].title + ': ' + decodeMsg(JSON.stringify(errs)).slice(0, 400)));
+          const realErrs = {};
+          for (const eid in errs) {
+            if (/не найден|not found/i.test(JSON.stringify(errs[eid]))) goneIds.add(String(eid));
+            else realErrs[eid] = errs[eid];
+          }
+          if (Object.keys(realErrs).length) {
+            anyFail = true;
+            report.push(escapeHtml(STORES[store].title + ': ' + decodeMsg(JSON.stringify(realErrs)).slice(0, 400)));
+          }
         }
       } catch (e) {
         anyFail = true;
@@ -1910,6 +1918,15 @@ async function applyChanges(items, vals, msgBox) {
       }
     }
     if (applyCancel) { progress[store] = 'отменено'; paint(); return; }
+
+    // товары, которых уже нет в Prom: не проверяем и не повторяем, убираем из списка и кэша
+    if (goneIds.size) {
+      goneTotal += goneIds.size;
+      list = list.filter(j => !goneIds.has(String(j.upd.id)));
+      byStore[store] = (byStore[store] || []).filter(p => !goneIds.has(String(p.id)));
+      report.push(escapeHtml(STORES[store].title + ': ' + goneIds.size +
+        ' тов. уже нет в Prom (удалены) — убраны из списка. Нажмите «Обновить из Prom», чтобы обновить кэш.'));
+    }
     // диагностика: что вернула САМА правка (processed_ids) — сравнить магазины
     if (store !== 'blink') {
       report.push(escapeHtml(STORES[store].title + ' — Prom на отправку правки принял (processed_ids): ' +
@@ -1923,6 +1940,22 @@ async function applyChanges(items, vals, msgBox) {
       progress[store] = 'отправлено ' + list.length + ' (не проверяется)'; paint();
       report.unshift(escapeHtml(STORES[store].title + ': отправлено ' + list.length +
         ' (Хорошоп поштучно по API не проверяется)'));
+      // разбор ответа: какие артикулы не обновились и почему (частая причина — код 7: категория)
+      try {
+        const logArr = (blinkResp && blinkResp.response && blinkResp.response.log) || [];
+        const bad = [];
+        logArr.forEach(function (it) {
+          const info = (it && it.info) || [];
+          const err = info.find(x => x && x.code && Number(x.code) !== 0);
+          if (err) bad.push((it.article || '') + ' — ' + err.message);
+        });
+        if (bad.length) {
+          const cat = bad.filter(x => /категори/i.test(x)).length;
+          report.push(escapeHtml('Blink: не обновилось ' + bad.length + ' поз.' +
+            (cat ? ' (' + cat + ' — не задана категория/шаблон в Хорошопе, исправьте в админке Blink)' : '') +
+            ': ' + bad.slice(0, 8).join('; ').slice(0, 500)));
+        }
+      } catch (e) {}
       report.push('<b>Blink — настоящий ответ Хорошопа:</b> ' +
         escapeHtml(decodeMsg(JSON.stringify(blinkResp)).slice(0, 800)) + '<br>' +
         '<b>Отправляли:</b> ' + escapeHtml(JSON.stringify(list[0].upd).slice(0, 300)));
@@ -2012,9 +2045,10 @@ async function applyChanges(items, vals, msgBox) {
   }
 
   // Итог — кнопка: зелёная «Готово» / красная «Ошибка». Клик — детали.
+  const goneNote = goneTotal ? ' · пропущено удалённых: ' + goneTotal : '';
   const label = anyFail
-    ? ('⚠ Ошибка' + (notAppliedTotal ? ' — не применилось ' + notAppliedTotal : '') + ' · нажмите для деталей')
-    : '✓ Готово — всё применилось · нажмите для деталей';
+    ? ('⚠ Ошибка' + (notAppliedTotal ? ' — не применилось ' + notAppliedTotal : '') + goneNote + ' · нажмите для деталей')
+    : '✓ Готово — всё применилось' + goneNote + ' · нажмите для деталей';
   msgBox.innerHTML =
     '<details class="result">' +
       '<summary class="result-btn ' + (anyFail ? 'err' : 'ok') + '">' + escapeHtml(label) + '</summary>' +

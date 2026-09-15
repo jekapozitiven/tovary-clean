@@ -1233,29 +1233,42 @@ function applyFilter() {
 /* ===================================================================== */
 function pickKey(store, p) { return store + ':' + p.id; }
 
-/* представитель магазина в карточке — самый короткий по названию товар */
-function storeRep(g, store) {
+/* представители ЛИСТИНГОВ магазина (по одному на каждое фото), как в разбивке карточки */
+function listingReps(g, store) {
   const arr = g.stores[store] || [];
-  if (!arr.length) return null;
-  let mi = 0;
-  for (let i = 1; i < arr.length; i++) if ((arr[i].name || '').length < (arr[mi].name || '').length) mi = i;
-  return { store: store, p: arr[mi] };
+  if (!arr.length) return [];
+  const suf = (STORES[store].suffix || '').trim();
+  const clean = (n) => { let x = (n || '').trim(); if (suf && x.endsWith(suf)) x = x.slice(0, -suf.length).trim(); return x; };
+  const byListing = new Map();
+  arr.forEach(function (p) {
+    const lk = (p.variation_group_id != null) ? ('v' + p.variation_group_id) : ('n' + clean(p.name) + '|' + firstImage(p));
+    if (!byListing.has(lk)) byListing.set(lk, []);
+    byListing.get(lk).push(p);
+  });
+  const reps = [];
+  byListing.forEach(function (sub) {
+    let mi = 0;
+    for (let i = 1; i < sub.length; i++) if (clean(sub[i].name).length < clean(sub[mi].name).length) mi = i;
+    reps.push(sub[mi]);
+  });
+  return reps;
 }
 
 /* какие позиции даёт галочка КАРТОЧКИ:
-   — «Дублировать на другие магазины» включено → все магазины карточки;
-   — выключено → только главный (Black Street), иначе первый доступный.
-   Галочку одного магазина ставит пользователь отдельно (тогда меняется только он). */
+   — «Дублировать на другие магазины» включено → ВСЕ листинги всех магазинов;
+   — выключено → все листинги только главного (Black Street), иначе первого доступного.
+   Галочку отдельного товара пользователь ставит сам в разбивке справа. */
 function groupPickable(g) {
   const useStores = $('opt-stores') ? $('opt-stores').checked : true;
-  const out = [];
-  if (useStores) {
-    for (const st of STORE_KEYS) { const r = storeRep(g, st); if (r) out.push(r); }
-  } else {
+  let stores;
+  if (useStores) stores = STORE_KEYS;
+  else {
     const st = (g.stores[MAIN] && g.stores[MAIN].length) ? MAIN
              : STORE_KEYS.find(k => (g.stores[k] || []).length);
-    const r = st ? storeRep(g, st) : null; if (r) out.push(r);
+    stores = st ? [st] : [];
   }
+  const out = [];
+  for (const st of stores) listingReps(g, st).forEach(p => out.push({ store: st, p: p }));
   return out;
 }
 
@@ -1805,18 +1818,22 @@ async function applyChanges(items, vals, msgBox) {
     }
   }
 
-  // вся вариационная семья товара в магазине: родитель + разновидности,
-  // связанные через variation_group_id (надёжно, не зависит от артикула).
+  // размеры одного листинга (не весь магазин!): по variation_group_id, а где его
+  // нет (Blink) — по названию+фото, так же как в разбивке карточки.
   function famMembers(store, prod) {
     const arr = byStore[store] || [];
     const id = String(prod.id);
     const vg = prod.variation_group_id != null ? String(prod.variation_group_id) : null;
-    return arr.filter(function (p) {
-      const pvg = p.variation_group_id != null ? String(p.variation_group_id) : null;
-      return (vg && pvg === vg)          // тот же вариационный набор
-          || (pvg && pvg === id)         // p — разновидность выбранного (он родитель)
-          || (vg && vg === String(p.id));// p — родитель выбранного
-    });
+    if (vg) {
+      return arr.filter(function (p) {
+        const pvg = p.variation_group_id != null ? String(p.variation_group_id) : null;
+        return (pvg === vg) || (pvg && pvg === id) || (vg === String(p.id));
+      });
+    }
+    const suf = (STORES[store].suffix || '').trim();
+    const clean = (n) => { let x = (n || '').trim(); if (suf && x.endsWith(suf)) x = x.slice(0, -suf.length).trim(); return x; };
+    const key = clean(prod.name) + '|' + firstImage(prod);
+    return arr.filter(p => (clean(p.name) + '|' + firstImage(p)) === key);
   }
   function addWithFamily(store, pr, step) {
     addJob(store, pr, step);
@@ -1824,15 +1841,11 @@ async function applyChanges(items, vals, msgBox) {
   }
 
   for (const it of items) {
-    // находим карточку (группу), где лежит этот товар.
-    const g = groups.find(gr => (gr.stores[it.store] || []).some(p => String(p.id) === String(it.product.id)))
-              || { stores: { [it.store]: [it.product] } };
-
-    // меняем ТОЛЬКО выбранный магазин (его товары в карточке + их размеры).
-    // Другие магазины трогаются только если пользователь их тоже отметил
-    // (галочка магазина или галочка карточки при «Дублировать на другие магазины»).
+    // меняем ТОЛЬКО выбранный товар (листинг) + его размеры.
+    // Хочешь все товары карточки — отметь галочку карточки (она выберет все листинги),
+    // хочешь отдельные — отмечай их галочки в разбивке справа.
     const step = (it.store === MAIN) ? 0 : -stepFor(it.store);
-    (g.stores[it.store] || [it.product]).forEach(pr => addWithFamily(it.store, pr, step));
+    addWithFamily(it.store, it.product, step);
   }
 
   // «Обновлять»: снятые магазины не трогаем (ни запись, ни отчёт)

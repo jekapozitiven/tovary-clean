@@ -1867,6 +1867,7 @@ async function applyChanges(items, vals, msgBox) {
   // ПУБЛИКАЦИЯ: у некоторых товаров скидка в Prom «не відображається» (неактивна) —
   // Prom не отдаёт её в списке, поэтому в кэше её нет. Дочитываем такую скидку
   // напрямую из Prom (/get отдаёт и неактивные) и включаем с заданными датами.
+  let _discDiag = '';
   if (vals.status === 'on_display') {
     const need = [];
     for (const st of STORE_KEYS) {
@@ -1882,7 +1883,7 @@ async function applyChanges(items, vals, msgBox) {
       const iso = (d) => d.toISOString().slice(0, 10);
       if (!dFrom) dFrom = iso(new Date());
       if (!dTo)   dTo   = iso(new Date(Date.now() + 30 * 86400000));
-      let idx = 0;
+      let idx = 0, pulled = 0, sample = null;
       const work = async function () {
         while (idx < need.length) {
           const cur = need[idx++];
@@ -1890,17 +1891,21 @@ async function applyChanges(items, vals, msgBox) {
             const got = await api('/get', { store: cur.st, id: cur.j.upd.id });
             const gp = got && (got.product || got);
             const ed = gp && gp.discount;
+            if (!sample) sample = { id: cur.j.upd.id, discount: (ed === undefined ? 'нет поля' : ed), price: gp && gp.price };
             const ev = ed ? Number(ed.value != null ? ed.value : ed.amount) : 0;
             if (ev > 0) {
               const type = ed.type === 'percent' ? 'percent' : 'amount';
               const step = (cur.st === MAIN) ? 0 : -stepFor(cur.st);
               let dval = ev; if (step && type === 'amount') dval = money(ev - step);
               cur.j.upd.discount = { value: dval, type: type, date_start: promDate(dFrom), date_end: promDate(dTo) };
+              pulled++;
             }
-          } catch (e) {}
+          } catch (e) { if (!sample) sample = { id: cur.j.upd.id, error: String(e.message || e) }; }
         }
       };
       await Promise.all(Array.from({ length: Math.min(6, need.length) }, work));
+      _discDiag = 'Скидка при публикации: подтянуто из Prom ' + pulled + ' из ' + need.length +
+        '. Пример ответа Prom по товару: ' + escapeHtml(JSON.stringify(sample).slice(0, 400));
     }
   }
 
@@ -1911,6 +1916,7 @@ async function applyChanges(items, vals, msgBox) {
   showMsg(msgBox, 'warn', 'Отправляю ' + total + ' позиций…' + cancelBtnHTML());
   const report = [];
   let anyFail = false, notAppliedTotal = 0, goneTotal = 0;   // для кнопки-итога
+  if (_discDiag) report.push(_discDiag);
 
   // реально ли применилось: перечитываем товар и сверяем цену/статус/скидку
   function reallyApplied(actual, upd) {

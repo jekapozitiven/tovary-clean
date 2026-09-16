@@ -1904,15 +1904,16 @@ async function applyChanges(items, vals, msgBox) {
       const iso = (d) => d.toISOString().slice(0, 10);
       if (!dFrom) dFrom = iso(new Date());
       if (!dTo)   dTo   = iso(new Date(Date.now() + 30 * 86400000));
-      let idx = 0, pulled = 0, sample = null;
+      const pickF = (o) => { if (!o) return null; const r = {}; for (const kk in o) if (/disc|sale|price|promo|variation|old/i.test(kk)) r[kk] = o[kk]; return r; };
+      let idx = 0, pulled = 0, sampleBad = null;
       const work = async function () {
         while (idx < need.length) {
           const cur = need[idx++];
           const kid = String(cur.j.upd.id);
-          let ed = null, src = '';
+          let ed = null, src = '', gp = null, bp = null;
           try {
             const got = await api('/get', { store: cur.st, id: cur.j.upd.id });
-            const gp = got && (got.product || got);
+            gp = got && (got.product || got);
             let d = gp && gp.discount;
             let v = d ? Number(d.value != null ? d.value : d.amount) : 0;
             if (v > 0) { ed = d; src = 'товар'; }
@@ -1921,7 +1922,7 @@ async function applyChanges(items, vals, msgBox) {
             if (!(v > 0) && baseId && String(baseId) !== kid) {
               try {
                 const gb = await api('/get', { store: cur.st, id: baseId });
-                const bp = gb && (gb.product || gb);
+                bp = gb && (gb.product || gb);
                 const bd = bp && bp.discount;
                 const bv = bd ? Number(bd.value != null ? bd.value : bd.amount) : 0;
                 if (bv > 0) { ed = bd; v = bv; src = 'база'; }
@@ -1929,20 +1930,23 @@ async function applyChanges(items, vals, msgBox) {
             }
             // 3) Prom скидку не отдал — берём из памяти приложения
             if (!(v > 0) && discMem[kid]) { ed = { value: discMem[kid].v, type: discMem[kid].t }; v = discMem[kid].v; src = 'память'; }
-            if (!sample) sample = { id: kid, discount_товара: (gp && gp.discount), база: baseId || null, взято: src || 'нет' };
             if (v > 0) {
               const type = ed.type === 'percent' ? 'percent' : 'amount';
               const step = (cur.st === MAIN) ? 0 : -stepFor(cur.st);
               let dval = v; if (step && type === 'amount') dval = money(v - step);
               cur.j.upd.discount = { value: dval, type: type, date_start: promDate(dFrom), date_end: promDate(dTo) };
               pulled++;
+            } else if (!sampleBad) {
+              // не нашли скидку — сохраняем ВСЕ поля со скидкой/ценой, чтобы понять где она в Prom
+              sampleBad = { store: cur.st, id: kid, base_id: (gp && gp.variation_base_id) || null,
+                            товар: pickF(gp), база: pickF(bp) };
             }
-          } catch (e) { if (!sample) sample = { id: kid, error: String(e.message || e) }; }
+          } catch (e) { if (!sampleBad) sampleBad = { id: kid, error: String(e.message || e) }; }
         }
       };
       await Promise.all(Array.from({ length: Math.min(6, need.length) }, work));
       _discDiag = 'Скидка при публикации: подтянуто ' + pulled + ' из ' + need.length +
-        '. Пример: ' + escapeHtml(JSON.stringify(sample).slice(0, 400));
+        (sampleBad ? ('. НЕ найдена, поля Prom: ' + escapeHtml(JSON.stringify(sampleBad).slice(0, 700))) : '.');
     }
   }
 

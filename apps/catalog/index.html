@@ -421,6 +421,24 @@ const NOTES_KEY = 'tovary:prices:notes';
 let notes = loadJSON(NOTES_KEY, {});
 const saveNotes = () => saveJSON(NOTES_KEY, notes);
 
+// ПАМЯТЬ СКИДОК: { id_товара: {v:сумма, t:'amount'|'percent'} } — на устройстве.
+// Prom иногда не отдаёт неактивную скидку по API, поэтому приложение само
+// запоминает скидки, которые видит/применяет, и восстанавливает при публикации.
+const DISC_KEY = 'tovary:disc';
+let discMem = loadJSON(DISC_KEY, {});
+let _discSaveT = null;
+function saveDiscMem() { clearTimeout(_discSaveT); _discSaveT = setTimeout(() => saveJSON(DISC_KEY, discMem), 800); }
+function rememberDisc(id, ed) {
+  const ev = ed ? Number(ed.value != null ? ed.value : ed.amount) : 0;
+  if (!(ev > 0)) return;
+  const t = ed.type === 'percent' ? 'percent' : 'amount';
+  const k = String(id);
+  if (!discMem[k] || discMem[k].v !== ev || discMem[k].t !== t) { discMem[k] = { v: ev, t: t }; saveDiscMem(); }
+}
+function rememberAllDiscounts() {
+  for (const s of STORE_KEYS) for (const p of (byStore[s] || [])) rememberDisc(p.id, p.discount);
+}
+
 // Заметки хранятся по ключу карточки. Раньше ключ был по листингу ('v'+vgid) или id,
 // теперь по артикулу ('s'+артикул). Переносим старые ключи на артикул, чтобы
 // заметки не «терялись» после смены группировки.
@@ -589,7 +607,7 @@ async function loadFromCache() {
   }
   if (!any) return false;
   cacheAge = oldest;
-  buildGroups(); migrateNotes(); showStats(); refreshNoteFilter(); applyFilter();
+  buildGroups(); migrateNotes(); rememberAllDiscounts(); showStats(); refreshNoteFilter(); applyFilter();
   return true;
 }
 
@@ -837,7 +855,7 @@ async function loadAll() {
 
   prog.firstElementChild.style.width = '100%';
   cacheAge = Date.now();
-  buildGroups(); migrateNotes(); showStats(); refreshNoteFilter(); applyFilter();
+  buildGroups(); migrateNotes(); rememberAllDiscounts(); showStats(); refreshNoteFilter(); applyFilter();
   if (problems.length) {
     $('stats').innerHTML += '<div class="msg msg--err">' + problems.map(escapeHtml).join('<br>') + '</div>';
   }
@@ -1809,6 +1827,9 @@ async function applyChanges(items, vals, msgBox) {
         const ex = existingDiscount(prod, step);
         if (ex) o.discount = ex;
       }
+      // запоминаем/забываем скидку товара (память переживает то, что Prom не отдаёт)
+      if (o.discount && o.discount.value != null) rememberDisc(prod.id, o.discount);
+      else if (o.discount === null) { const kk = String(prod.id); if (discMem[kk]) { delete discMem[kk]; saveDiscMem(); } }
     }
 
     if (vals.presence) o.presence = vals.presence;
@@ -1887,25 +1908,41 @@ async function applyChanges(items, vals, msgBox) {
       const work = async function () {
         while (idx < need.length) {
           const cur = need[idx++];
+          const kid = String(cur.j.upd.id);
+          let ed = null, src = '';
           try {
             const got = await api('/get', { store: cur.st, id: cur.j.upd.id });
             const gp = got && (got.product || got);
-            const ed = gp && gp.discount;
-            if (!sample) sample = { id: cur.j.upd.id, discount: (ed === undefined ? 'нет поля' : ed), price: gp && gp.price };
-            const ev = ed ? Number(ed.value != null ? ed.value : ed.amount) : 0;
-            if (ev > 0) {
+            let d = gp && gp.discount;
+            let v = d ? Number(d.value != null ? d.value : d.amount) : 0;
+            if (v > 0) { ed = d; src = 'товар'; }
+            // 2) у размера скидки нет — берём с базового товара (родителя разновидностей)
+            const baseId = gp && gp.variation_base_id;
+            if (!(v > 0) && baseId && String(baseId) !== kid) {
+              try {
+                const gb = await api('/get', { store: cur.st, id: baseId });
+                const bp = gb && (gb.product || gb);
+                const bd = bp && bp.discount;
+                const bv = bd ? Number(bd.value != null ? bd.value : bd.amount) : 0;
+                if (bv > 0) { ed = bd; v = bv; src = 'база'; }
+              } catch (e) {}
+            }
+            // 3) Prom скидку не отдал — берём из памяти приложения
+            if (!(v > 0) && discMem[kid]) { ed = { value: discMem[kid].v, type: discMem[kid].t }; v = discMem[kid].v; src = 'память'; }
+            if (!sample) sample = { id: kid, discount_товара: (gp && gp.discount), база: baseId || null, взято: src || 'нет' };
+            if (v > 0) {
               const type = ed.type === 'percent' ? 'percent' : 'amount';
               const step = (cur.st === MAIN) ? 0 : -stepFor(cur.st);
-              let dval = ev; if (step && type === 'amount') dval = money(ev - step);
+              let dval = v; if (step && type === 'amount') dval = money(v - step);
               cur.j.upd.discount = { value: dval, type: type, date_start: promDate(dFrom), date_end: promDate(dTo) };
               pulled++;
             }
-          } catch (e) { if (!sample) sample = { id: cur.j.upd.id, error: String(e.message || e) }; }
+          } catch (e) { if (!sample) sample = { id: kid, error: String(e.message || e) }; }
         }
       };
       await Promise.all(Array.from({ length: Math.min(6, need.length) }, work));
-      _discDiag = 'Скидка при публикации: подтянуто из Prom ' + pulled + ' из ' + need.length +
-        '. Пример ответа Prom по товару: ' + escapeHtml(JSON.stringify(sample).slice(0, 400));
+      _discDiag = 'Скидка при публикации: подтянуто ' + pulled + ' из ' + need.length +
+        '. Пример: ' + escapeHtml(JSON.stringify(sample).slice(0, 400));
     }
   }
 

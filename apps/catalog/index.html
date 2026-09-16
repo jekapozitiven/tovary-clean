@@ -1864,6 +1864,46 @@ async function applyChanges(items, vals, msgBox) {
   const total = STORE_KEYS.reduce((n, k) => n + jobs[k].length, 0);
   if (!total) { showMsg(msgBox, 'warn', 'Нечего менять — не выбран ни один магазин или не заданы значения.'); return; }
 
+  // ПУБЛИКАЦИЯ: у некоторых товаров скидка в Prom «не відображається» (неактивна) —
+  // Prom не отдаёт её в списке, поэтому в кэше её нет. Дочитываем такую скидку
+  // напрямую из Prom (/get отдаёт и неактивные) и включаем с заданными датами.
+  if (vals.status === 'on_display') {
+    const need = [];
+    for (const st of STORE_KEYS) {
+      if (st === 'blink') continue;
+      for (const j of (jobs[st] || [])) {
+        if (j.upd.status === 'on_display' && j.upd.discount === undefined) need.push({ st: st, j: j });
+      }
+    }
+    if (need.length) {
+      showMsg(msgBox, 'warn', 'Подтягиваю скидки из Prom для ' + need.length + ' поз.…');
+      let dFrom = (vals.discDates && vals.discDates.from) || defStart();
+      let dTo   = (vals.discDates && vals.discDates.to)   || defEnd();
+      const iso = (d) => d.toISOString().slice(0, 10);
+      if (!dFrom) dFrom = iso(new Date());
+      if (!dTo)   dTo   = iso(new Date(Date.now() + 30 * 86400000));
+      let idx = 0;
+      const work = async function () {
+        while (idx < need.length) {
+          const cur = need[idx++];
+          try {
+            const got = await api('/get', { store: cur.st, id: cur.j.upd.id });
+            const gp = got && (got.product || got);
+            const ed = gp && gp.discount;
+            const ev = ed ? Number(ed.value != null ? ed.value : ed.amount) : 0;
+            if (ev > 0) {
+              const type = ed.type === 'percent' ? 'percent' : 'amount';
+              const step = (cur.st === MAIN) ? 0 : -stepFor(cur.st);
+              let dval = ev; if (step && type === 'amount') dval = money(ev - step);
+              cur.j.upd.discount = { value: dval, type: type, date_start: promDate(dFrom), date_end: promDate(dTo) };
+            }
+          } catch (e) {}
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, need.length) }, work));
+    }
+  }
+
   const cancelBtnHTML = () => '<br><button class="btn btn--ghost btn--sm" id="apply-cancel"' +
     (applyCancel ? ' disabled' : '') + ' onclick="cancelApply()" style="margin-top:8px;">' +
     (applyCancel ? 'Останавливаю…' : '✕ Отмена') + '</button>';

@@ -287,6 +287,7 @@
           <span class="opts-lbl">Шаг цены</span>
           <span class="step">Bonna-shop <input type="number" step="0.01" id="step-bonna" value="0"> ₴</span>
           <span class="step">Core22 <input type="number" step="0.01" id="step-core22" value="0"> ₴</span>
+          <span class="step">Street Code <input type="number" step="0.01" id="step-streetcode" value="0"> ₴</span>
           <span class="step">Blink <input type="number" step="0.01" id="step-blink" value="0"> ₴</span>
           <span class="muted">— насколько дешевле цены со скидкой Black Street</span>
         </div>
@@ -295,6 +296,7 @@
           <label class="chk"><input type="checkbox" id="up-blackstreet" checked> Black Street</label>
           <label class="chk"><input type="checkbox" id="up-bonna" checked> Bonna</label>
           <label class="chk"><input type="checkbox" id="up-core22" checked> Core22</label>
+          <label class="chk"><input type="checkbox" id="up-streetcode" checked> Street Code</label>
           <label class="chk"><input type="checkbox" id="up-blink" checked> Blink</label>
         </div>
         <div class="opts-row">
@@ -383,12 +385,13 @@ const loadJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ??
 const saveJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 let cfg  = loadJSON(CFG_KEY, { url: '', pass: '' });
-let opts = loadJSON(OPT_KEY, { variants: true, stores: true, stepBonna: 0, stepCore22: 0, stepBlink: 0 });
+let opts = loadJSON(OPT_KEY, { variants: true, stores: true, stepBonna: 0, stepCore22: 0, stepStreetcode: 0, stepBlink: 0 });
 
 const STORES = {
   blackstreet: { title: 'Black Street', suffix: ''     },
   bonna:       { title: 'Bonna-shop',   suffix: ' (B)' },
   core22:      { title: 'Core22',       suffix: ' (С)' },
+  streetcode:  { title: 'Street Code',  suffix: ' (S)' },
   blink:       { title: 'Blink',        suffix: ''     },   // сайт на Хорошопе
 };
 const STORE_KEYS = Object.keys(STORES);
@@ -637,6 +640,7 @@ $('opt-variants').checked = !!opts.variants;
 $('opt-stores').checked = !!opts.stores;
 $('step-bonna').value = opts.stepBonna || 0;
 $('step-core22').value = opts.stepCore22 || 0;
+$('step-streetcode').value = opts.stepStreetcode || 0;
 $('step-blink').value = opts.stepBlink || 0;
 $('def-from').value = opts.defFrom || todayStr(0);
 $('def-to').value   = opts.defTo || '';
@@ -652,6 +656,7 @@ function saveOpts() {
     stores: $('opt-stores').checked,
     stepBonna: Number($('step-bonna').value) || 0,
     stepCore22: Number($('step-core22').value) || 0,
+    stepStreetcode: Number($('step-streetcode').value) || 0,
     stepBlink: Number($('step-blink').value) || 0,
     defFrom: $('def-from').value,
     defTo: $('def-to').value,
@@ -662,7 +667,7 @@ function saveOpts() {
   saveJSON(OPT_KEY, opts);
   if (typeof updateOptsSum === 'function') updateOptsSum();
 }
-['opt-variants', 'opt-stores', 'step-bonna', 'step-core22', 'step-blink', 'def-from', 'def-to']
+['opt-variants', 'opt-stores', 'step-bonna', 'step-core22', 'step-streetcode', 'step-blink', 'def-from', 'def-to']
   .concat(STORE_KEYS.map(k => 'up-' + k))
   .forEach(function (id) { const el = $(id); if (el) el.addEventListener('change', saveOpts); });
 
@@ -683,7 +688,8 @@ function updateOptsSum() {
   const on = STORE_KEYS.filter(function (k) { const e = $('up-' + k); return !e || e.checked; })
                        .map(function (k) { return STORES[k].title; });
   const steps = 'шаг ' + (Number($('step-bonna').value) || 0) + '/' +
-                (Number($('step-core22').value) || 0) + '/' + (Number($('step-blink').value) || 0);
+                (Number($('step-core22').value) || 0) + '/' +
+                (Number($('step-streetcode').value) || 0) + '/' + (Number($('step-blink').value) || 0);
   sum.textContent = 'Обновлять: ' + (on.length ? on.join(', ') : '—') + ' · ' + steps;
 }
 (function () {
@@ -720,9 +726,10 @@ function todayStr(plusDays) {
   return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate());
 }
 
-const stepFor = (store) => store === 'bonna'  ? (Number($('step-bonna').value)  || 0)
-                        : store === 'core22' ? (Number($('step-core22').value) || 0)
-                        : store === 'blink'  ? (Number($('step-blink').value)  || 0) : 0;
+const stepFor = (store) => store === 'bonna'      ? (Number($('step-bonna').value)  || 0)
+                        : store === 'core22'     ? (Number($('step-core22').value) || 0)
+                        : store === 'streetcode' ? (Number($('step-streetcode').value) || 0)
+                        : store === 'blink'      ? (Number($('step-blink').value)  || 0) : 0;
 
 /* ===================================================================== */
 /*  Загрузка из Prom                                                      */

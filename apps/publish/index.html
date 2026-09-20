@@ -157,6 +157,15 @@ function uaName(p){
   if(m && (m.uk||m.ua)) return String(m.uk||m.ua);
   return String((p && p.name) || '');
 }
+// категория товара ЭТОГО магазина: Prom -> group.name_multilang; Horoshop -> parent.value (последний сегмент)
+function repCategory(rep){
+  if(!rep) return '';
+  const gr=rep.group;
+  if(gr){ const gm=gr.name_multilang; return String((gm&&(gm.uk||gm.ua))||gr.name||''); }
+  const pv=rep.parent && (rep.parent.value!=null?rep.parent.value:rep.parent);
+  if(typeof pv==='string' && pv){ const seg=pv.split(/[\/\\]/).filter(Boolean); return seg[seg.length-1]||''; }
+  return '';
+}
 // стабільний ключ доп-полів (та сама формула, що в worker.js і в пошуку)
 function ekeyOf(record){
   const d=record && record.detail;
@@ -321,6 +330,7 @@ async function run(){
         presence: presenceText(rep),
         status: rep.status||'',
         variants: arr.length,
+        category: repCategory(rep),   // категория ИМЕННО этого магазина (без склейки)
       };
       // алиасы: и родительский артикул, и артикул разновидности -> base
       for(const p of arr){

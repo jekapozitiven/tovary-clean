@@ -166,6 +166,28 @@ function overallPresence(stores){
 function descBlock(html){
   return '<div class="desc"><h3>Опис</h3><div class="desc-body">'+html+'</div></div>';
 }
+// текст опису (без тегів, з переносами рядків)
+function descToText(html){
+  return String(html||'')
+    .replace(/<br\s*\/?>/gi,'\n')
+    .replace(/<\/(p|div|li|tr)>/gi,'\n')
+    .replace(/<[^>]+>/g,'')
+    .replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&');
+}
+// шукаємо в описі згадку про розмір (маломірить / більшемірить і т.п.)
+function extractSizeHint(html){
+  const re=/(маломір|мало мір|маломер|мало мер|більшемір|большемер|велик[оа]мір|великомер|на пів\s*розмір|на півтора розмір|на розмір (більше|менше)|на размер (больше|меньше)|бер[іи]ть на розмір|бери на размер|розмір(ом)?\s+(більше|менше)|размер(ом)?\s+(больше|меньше)|мал[ао] розмірн)/i;
+  const lines=descToText(html).split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  for(const ln of lines){ if(re.test(ln)) return ln.replace(/^[\(\)\s"«»-]+|[\(\)\s"«»]+$/g,''); }
+  return '';
+}
+function showSizeHint(html){
+  const slot=document.getElementById('auto-size'); if(!slot) return;
+  const hint=extractSizeHint(html);
+  slot.innerHTML = hint
+    ? '<div class="fit" style="background:#fff3cd;border-color:#ffe08a;color:#8a5a00;font-weight:600">📏 Розмір: '+esc(hint)+'</div>'
+    : '';
+}
 function galleryHtml(imgs){
   if(!imgs || !imgs.length) return '';
   return '<div class="main"><img id="mainimg" src="'+esc(imgs[0])+'" alt=""></div>'+
@@ -197,6 +219,7 @@ async function loadDetail(d, needDesc, needImg){
       const nm=document.querySelector('.name'); if(nm) nm.textContent=j.name;
       if(currentProduct) currentProduct.name=j.name;
     }
+    if(j && j.ok && j.description) showSizeHint(j.description);   // підказка про розмір з підтягнутого опису
     if(j && j.ok){
       if(slot) slot.innerHTML = j.description ? descBlock(j.description) : '';   // товар без описания — тихо
     } else {
@@ -255,6 +278,7 @@ function render(p){
           (p.category?'<span class="cat">'+esc(p.category)+'</span><br>':'')+
           '<div class="name">'+esc(p.name)+'</div>'+
           '<p class="art">Артикул: <b>'+esc(p.base)+'</b></p>'+  /* UA: Артикул */
+          '<div id="auto-size"></div>'+
           fitLine +
           shipLine +
           noteLine +
@@ -265,6 +289,7 @@ function render(p){
     '</div>';
 
   bindGallery();
+  if(p.desc) showSizeHint(p.desc);   // підказка про розмір з опису (якщо він уже в індексі)
   const co=$('chart-open'); if(co) co.addEventListener('click', ()=>openChart(p));
   if(OWNER){
     pendingCharts = [];
@@ -440,6 +465,33 @@ async function openResult(key){
   }catch(e){ setStatus('Помилка зв\'язку: '+e.message, true); }
 }
 
+/* ---- базовий артикул: прибираємо копії Blink «(коп1)» і магазинні приставки (B)/(С)/(Bon) ---- */
+function normArtLite(b){ return String(b==null?'':b).toUpperCase().replace(/\s+/g,' ').trim(); }
+function canonBase(b){
+  let s=String(b==null?'':b).trim();
+  const RE=/\s*\((?:коп\d*|b|в|bon|bonna|c|с|cor|core)\)\s*$/i;   // (коп1)/(коп2), (B)/(В)/(Bon), (C)/(С)/(Cor)
+  while(RE.test(s)) s=s.replace(RE,'').trim();
+  return normArtLite(s);
+}
+/* об'єднуємо розновиди і копії одного товару в один рядок (за базовим артикулом) */
+function groupVariants(list){
+  const groups=new Map();
+  for(const m of list){
+    const key=canonBase(m.b);
+    if(!groups.has(key)) groups.set(key,[]);
+    groups.get(key).push(m);
+  }
+  const reps=[];
+  for(const arr of groups.values()){
+    // представник: у кого артикул уже чистий (без хвоста) і є фото, інакше — будь-який з фото
+    const rep = arr.find(m=> m.img && canonBase(m.b)===normArtLite(m.b)) || arr.find(m=>m.img) || arr[0];
+    // показуємо найкоротший (найчистіший) артикул групи
+    const displayB = arr.map(m=>String(m.b||'')).filter(Boolean).sort((a,b)=>a.length-b.length)[0] || rep.b;
+    reps.push(Object.assign({}, rep, { b: displayB }));
+  }
+  return reps;
+}
+
 async function doSearch(){
   const q=$('q').value.trim();
   if(!q){ setStatus('Введіть артикул або назву.'); return; }
@@ -447,7 +499,7 @@ async function doSearch(){
   try{
     const list=await ensureCatalog();
     const ql=q.toLowerCase();
-    // збіги за артикулом або назвою (показуємо ВСІ, зокрема з однаковим артикулом)
+    // збіги за артикулом або назвою
     let found=list.filter(m=> (m.b&&m.b.toLowerCase().indexOf(ql)!==-1) || (m.n&&m.n.toLowerCase().indexOf(ql)!==-1));
 
     // якщо підрядком нічого — пробуємо точний артикул (розмірні хвости qN/…M/… 26)
@@ -460,8 +512,10 @@ async function doSearch(){
       }
     }
 
-    if(found.length===1){ await openResult(found[0].k||found[0].b); return; }
-    if(found.length>1){ renderResults(found.slice(0,100), found.length); return; }
+    // розновиди і копії одного товару зводимо в один рядок
+    const reps=groupVariants(found);
+    if(reps.length===1){ await openResult(reps[0].k||reps[0].b); return; }
+    if(reps.length>1){ renderResults(reps.slice(0,100), reps.length); return; }
     setStatus('Нічого не знайдено за запитом «'+q+'». Перевірте артикул/назву або оновіть публікацію.', true);
   }catch(e){ setStatus('Помилка зв\'язку: '+e.message, true); }
   finally{ $('go').disabled=false; }

@@ -174,19 +174,30 @@ function descToText(html){
     .replace(/<[^>]+>/g,'')
     .replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&');
 }
-// шукаємо в описі згадку про розмір (маломірить / більшемірить і т.п.)
-function extractSizeHint(html){
-  const re=/(маломір|мало мір|маломер|мало мер|більшемір|большемер|велик[оа]мір|великомер|на пів\s*розмір|на півтора розмір|на розмір (більше|менше)|на размер (больше|меньше)|бер[іи]ть на розмір|бери на размер|розмір(ом)?\s+(більше|менше)|размер(ом)?\s+(больше|меньше)|мал[ао] розмірн)/i;
+const clean=(s)=>String(s||'').replace(/^[\(\)\s"«»:\-–—]+|[\(\)\s"«»]+$/g,'').trim();
+// підказка про посадку: маломірить / більшемірить / повнорозмірний
+function extractFit(html){
+  const re=/(маломір|мало мір|маломер|мало мер|більшемір|большемер|велик[оа]мір|великомер|повномір|повно ?розмір|полноразмер|повно ?мір|на пів\s*розмір|на півтора розмір|на розмір (більше|менше)|на размер (больше|меньше)|бер[іи]ть на розмір|бери на размер|розмір(ом)?\s+(більше|менше)|размер(ом)?\s+(больше|меньше)|розмір в розмір|размер в размер|чітко в розмір|точно в розмір|в (свій|свой) розмір|мал[ао] розмірн)/i;
   const lines=descToText(html).split(/\n+/).map(s=>s.trim()).filter(Boolean);
-  for(const ln of lines){ if(re.test(ln)) return ln.replace(/^[\(\)\s"«»-]+|[\(\)\s"«»]+$/g,''); }
+  for(const ln of lines){ if(re.test(ln)) return clean(ln); }
+  return '';
+}
+// лінія з розмірами: «Розмірна сітка: …», «Розміри: …», «Размеры: …»
+function extractSizes(html){
+  const lines=descToText(html).split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  for(const ln of lines){
+    if(/^(розмірн[а-яіїєґ]*\s*сітк[а-яіїєґ]*|розмір[а-яіїєґ]*|размер[а-яё]*(\s*(сетка|ряд))?|size)\s*[:\-–—]/i.test(ln)) return clean(ln);
+  }
   return '';
 }
 function showSizeHint(html){
   const slot=document.getElementById('auto-size'); if(!slot) return;
-  const hint=extractSizeHint(html);
-  slot.innerHTML = hint
-    ? '<div class="fit" style="background:#fff3cd;border-color:#ffe08a;color:#8a5a00;font-weight:600">📏 Розмір: '+esc(hint)+'</div>'
-    : '';
+  let out='';
+  const sizes=extractSizes(html);
+  if(sizes) out+='<div class="fit" style="background:#e7effd;border-color:#c4d6f5;color:#1e40af;font-weight:600">📐 '+esc(sizes)+'</div>';
+  const fit=extractFit(html);
+  if(fit) out+='<div class="fit" style="background:#fff3cd;border-color:#ffe08a;color:#8a5a00;font-weight:600">📏 Розмір: '+esc(fit)+'</div>';
+  slot.innerHTML=out;
 }
 function galleryHtml(imgs){
   if(!imgs || !imgs.length) return '';

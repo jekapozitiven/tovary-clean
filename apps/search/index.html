@@ -166,27 +166,45 @@ function overallPresence(stores){
 function descBlock(html){
   return '<div class="desc"><h3>Опис</h3><div class="desc-body">'+html+'</div></div>';
 }
+// декодуємо HTML-спецсимволи (&mdash; тощо)
+function decodeEnt(s){
+  return String(s||'')
+    .replace(/&mdash;/gi,'—').replace(/&ndash;/gi,'–').replace(/&nbsp;/gi,' ')
+    .replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'")
+    .replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/&amp;/gi,'&');
+}
 // текст опису (без тегів, з переносами рядків)
 function descToText(html){
-  return String(html||'')
+  return decodeEnt(String(html||'')
     .replace(/<br\s*\/?>/gi,'\n')
-    .replace(/<\/(p|div|li|tr)>/gi,'\n')
-    .replace(/<[^>]+>/g,'')
-    .replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&');
+    .replace(/<li[^>]*>/gi,'\n')
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi,'\n')
+    .replace(/<[^>]+>/g,''));
 }
 const clean=(s)=>String(s||'').replace(/^[\(\)\s"«»:\-–—]+|[\(\)\s"«»]+$/g,'').trim();
-// підказка про посадку: маломірить / більшемірить / повнорозмірний
+// для рядків (розміри) — не чіпаємо дужки всередині/на кінці
+const cleanLine=(s)=>String(s||'').replace(/^[\s"«»:\-–—]+|[\s"«»]+$/g,'').trim();
+// прибираємо маркер списку/символи на початку рядка
+const stripBullet=(s)=>String(s||'').replace(/^[\s•▪●·▪■●•*·\-–—]+/,'').trim();
+
+// підказка про посадку: маломірить / більшемірить / повнорозмірний.
+// Беремо КОРОТКУ примітку (у дужках або короткий рядок), НЕ довгий абзац.
 function extractFit(html){
-  const re=/(маломір|мало мір|маломер|мало мер|більшемір|большемер|велик[оа]мір|великомер|повномір|повно ?розмір|полноразмер|повно ?мір|на пів\s*розмір|на півтора розмір|на розмір (більше|менше)|на размер (больше|меньше)|бер[іи]ть на розмір|бери на размер|розмір(ом)?\s+(більше|менше)|размер(ом)?\s+(больше|меньше)|розмір в розмір|размер в размер|чітко в розмір|точно в розмір|в (свій|свой) розмір|мал[ао] розмірн)/i;
-  const lines=descToText(html).split(/\n+/).map(s=>s.trim()).filter(Boolean);
-  for(const ln of lines){ if(re.test(ln)) return clean(ln); }
+  const kw=/(маломір|мало мір|маломер|мало мер|більшемір|большемер|велик[оа]мір|великомер|повномір|повно ?розмір|полноразмер|повно ?мір)/i;
+  const txt=descToText(html);
+  // 1) примітка в дужках: (маломірять), (більшемірять)
+  const par=txt.match(/\(([^)]{1,60})\)/g)||[];
+  for(const p of par){ if(kw.test(p)) return clean(p); }
+  // 2) короткий рядок (до 70 символів) з ключовим словом — не абзац
+  const lines=txt.split(/\n+/).map(s=>stripBullet(s)).filter(Boolean);
+  for(const ln of lines){ if(kw.test(ln) && (ln.length<=70 || /^(розмір|размер|size)/i.test(ln))) return clean(ln); }
   return '';
 }
 // лінія з розмірами: «Розмірна сітка: …», «Розміри: …», «Размеры: …»
 function extractSizes(html){
-  const lines=descToText(html).split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  const lines=descToText(html).split(/\n+/).map(s=>stripBullet(s)).filter(Boolean);
   for(const ln of lines){
-    if(/^(розмірн[а-яіїєґ]*\s*сітк[а-яіїєґ]*|розмір[а-яіїєґ]*|размер[а-яё]*(\s*(сетка|ряд))?|size)\s*[:\-–—]/i.test(ln)) return clean(ln);
+    if(/^(розмірн[а-яіїєґ]*\s*сітк[а-яіїєґ]*|розмір[а-яіїєґ]*|размер[а-яё]*(\s*(сетка|ряд))?|size)\s*[:\-–—]/i.test(ln)) return cleanLine(ln);
   }
   return '';
 }
@@ -196,7 +214,9 @@ function showSizeHint(html){
   const sizes=extractSizes(html);
   if(sizes) out+='<div class="fit" style="background:#e7effd;border-color:#c4d6f5;color:#1e40af;font-weight:600">📐 '+esc(sizes)+'</div>';
   const fit=extractFit(html);
-  if(fit) out+='<div class="fit" style="background:#fff3cd;border-color:#ffe08a;color:#8a5a00;font-weight:600">📏 Розмір: '+esc(fit)+'</div>';
+  // якщо примітка про посадку вже є всередині рядка розмірів — окремо не дублюємо
+  if(fit && !(sizes && sizes.toLowerCase().indexOf(fit.toLowerCase())!==-1))
+    out+='<div class="fit" style="background:#fff3cd;border-color:#ffe08a;color:#8a5a00;font-weight:600">📏 Розмір: '+esc(fit)+'</div>';
   slot.innerHTML=out;
 }
 function galleryHtml(imgs){

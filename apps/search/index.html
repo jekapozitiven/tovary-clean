@@ -300,7 +300,8 @@ function render(p){
     '</div>'
   ) : '';
 
-  const desc = p.desc ? descBlock(p.desc) : '<div id="desc-slot"></div>';
+  // якщо є посилання на товар (Black Street) — опис завжди тягнемо звідти; інакше показуємо індексний
+  const desc = (!p.detail && p.desc) ? descBlock(p.desc) : '<div id="desc-slot"></div>';
 
   $('result').innerHTML =
     '<div class="card">'+
@@ -320,7 +321,6 @@ function render(p){
     '</div>';
 
   bindGallery();
-  if(p.desc) showSizeHint(p.desc);   // підказка про розмір з опису (якщо він уже в індексі)
   const co=$('chart-open'); if(co) co.addEventListener('click', ()=>openChart(p));
   if(OWNER){
     pendingCharts = [];
@@ -329,10 +329,12 @@ function render(p){
     const sv=$('extra-save'); if(sv) sv.addEventListener('click', ()=>saveExtra(p));
   }
 
-  // укр. назва/опис/фото — тягнемо з картки товару (навіть якщо опис вже є)
+  // опис/назва/фото/розмірні підказки — завжди з Black Street (/detail), якщо є посилання
   if(p.detail){
-    loadDetail(p.detail, !p.desc, !imgs.length);
-  } else if(!p.desc && !p.detail){
+    loadDetail(p.detail, true, !imgs.length);
+  } else if(p.desc){
+    showSizeHint(p.desc);   // товар лише на Blink — беремо індексний опис
+  } else {
     const slot=document.getElementById('desc-slot');
     if(slot) slot.innerHTML='<div class="desc"><div class="desc-body" style="color:var(--dim)">Немає посилання на товар — переопублікуйте каталог (кнопка «Зібрати та опублікувати»).</div></div>';
   }

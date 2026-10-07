@@ -718,7 +718,8 @@ function buildBlink(taken) {
     for (var j = 0; j < card.idxs.length; j++) {
       var ri = card.idxs[j], r = PROWS[ri], isMain = (ri === card.mainIdx);
       var size = getChar(r, cCols, ['розмір', 'размер']);
-      var art = isMain ? parent : (parent + (size || ('v' + (j + 1))));
+      var art = isMain ? parent : (parent + '-' + (size || ('v' + (j + 1))));
+      if (taken) taken.add(art);   // артикулы размеров тоже занимаем, чтобы не было совпадений
       var price = discountedPrice(r);
       var pav = (avail >= 0) ? String(r[avail] || '').trim() : '';
       var naly = (pav === '-') ? 'Немає в наявності' : 'В наявності';

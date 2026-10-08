@@ -108,6 +108,10 @@
       <input type="file" id="file" accept=".xlsx" class="hidden">
     </div>
     <div id="load-msg"></div>
+    <div class="row-flex" style="margin-top:8px">
+      <button class="btn btn--sm btn--ghost" id="ai-check">Проверить настройку AI-фото</button>
+    </div>
+    <div id="ai-msg"></div>
   </div>
 
   <!-- 2. Товары -->
@@ -174,6 +178,21 @@ function escapeHtml(s) {
   });
 }
 var showMsg = function (el, kind, html) { el.innerHTML = '<div class="msg msg--' + kind + '">' + html + '</div>'; };
+
+/* подключение к посреднику берём из настроек «Цены и наличие» (общий localStorage) */
+function proxyCfg() { try { return JSON.parse(localStorage.getItem('tovary:prices:cfg')) || {}; } catch (e) { return {}; } }
+async function api(route, payload) {
+  var c = proxyCfg();
+  if (!c.url) throw new Error('Нет адреса посредника. Откройте «Цены и наличие» → Подключение и сохраните адрес и пароль.');
+  var res = await fetch(String(c.url).replace(/\/+$/, '') + route, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-App-Password': c.pass || '' },
+    body: JSON.stringify(payload || {})
+  });
+  var d = await res.json().catch(function () { return {}; });
+  if (!res.ok) throw new Error(d.error || ('Ошибка ' + res.status));
+  return d;
+}
 
 /* данные выгрузки */
 var PH = [], GH = [];
@@ -866,6 +885,20 @@ renderCatTable();
 if ($('cat-reset')) $('cat-reset').addEventListener('click', function () {
   try { localStorage.removeItem(CAT_KEY); } catch (e) {}
   loadCatMap(); addExportGroups(); renderCatTable();
+});
+
+/* проверка настройки AI-фото (OpenAI + R2) через посредник */
+$('ai-check').addEventListener('click', async function () {
+  showMsg($('ai-msg'), 'warn', 'Проверяю…');
+  try {
+    var p = await api('/ping', {});
+    var mark = function (v) { return v ? '✓' : '— нет'; };
+    var ok = p.openai && p.photos && p.photos_public;
+    var line = 'OpenAI ключ: ' + mark(p.openai) + ' · Хранилище R2: ' + mark(p.photos) + ' · Адрес R2: ' + mark(p.photos_public);
+    showMsg($('ai-msg'), ok ? 'ok' : 'err', (ok ? 'Всё готово к AI-фото. ' : 'Ещё не всё настроено. ') + line);
+  } catch (e) {
+    showMsg($('ai-msg'), 'err', 'Не удалось проверить: ' + escapeHtml(e.message));
+  }
 });
 
 /* выбор папки (Chrome/Edge) */

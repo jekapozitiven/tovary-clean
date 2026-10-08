@@ -164,7 +164,7 @@ function overallPresence(stores){
   return { text: no||vals[0], yes:false };
 }
 function descBlock(html){
-  return '<div class="desc"><h3>Опис</h3><div class="desc-body">'+html+'</div></div>';
+  return '<div class="desc"><h3>Опис</h3><div class="desc-body">'+fixGrammar(decodeEnt(String(html||'')))+'</div></div>';
 }
 // декодуємо HTML-спецсимволи (&mdash; тощо)
 function decodeEnt(s){
@@ -173,19 +173,28 @@ function decodeEnt(s){
     .replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'")
     .replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/&amp;/gi,'&');
 }
+// виправлення типових помилок (лише у відображенні застосунку, не на магазині)
+function fixGrammar(s){
+  s=String(s||'');
+  // подвоєна М у розмірних словах: маломмірить -> маломірить (зберігаємо регістр)
+  s=s.replace(/(мало|більше|повно)(м)м(?=[іеІЕ])/gi,'$1$2');
+  // «на підлогу розміру» -> «на пів розміру»
+  s=s.replace(/підлогу(\s+розмір)/gi,(m,g1)=> (m[0]===m[0].toUpperCase()?'ПІВ':'пів')+g1);
+  return s;
+}
 // текст опису (без тегів, з переносами рядків)
 function descToText(html){
-  return decodeEnt(String(html||'')
+  return fixGrammar(decodeEnt(String(html||'')
     .replace(/<br\s*\/?>/gi,'\n')
     .replace(/<li[^>]*>/gi,'\n')
     .replace(/<\/(p|div|li|tr|h[1-6])>/gi,'\n')
-    .replace(/<[^>]+>/g,''));
+    .replace(/<[^>]+>/g,'')));
 }
 const clean=(s)=>String(s||'').replace(/^[\(\)\s"«»:\-–—]+|[\(\)\s"«»]+$/g,'').trim();
 // для рядків (розміри) — не чіпаємо дужки всередині/на кінці
 const cleanLine=(s)=>String(s||'').replace(/^[\s"«»:\-–—]+|[\s"«»]+$/g,'').trim();
-// прибираємо маркер списку/символи на початку рядка
-const stripBullet=(s)=>String(s||'').replace(/^[\s•▪●·▪■●•*·\-–—]+/,'').trim();
+// прибираємо маркер списку, емодзі та будь-які символи на початку рядка
+const stripBullet=(s)=>{ try{ return String(s||'').replace(/^[^\p{L}\p{N}]+/u,'').trim(); }catch(e){ return String(s||'').replace(/^[\s•▪●·▪■●•*·✎✏📏📐\-–—]+/,'').trim(); } };
 
 // підказка про посадку: маломірить / більшемірить / повнорозмірний.
 // Беремо КОРОТКУ примітку (у дужках або короткий рядок), НЕ довгий абзац.
@@ -208,15 +217,26 @@ function extractSizes(html){
   }
   return '';
 }
+// визначаємо тип посадки: маломірить / більшемірить
+function fitType(html){
+  const txt=descToText(html);
+  if(/більшемір|большемер/i.test(txt)) return 'large';
+  if(/маломір|мало мір|маломер|мало мер/i.test(txt)) return 'small';
+  return '';
+}
 function showSizeHint(html){
   const slot=document.getElementById('auto-size'); if(!slot) return;
   let out='';
-  const sizes=extractSizes(html);
-  if(sizes) out+='<div class="fit" style="background:#e7effd;border-color:#c4d6f5;color:#1e40af;font-weight:600">📐 '+esc(sizes)+'</div>';
   const fit=extractFit(html);
-  // якщо примітка про посадку вже є всередині рядка розмірів — окремо не дублюємо
-  if(fit && !(sizes && sizes.toLowerCase().indexOf(fit.toLowerCase())!==-1))
-    out+='<div class="fit" style="background:#fff3cd;border-color:#ffe08a;color:#8a5a00;font-weight:600">📏 Розмір: '+esc(fit)+'</div>';
+  const ft=fitType(html);
+  // маломірить / більшемірить — ПОМІТНИЙ червоний блок
+  if(ft){
+    const label = (fit && fit.length<=70) ? fit : (ft==='large'?'Більшемірить':'Маломірить');
+    out+='<div class="fit" style="background:#fde8e8;border-color:#f3b4b4;color:#b91c1c;font-weight:700;font-size:15px">⚠️ '+esc(label)+'</div>';
+  }
+  // розміри — показуємо завжди, коли є рядок з розмірами (для будь-якого товару, зокрема взуття)
+  const sizes=extractSizes(html);
+  if(sizes) out+='<div class="fit" style="background:#eef2f7;border-color:#d7dee7;color:#334155;font-weight:600">📐 '+esc(sizes)+'</div>';
   slot.innerHTML=out;
 }
 function galleryHtml(imgs){

@@ -113,8 +113,8 @@
   <!-- 2. Товары -->
   <div class="panel hidden" id="work">
     <h2>2. Товары из выгрузки</h2>
-    <p class="sub">Отметьте товары, которые нужно продублировать. «Сделать файлы» создаёт три импорта:
-       Bonna-shop и Core22 (Prom) и Blink (Хорошоп). Дубли артикулов проверяются по кэшу
+    <p class="sub">Отметьте товары, которые нужно продублировать. «Сделать файлы» создаёт четыре импорта:
+       Bonna-shop, Core22, Street Code (Prom) и Blink (Хорошоп). Дубли артикулов проверяются по кэшу
        приложения «Цены и наличие» (нажмите там «Обновить товары»).</p>
 
     <div class="steps">
@@ -122,6 +122,8 @@
         <input type="number" id="step-bonna" value="1" step="0.5"></label>
       <label class="f"><span>Core22 дешевле на, грн</span>
         <input type="number" id="step-core22" value="2" step="0.5"></label>
+      <label class="f"><span>Street Code дешевле на, грн</span>
+        <input type="number" id="step-streetcode" value="10" step="0.5"></label>
       <label class="f"><span>Blink: размер шрифта описания, px</span>
         <input type="number" id="blink-font" value="14" step="1" min="8"></label>
     </div>
@@ -163,7 +165,7 @@
    ===================================================================== */
 
 var PSHEET = 'Export Products Sheet', GSHEET = 'Export Groups Sheet';
-var SUF_B = ' (B)', SUF_C = ' (С)';   // С — кириллическая С для Core22
+var SUF_B = ' (B)', SUF_C = ' (С)', SUF_S = ' (S)';   // С — кириллическая С для Core22; S — латинская для Street Code
 
 var $ = function (id) { return document.getElementById(id); };
 function escapeHtml(s) {
@@ -608,18 +610,25 @@ var CAT_DEFAULTS = [
   { bs:'Жіноче взуття', bonna:'Жіночі кросівки демісезонні', core22:'', blink:'Взуття/Жіноче взуття' },
   { bs:'Жіночі черевики-кросовки зима', bonna:'Зимове взуття', core22:'', blink:'Взуття/Жіноче взуття' },
   { bs:'Чоловічі зимові куртки', bonna:'Чоловічі зимові куртки', core22:'', blink:'Чоловічий одяг/Верхній одяг/Зимові куртки' },
-  { bs:'Зимові утеплені костюми', bonna:'Зимові утеплені костюми', core22:'', blink:'Чоловічий одяг/Верхній одяг/Зимові спортивні костюми' }
+  { bs:'Зимові утеплені костюми', bonna:'Зимові утеплені костюми', core22:'', blink:'Чоловічий одяг/Верхній одяг/Зимові спортивні костюми' },
+  { bs:'Шапки-Рукавички-Бафф', bonna:'', core22:'', blink:'Аксесуари/Шапки-Шарфи-Рукавиці' },
+  { bs:'Новорічні светри, піжами', bonna:'', core22:'', blink:'Чоловічий одяг/Кофти/На флісі' },
+  { bs:'Штани/Спідниці/Шорти', bonna:'', core22:'', blink:'Жіночий одяг/Штани-шорти-спідниці' },
+  { bs:'Зимові куртки', bonna:'', core22:'', blink:'Жіночий одяг/Жіночі зимові куртки' },
+  { bs:'Піжами', bonna:'', core22:'', blink:'Жіночий одяг/Пижамы-новогодние свитера' },
+  { bs:'Дитячий одяг', bonna:'', core22:'', blink:'Дитячий одяг/Костюми' },
+  { bs:'Жіночі кросівки', bonna:'', core22:'', blink:'Жіноче взуття' }
 ];
 var catMap = {};
 function loadCatMap() {
   catMap = {};
-  for (var i = 0; i < CAT_DEFAULTS.length; i++) { var d = CAT_DEFAULTS[i]; catMap[normGroup(d.bs)] = { bs: d.bs, bonna: d.bonna, core22: d.core22, blink: d.blink }; }
+  for (var i = 0; i < CAT_DEFAULTS.length; i++) { var d = CAT_DEFAULTS[i]; catMap[normGroup(d.bs)] = { bs: d.bs, bonna: d.bonna, core22: d.core22, streetcode: d.streetcode || '', blink: d.blink }; }
   try {
     var saved = JSON.parse(localStorage.getItem(CAT_KEY) || '{}');
     for (var k in saved) {
-      if (!catMap[k]) catMap[k] = { bs: saved[k].bs || k, bonna: '', core22: '', blink: '' };
+      if (!catMap[k]) catMap[k] = { bs: saved[k].bs || k, bonna: '', core22: '', streetcode: '', blink: '' };
       if (saved[k].bs) catMap[k].bs = saved[k].bs;
-      ['bonna', 'core22', 'blink'].forEach(function (st) { if (saved[k][st] !== undefined) catMap[k][st] = saved[k][st]; });
+      ['bonna', 'core22', 'streetcode', 'blink'].forEach(function (st) { if (saved[k][st] !== undefined && saved[k][st] !== '') catMap[k][st] = saved[k][st]; });
     }
   } catch (e) {}
 }
@@ -647,7 +656,7 @@ function addExportGroups() {
     var nm = (guk >= 0 ? String(GROWS[i][guk] || '') : '') || (gru >= 0 ? String(GROWS[i][gru] || '') : '');
     if (!nm) continue;
     var key = normGroup(nm);
-    if (!catMap[key]) catMap[key] = { bs: nm, bonna: '', core22: '', blink: '' };
+    if (!catMap[key]) catMap[key] = { bs: nm, bonna: '', core22: '', streetcode: '', blink: '' };
   }
 }
 function renderCatTable() {
@@ -656,9 +665,9 @@ function renderCatTable() {
   var rows = keys.map(function (k) {
     var c = catMap[k];
     function inp(st) { return '<input type="text" data-k="' + escapeHtml(k) + '" data-st="' + st + '" value="' + escapeHtml(c[st] || '') + '">'; }
-    return '<tr><td class="cat-bs">' + escapeHtml(c.bs || k) + '</td><td>' + inp('bonna') + '</td><td>' + inp('core22') + '</td><td>' + inp('blink') + '</td></tr>';
+    return '<tr><td class="cat-bs">' + escapeHtml(c.bs || k) + '</td><td>' + inp('bonna') + '</td><td>' + inp('core22') + '</td><td>' + inp('streetcode') + '</td><td>' + inp('blink') + '</td></tr>';
   }).join('');
-  box.innerHTML = '<table class="cat"><tr><th>Black Street (группа)</th><th>Bonna (Prom)</th><th>Core22 (Prom)</th><th>Blink (Хорошоп, путь через /)</th></tr>' + rows + '</table>';
+  box.innerHTML = '<table class="cat"><tr><th>Black Street (группа)</th><th>Bonna (Prom)</th><th>Core22 (Prom)</th><th>Street Code (Prom)</th><th>Blink (Хорошоп, путь через /)</th></tr>' + rows + '</table>';
   Array.prototype.forEach.call(box.querySelectorAll('input'), function (el) {
     el.addEventListener('input', function () {
       var k = el.getAttribute('data-k'), st = el.getAttribute('data-st');
@@ -766,26 +775,31 @@ $('make').addEventListener('click', async function () {
   if (!picked.size) { showMsg($('out'), 'warn', 'Не выбрано ни одного товара.'); return; }
   var sb = parseFloat($('step-bonna').value) || 0;
   var sc = parseFloat($('step-core22').value) || 0;
+  var ss = parseFloat($('step-streetcode').value) || 0;
 
   var takenBonna = await existingArticles('bonna');
   var takenCore  = await existingArticles('core22');
+  var takenSC    = await existingArticles('streetcode');
   var takenBlink = await existingArticles('blink');
   var stampBonna = await cacheStamp('bonna');
   var stampCore  = await cacheStamp('core22');
+  var stampSC    = await cacheStamp('streetcode');
   var stampBlink = await cacheStamp('blink');
 
   var bonna = buildStore(SUF_B, sb, takenBonna, 'bonna');
   var core  = buildStore(SUF_C, sc, takenCore, 'core22');
+  var scode = buildStore(SUF_S, ss, takenSC, 'streetcode');
   var blink = buildBlink(takenBlink);
 
   window._files = {
     'import-bonna.xlsx': bonna.blob,
     'import-core22.xlsx': core.blob,
+    'import-streetcode.xlsx': scode.blob,
     'import-blink.xlsx': blink.blob
   };
   var savedNote = '';
   if (dirHandle) {
-    var ok = true, names = ['import-bonna.xlsx','import-core22.xlsx','import-blink.xlsx'];
+    var ok = true, names = ['import-bonna.xlsx','import-core22.xlsx','import-streetcode.xlsx','import-blink.xlsx'];
     for (var i = 0; i < names.length; i++) { var r = await saveToDir(names[i], window._files[names[i]]); ok = ok && r; }
     savedNote = ok ? '<div class="msg msg--ok">Сохранено в папку (обновлены): ' + names.join(', ') + '.</div>' :
       '<div class="msg msg--warn">В папку записать не удалось — скачайте кнопками ниже.</div>';
@@ -802,6 +816,7 @@ $('make').addEventListener('click', async function () {
   var statsHtml = '<div class="msg msg--warn"><b>Статистика:</b><br>' +
     line('Bonna', bonna, takenBonna, stampBonna) + '<br>' +
     line('Core22', core, takenCore, stampCore) + '<br>' +
+    line('Street Code', scode, takenSC, stampSC) + '<br>' +
     line('Blink', blink, takenBlink, stampBlink) + '</div>';
   if (blink.unmapped && blink.unmapped.length) {
     statsHtml += '<div class="msg msg--err"><b>Blink: без раздела (нет правила для группы):</b><br>' +
@@ -822,9 +837,10 @@ $('make').addEventListener('click', async function () {
     '<div class="files">' +
     fcard('Bonna-shop (Prom)', 'import-bonna.xlsx', bonna.rows) +
     fcard('Core22 (Prom)', 'import-core22.xlsx', core.rows) +
+    fcard('Street Code (Prom)', 'import-streetcode.xlsx', scode.rows) +
     fcard('Blink (Хорошоп)', 'import-blink.xlsx', blink.rows) +
     '</div>' +
-    '<div class="msg msg--warn">Prom: import-bonna → Bonna, import-core22 → Core22. Хорошоп: import-blink → Blink.</div>' +
+    '<div class="msg msg--warn">Prom: import-bonna → Bonna, import-core22 → Core22, import-streetcode → Street Code. Хорошоп: import-blink → Blink.</div>' +
     statsHtml + tprev;
   Array.prototype.forEach.call($('out').querySelectorAll('[data-dl]'), function (b) {
     b.addEventListener('click', function () { var n = b.getAttribute('data-dl'); download(n, window._files[n]); });

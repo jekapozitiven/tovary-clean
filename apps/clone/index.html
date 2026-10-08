@@ -584,7 +584,7 @@ var BLINK_HDR = ['Артикул','Родительский артикул','А�
    положить на Bonna, Core22 (Prom) и Blink (Хорошоп, путь через /).
    ===================================================================== */
 function normGroup(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
-var CAT_KEY = 'tovary:clone:catmap';
+var CAT_KEY = 'tovary:clone:catmap:v2';
 var CAT_DEFAULTS = [
   { bs:'Чоловічі літні костюми', bonna:'Чоловічі літні костюми футболка + шорти + штани', core22:'', blink:'Чоловічий одяг/Літні костюми' },
   { bs:'Чоловічі шорти', bonna:'Чоловічі шорти', core22:'', blink:'Чоловічий одяг/Шорти' },
@@ -610,7 +610,7 @@ var CAT_DEFAULTS = [
   { bs:'Жіноче взуття', bonna:'Жіночі кросівки демісезонні', core22:'', blink:'Взуття/Жіноче взуття' },
   { bs:'Жіночі черевики-кросовки зима', bonna:'Зимове взуття', core22:'', blink:'Взуття/Жіноче взуття' },
   { bs:'Чоловічі зимові куртки', bonna:'Чоловічі зимові куртки', core22:'', blink:'Чоловічий одяг/Верхній одяг/Зимові куртки' },
-  { bs:'Зимові утеплені костюми', bonna:'Зимові утеплені костюми', core22:'', blink:'Чоловічий одяг/Верхній одяг/Зимові спортивні костюми' },
+  { bs:'Зимові утеплені костюми', bonna:'Зимові утеплені костюми', core22:'', blink:'Чоловічий одяг/Спортивні костюми/Зимові спортивні костюми' },
   { bs:'Шапки-Рукавички-Бафф', bonna:'', core22:'', blink:'Аксесуари/Шапки-Шарфи-Рукавиці' },
   { bs:'Новорічні светри, піжами', bonna:'', core22:'', blink:'Чоловічий одяг/Кофти/На флісі' },
   { bs:'Штани/Спідниці/Шорти', bonna:'', core22:'', blink:'Жіночий одяг/Штани-шорти-спідниці' },
@@ -620,19 +620,33 @@ var CAT_DEFAULTS = [
   { bs:'Жіночі кросівки', bonna:'', core22:'', blink:'Жіноче взуття' }
 ];
 var catMap = {};
+function catDefault(key, st) {
+  for (var i = 0; i < CAT_DEFAULTS.length; i++) if (normGroup(CAT_DEFAULTS[i].bs) === key) return (CAT_DEFAULTS[i][st] || '');
+  return '';
+}
 function loadCatMap() {
   catMap = {};
-  for (var i = 0; i < CAT_DEFAULTS.length; i++) { var d = CAT_DEFAULTS[i]; catMap[normGroup(d.bs)] = { bs: d.bs, bonna: d.bonna, core22: d.core22, streetcode: d.streetcode || '', blink: d.blink }; }
+  for (var i = 0; i < CAT_DEFAULTS.length; i++) { var d = CAT_DEFAULTS[i]; catMap[normGroup(d.bs)] = { bs: d.bs, bonna: d.bonna || '', core22: d.core22 || '', streetcode: d.streetcode || '', blink: d.blink || '' }; }
   try {
-    var saved = JSON.parse(localStorage.getItem(CAT_KEY) || '{}');
+    var saved = JSON.parse(localStorage.getItem(CAT_KEY) || '{}');   // хранятся только отличия от стандартных
     for (var k in saved) {
       if (!catMap[k]) catMap[k] = { bs: saved[k].bs || k, bonna: '', core22: '', streetcode: '', blink: '' };
       if (saved[k].bs) catMap[k].bs = saved[k].bs;
-      ['bonna', 'core22', 'streetcode', 'blink'].forEach(function (st) { if (saved[k][st] !== undefined && saved[k][st] !== '') catMap[k][st] = saved[k][st]; });
+      ['bonna', 'core22', 'streetcode', 'blink'].forEach(function (st) { if (saved[k][st] !== undefined) catMap[k][st] = saved[k][st]; });
     }
   } catch (e) {}
 }
-function saveCatMap() { try { localStorage.setItem(CAT_KEY, JSON.stringify(catMap)); } catch (e) {} }
+function saveCatMap() {
+  var diff = {};
+  for (var k in catMap) {
+    var rec = catMap[k], entry = null;
+    ['bonna', 'core22', 'streetcode', 'blink'].forEach(function (st) {
+      var v = rec[st] || '';
+      if (v !== catDefault(k, st)) { if (!entry) { entry = { bs: rec.bs }; diff[k] = entry; } entry[st] = v; }
+    });
+  }
+  try { localStorage.setItem(CAT_KEY, JSON.stringify(diff)); } catch (e) {}
+}
 loadCatMap();
 
 function groupNamesByNum() {

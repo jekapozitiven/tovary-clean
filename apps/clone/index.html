@@ -145,6 +145,17 @@
       <button class="btn btn--ghost btn--sm" id="cat-reset" style="margin-top: 8px">Сбросить к стандартным</button>
     </details>
 
+    <div style="margin: 4px 0 12px">
+      <p class="muted" style="margin: 0 0 6px">AI-фото Street Code (из AiKadry): назовите файлы по артикулу (напр. <b>Arm-TN12.png</b>) и выберите пачкой —
+         фото зальётся в R2 и станет обложкой на Street Code (и на все размеры). Остальные фото — оригинальные.</p>
+      <div class="row-flex">
+        <button class="btn btn--sm btn--ghost" id="sc-photo-pick">Загрузить AI-фото (файлы)</button>
+        <input type="file" id="sc-photo-files" accept="image/*" multiple class="hidden">
+        <button class="btn btn--sm btn--ghost" id="sc-photo-clear">Очистить</button>
+      </div>
+      <div id="sc-photo-msg"></div>
+    </div>
+
     <div class="toolbar">
       <input type="text" class="search" id="q" placeholder="Поиск по названию или артикулу…">
       <select id="fcat"><option value="">Все категории</option></select>
@@ -197,6 +208,18 @@ async function api(route, payload) {
   var d = await res.json().catch(function () { return {}; });
   if (!res.ok) throw new Error(d.error || ('Ошибка ' + res.status));
   return d;
+}
+
+/* AI-фото для Street Code: артикул -> ссылка в R2 */
+var scPhotos = {};
+function normArtKey(s) { return String(s == null ? '' : s).trim().toLowerCase(); }
+function fileToB64(file) {
+  return new Promise(function (res, rej) {
+    var r = new FileReader();
+    r.onload = function () { var s = String(r.result || ''); var i = s.indexOf(','); res({ b64: i >= 0 ? s.slice(i + 1) : s, ct: file.type || 'image/png' }); };
+    r.onerror = function () { rej(new Error('ошибка чтения файла')); };
+    r.readAsDataURL(file);
+  });
 }
 
 /* данные выгрузки */
@@ -368,18 +391,29 @@ function promValueByName(row, cands, cCols) {
   }
   return '';
 }
-/* Промпт для AI-фото товара (по данным выгрузки) */
-function buildPhotoPrompt(main) {
+/* Промпт для AI-инфографики товара (фото модели + характеристики), по данным выгрузки */
+function buildPhotoPrompt(main, sizes) {
   var cCols = charCols();
-  var name = String(main[C.name] || main[C.nameuk] || '').replace(/\s+/g, ' ').trim();
-  var color = getChar(main, cCols, ['колір', 'цвет']);
   var brand = (idx(PH, 'Виробник') >= 0) ? String(main[idx(PH, 'Виробник')] || '') : '';
-  var ctx = name + (color ? (', колір: ' + color) : '') + (brand ? (', бренд: ' + brand) : '');
-  return 'Turn this into a clean professional e-commerce product photo of the SAME item (' + ctx + '). ' +
-    'Pure white seamless studio background, ghost-mannequin (invisible mannequin) front view, ' +
-    'the whole garment centered and fully visible, soft studio softbox lighting, even soft shadows, ' +
-    'sharp realistic fabric texture, keep the exact design, cut and color of the garment. ' +
-    'High-quality catalog style. No text, no watermark, no extra logos.';
+  var color = getChar(main, cCols, ['колір', 'цвет']);
+  var season = getChar(main, cCols, ['сезон']);
+  var material = getChar(main, cCols, ['тип тканини', 'матеріал', 'материал']);
+  var country = (idx(PH, 'Країна_виробник') >= 0) ? String(main[idx(PH, 'Країна_виробник')] || '') : '';
+  var type = getChar(main, cCols, ['вид виробу', 'тип товару']) || '';
+  var sizeStr = (sizes && sizes.length) ? sizes.join(', ') : '';
+  var feats = [];
+  if (season) feats.push('Сезон: ' + season);
+  if (material) feats.push('Матеріал: ' + material);
+  if (color) feats.push('Колір: ' + color);
+  if (country) feats.push('Країна: ' + country);
+  if (sizeStr) feats.push('Розміри: ' + sizeStr);
+  var title = ((type || 'Товар') + (brand ? (' ' + brand) : '')).trim();
+  return 'Create a professional e-commerce product infographic, portrait orientation, clean light beige background. ' +
+    'Show the SAME garment as in the reference photo (keep its exact design, cut, color and logo placement) worn by a male model, full body, realistic photo, on a soft neutral/outdoor background. ' +
+    'On the left side place a bold dark-navy title: "' + title + '". ' +
+    'Under the title add a vertical list of features, each with a small round orange icon and short clean Ukrainian text, exactly these lines: ' +
+    feats.map(function (f) { return '"' + f + '"'; }).join(', ') + '. ' +
+    'Modern marketplace style, high quality, crisp and correctly spelled Ukrainian text, no watermark.';
 }
 
 /* Хорошоп-поле характеристики -> возможные названия в Prom. Добавляются только непустые. */
@@ -561,6 +595,7 @@ function buildStore(suffix, step, taken, storeKey) {
     if (ua.dup) dups++;
     var groupArticle = ua.art;
     var canon = (C.img >= 0) ? String(main0[C.img] == null ? '' : main0[C.img]) : '';
+    if (storeKey === 'streetcode') { var aiU = scPhotos[normArtKey(baseCode)]; if (aiU) canon = aiU + (canon ? (', ' + canon) : ''); }
     var origNum = (C.gnum >= 0 && main0[C.gnum] !== '' && main0[C.gnum] != null) ? String(main0[C.gnum]) : '';
     var newCat = catTarget(bsGroupName(main0, gmap), storeKey); // '' = не переименовывать
     // общий номер для одинаковых имён (объединяем группы), иначе исходный номер
@@ -941,6 +976,29 @@ $('ai-gen').addEventListener('click', async function () {
   } catch (e) {
     showMsg($('ai-gen-msg'), 'err', 'Не получилось: ' + escapeHtml(e.message));
   }
+});
+
+/* загрузка готовых AI-фото (AiKadry) для Street Code */
+$('sc-photo-pick').addEventListener('click', function () { $('sc-photo-files').click(); });
+$('sc-photo-clear').addEventListener('click', function () { scPhotos = {}; showMsg($('sc-photo-msg'), 'warn', 'AI-фото очищены.'); });
+$('sc-photo-files').addEventListener('change', async function () {
+  var files = Array.prototype.slice.call(this.files || []);
+  if (!files.length) return;
+  var ok = 0, fail = [];
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var base = f.name.replace(/\.[^.]+$/, '').trim();
+    showMsg($('sc-photo-msg'), 'warn', 'Загружаю в R2: ' + (i + 1) + ' из ' + files.length + ' (' + escapeHtml(base) + ')…');
+    try {
+      var d = await fileToB64(f);
+      var r = await api('/putphoto', { b64: d.b64, contentType: d.ct, article: base });
+      if (r.url) { scPhotos[normArtKey(base)] = r.url; ok++; } else fail.push(base);
+    } catch (e) { fail.push(base + ' (' + e.message + ')'); }
+  }
+  this.value = '';
+  showMsg($('sc-photo-msg'), fail.length ? 'warn' : 'ok',
+    'Загружено AI-фото: ' + ok + '. Всего привязано к артикулам: ' + Object.keys(scPhotos).length + '.' +
+    (fail.length ? ('<br>Не вышло: ' + fail.map(escapeHtml).join(', ')) : ''));
 });
 
 /* выбор папки (Chrome/Edge) */

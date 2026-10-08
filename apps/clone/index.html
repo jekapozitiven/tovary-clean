@@ -112,6 +112,11 @@
       <button class="btn btn--sm btn--ghost" id="ai-check">Проверить настройку AI-фото</button>
     </div>
     <div id="ai-msg"></div>
+    <div class="row-flex" style="margin-top:8px">
+      <input type="text" id="ai-art" value="Arm-TN12" style="width:200px">
+      <button class="btn btn--sm" id="ai-gen">Сгенерировать AI-фото (тест)</button>
+    </div>
+    <div id="ai-gen-msg"></div>
   </div>
 
   <!-- 2. Товары -->
@@ -363,6 +368,20 @@ function promValueByName(row, cands, cCols) {
   }
   return '';
 }
+/* Промпт для AI-фото товара (по данным выгрузки) */
+function buildPhotoPrompt(main) {
+  var cCols = charCols();
+  var name = String(main[C.name] || main[C.nameuk] || '').replace(/\s+/g, ' ').trim();
+  var color = getChar(main, cCols, ['колір', 'цвет']);
+  var brand = (idx(PH, 'Виробник') >= 0) ? String(main[idx(PH, 'Виробник')] || '') : '';
+  var ctx = name + (color ? (', колір: ' + color) : '') + (brand ? (', бренд: ' + brand) : '');
+  return 'Turn this into a clean professional e-commerce product photo of the SAME item (' + ctx + '). ' +
+    'Pure white seamless studio background, ghost-mannequin (invisible mannequin) front view, ' +
+    'the whole garment centered and fully visible, soft studio softbox lighting, even soft shadows, ' +
+    'sharp realistic fabric texture, keep the exact design, cut and color of the garment. ' +
+    'High-quality catalog style. No text, no watermark, no extra logos.';
+}
+
 /* Хорошоп-поле характеристики -> возможные названия в Prom. Добавляются только непустые. */
 var BLINK_SPEC_FIELDS = [
   { name: 'Сезон',                  cands: ['сезон'] },
@@ -898,6 +917,29 @@ $('ai-check').addEventListener('click', async function () {
     showMsg($('ai-msg'), ok ? 'ok' : 'err', (ok ? 'Всё готово к AI-фото. ' : 'Ещё не всё настроено. ') + line);
   } catch (e) {
     showMsg($('ai-msg'), 'err', 'Не удалось проверить: ' + escapeHtml(e.message));
+  }
+});
+
+/* тест генерации AI-фото по артикулу из загруженной выгрузки */
+$('ai-gen').addEventListener('click', async function () {
+  var art = $('ai-art').value.trim();
+  if (!art) { showMsg($('ai-gen-msg'), 'warn', 'Введите артикул.'); return; }
+  if (!PROWS.length) { showMsg($('ai-gen-msg'), 'warn', 'Сначала загрузите выгрузку Black Street.'); return; }
+  var ri = -1;
+  for (var i = 0; i < PROWS.length; i++) { if (String(PROWS[i][C.code]).trim() === art) { ri = i; break; } }
+  if (ri < 0) { showMsg($('ai-gen-msg'), 'err', 'Артикул «' + escapeHtml(art) + '» не найден в выгрузке.'); return; }
+  var main = PROWS[ri];
+  var img = (C.img >= 0) ? String(main[C.img] || '').split(',')[0].trim() : '';
+  var prompt = buildPhotoPrompt(main);
+  showMsg($('ai-gen-msg'), 'warn', 'Генерирую фото (может занять 10–40 сек)…');
+  try {
+    var r = await api('/genphoto', { prompt: prompt, image: img, article: art, size: '1024x1536' });
+    if (!r.url) throw new Error('нет ссылки на фото');
+    $('ai-gen-msg').innerHTML =
+      '<div class="msg msg--ok">Готово! Ссылка: <a href="' + escapeHtml(r.url) + '" target="_blank">' + escapeHtml(r.url) + '</a></div>' +
+      '<div style="margin-top:8px"><img src="' + escapeHtml(r.url) + '" style="max-width:320px;border:1px solid var(--border);border-radius:8px"></div>';
+  } catch (e) {
+    showMsg($('ai-gen-msg'), 'err', 'Не получилось: ' + escapeHtml(e.message));
   }
 });
 

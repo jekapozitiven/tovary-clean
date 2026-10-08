@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <title>Пошук товару за артикулом</title>
 <link rel="icon" href="../../favicon.svg">
 <style>
@@ -127,6 +129,7 @@
 <div class="lightbox" id="lb"><div id="lbcontent"></div></div>
 
 <script>
+const APP_VERSION = '2026-10-08-1';   // ← бампати при кожному оновленні сторінки
 const WORKER_URL = 'https://cold-sea-36e7tovary.bonnashops.workers.dev';
 const $ = (id)=>document.getElementById(id);
 const esc = (s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -704,6 +707,27 @@ if(location.hash==='#admin'){ history.replaceState(null,'',location.pathname+loc
 
 updateOwnerUI();
 $('q').focus();
+
+/* ---- авто-оновлення: тягне свіжу версію без жорсткого перезавантаження ----
+   Перевіряємо файл сторінки з обходом кешу; якщо на сервері інша версія —
+   тихо перезавантажуємось на свіжу (через ?v=, що гарантовано оминає кеш). */
+async function checkForUpdate(){
+  try{
+    const res=await fetch(location.pathname+'?_='+Date.now(), {cache:'no-store'});
+    if(!res.ok) return;
+    const txt=await res.text();
+    const m=txt.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+    if(m && m[1] && m[1]!==APP_VERSION){
+      if(sessionStorage.getItem('app:reloadedFor')!==m[1]){
+        sessionStorage.setItem('app:reloadedFor', m[1]);
+        location.replace(location.pathname+'?v='+encodeURIComponent(m[1]));
+      }
+    }
+  }catch(e){}
+}
+checkForUpdate();                         // перевірка при відкритті
+setInterval(checkForUpdate, 3*60*1000);   // і фоном раз на 3 хв (оновить навіть відкриту вкладку)
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkForUpdate(); }); // і коли повертаються на вкладку
 </script>
 </body>
 </html>

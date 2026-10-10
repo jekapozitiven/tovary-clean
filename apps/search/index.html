@@ -129,7 +129,13 @@
 <div class="lightbox" id="lb"><div id="lbcontent"></div></div>
 
 <script>
-const APP_VERSION = '2026-10-08-1';   // ← бампати при кожному оновленні сторінки
+const APP_VERSION = '2026-10-10-1';   // ← бампати при кожному оновленні сторінки
+// відкидає з кінця мітки копій (копN) і суфікси магазину (B)/(С)/(S): "In-3009 (коп1) (B)" -> "In-3009"
+function stripTail(s){
+  let x=String(s||'').trim(), prev;
+  do{ prev=x; x=x.replace(/\s*\((?:коп\d*|[a-zа-яіїєґ]{1,3})\)\s*$/i,'').trim(); }while(x!==prev && x);
+  return x;
+}
 const WORKER_URL = 'https://cold-sea-36e7tovary.bonnashops.workers.dev';
 const $ = (id)=>document.getElementById(id);
 const esc = (s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -242,15 +248,22 @@ function showSizeHint(html){
   if(sizes) out+='<div class="fit" style="background:#eef2f7;border-color:#d7dee7;color:#334155;font-weight:600">📐 '+esc(sizes)+'</div>';
   slot.innerHTML=out;
 }
-function galleryHtml(imgs){
-  if(!imgs || !imgs.length) return '';
-  return '<div class="main"><img id="mainimg" src="'+esc(imgs[0])+'" alt=""></div>'+
-    (imgs.length>1 ? '<div class="thumbs">'+imgs.map((u,i)=>'<img data-u="'+esc(u)+'" class="'+(i===0?'sel':'')+'" src="'+esc(u)+'" alt="">').join('')+'</div>' : '');
+// приймає СИРІ посилання; показує стиснене (fullImg), а data-raw тримає оригінал для відкату
+function galleryHtml(raws){
+  const imgs=(Array.isArray(raws)?raws:[]).filter(Boolean);
+  if(!imgs.length) return '';
+  const tag=(u,attrs)=>'<img '+attrs+' src="'+esc(fullImg(u))+'" data-raw="'+esc(u)+'" alt="">';
+  return '<div class="main">'+tag(imgs[0],'id="mainimg"')+'</div>'+
+    (imgs.length>1 ? '<div class="thumbs">'+imgs.map((u,i)=>tag(u,'data-u="'+esc(fullImg(u))+'" class="'+(i===0?'sel':'')+'"')).join('')+'</div>' : '');
 }
 function bindGallery(){
   const main=$('mainimg');
+  // якщо стиснене фото не вантажиться — пробуємо оригінальне посилання
+  document.querySelectorAll('#gallery-slot img').forEach(im=>im.addEventListener('error', function(){
+    const raw=this.getAttribute('data-raw'); if(raw && this.src!==raw) this.src=raw;
+  }));
   document.querySelectorAll('.thumbs img').forEach(t=>t.addEventListener('click',()=>{
-    if(main) main.src=t.dataset.u;
+    if(main) main.src=t.getAttribute('data-u')||t.src;
     document.querySelectorAll('.thumbs img').forEach(x=>x.classList.remove('sel')); t.classList.add('sel');
   }));
   if(main) main.addEventListener('click',()=>openLightbox([main.src]));
@@ -263,30 +276,38 @@ function openLightbox(urls){
 async function loadDetail(d, needDesc, needImg){
   const slot = needDesc ? document.getElementById('desc-slot') : null;
   if(slot) slot.innerHTML='<div class="desc"><div class="desc-body" style="color:var(--dim)">Завантажую опис…</div></div>';
+  // відкат, якщо /detail не відповів/помилка: беремо індексний опис, якщо є
+  const fallback=()=>{
+    const idx = (currentProduct && currentProduct.desc) ? currentProduct.desc : '';
+    if(idx){ if(slot) slot.innerHTML=descBlock(idx); showSizeHint(idx); }
+    else if(slot) slot.innerHTML='<div class="desc"><div class="desc-body" style="color:var(--dim)">Опис тимчасово недоступний.</div></div>';
+  };
   try{
+    const ctrl=new AbortController();
+    const to=setTimeout(()=>ctrl.abort(), 12000);   // тайм-аут 12 с, щоб не висіло «Завантажую…»
     const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/detail',{
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d), signal:ctrl.signal
     });
+    clearTimeout(to);
     const j=await res.json();
-    // укр. назва з картки товару — оновлюємо заголовок
     if(j && j.ok && j.name){
       const nm=document.querySelector('.name'); if(nm) nm.textContent=j.name;
       if(currentProduct) currentProduct.name=j.name;
     }
-    if(j && j.ok && j.description) showSizeHint(j.description);   // підказка про розмір з підтягнутого опису
-    if(j && j.ok){
-      if(slot) slot.innerHTML = j.description ? descBlock(j.description) : '';   // товар без описания — тихо
+    if(j && j.ok && j.description){
+      if(slot) slot.innerHTML=descBlock(j.description);
+      showSizeHint(j.description);
     } else {
-      console.warn('detail не сработал:', j);
-      if(slot) slot.innerHTML='<div class="desc"><div class="desc-body" style="color:var(--dim)">Опис тимчасово недоступний.</div></div>';
+      if(!(j&&j.ok)) console.warn('detail не сработал:', j);
+      fallback();   // опису з Black Street немає/помилка — відкат
     }
     if(needImg && j && j.ok && Array.isArray(j.images) && j.images.length){
       const g=document.getElementById('gallery-slot');
-      if(g){ g.innerHTML=galleryHtml(j.images.map(fullImg)); bindGallery(); }
+      if(g){ g.innerHTML=galleryHtml(j.images); bindGallery(); }
     }
   }catch(e){
-    console.warn('detail ошибка сети:', e);
-    if(slot) slot.innerHTML='<div class="desc"><div class="desc-body" style="color:var(--dim)">Опис тимчасово недоступний.</div></div>';
+    console.warn('detail timeout/помилка:', e);
+    fallback();
   }
 }
 async function lookup(q){
@@ -299,7 +320,7 @@ async function lookup(q){
 
 function render(p){
   currentProduct = p;
-  const imgs = (Array.isArray(p.images)?p.images.filter(Boolean):[]).map(fullImg);
+  const imgs = Array.isArray(p.images)?p.images.filter(Boolean):[];   // сирі посилання; fullImg застосовується в galleryHtml
   const gallery = '<div class="gallery" id="gallery-slot">'+galleryHtml(imgs)+'</div>';
 
   const fitLine  = p.fit ? '<div class="fit">'+esc(p.fit)+'</div>' : '';
@@ -555,16 +576,24 @@ async function doSearch(){
   try{
     const list=await ensureCatalog();
     const ql=q.toLowerCase();
-    // збіги за артикулом або назвою
-    let found=list.filter(m=> (m.b&&m.b.toLowerCase().indexOf(ql)!==-1) || (m.n&&m.n.toLowerCase().indexOf(ql)!==-1));
+    const qb=stripTail(q).toLowerCase();   // чистий артикул: без (копN) і суфіксів магазину (B)/(С)/(S)
+    // збіги за артикулом (повним або чистим) чи назвою
+    let found=list.filter(m=>{
+      const b=(m.b||'').toLowerCase(), n=(m.n||'').toLowerCase();
+      return b.indexOf(ql)!==-1 || n.indexOf(ql)!==-1 || (qb && (b===qb || b.indexOf(qb)===0));
+    });
 
-    // якщо підрядком нічого — пробуємо точний артикул (розмірні хвости qN/…M/… 26)
+    // якщо підрядком нічого — пробуємо точний артикул і чистий (без копій/магазину) через воркер
     if(!found.length){
-      const data=await lookup(q);
-      if(data && data.found && data.product){
-        const base=(data.product.base||'').toLowerCase();
-        found=list.filter(m=> m.b && m.b.toLowerCase()===base);
-        if(!found.length){ $('status').style.display='none'; render(data.product); return; }
+      for(const term of [q, stripTail(q)]){
+        if(!term) continue;
+        const data=await lookup(term);
+        if(data && data.found && data.product){
+          const base=(data.product.base||'').toLowerCase();
+          found=list.filter(m=> m.b && m.b.toLowerCase()===base);
+          if(!found.length){ $('status').style.display='none'; render(data.product); return; }
+          break;
+        }
       }
     }
 

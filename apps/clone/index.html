@@ -237,6 +237,15 @@ function fileToB64(file) {
 /* AI-тексты для Street Code: артикул -> {name_ua,name_ru,desc_ua,desc_ru,keywords_ua,keywords_ru} */
 var scTexts = {};
 var GENPROMPT_KEY = 'tovary:clone:genprompt';
+/* Ключевые запросы для Prom: каждый запрос отдельно, разделитель — запятая.
+   Модель отдаёт через перенос строки (или уже через запятую) — приводим к единому виду. */
+function kwForProm(s) {
+  return String(s == null ? '' : s)
+    .split(/[\r\n,]+/)
+    .map(function (x) { return x.trim(); })
+    .filter(function (x) { return x.length; })
+    .join(', ');
+}
 function buildExtra(main) {
   var cCols = charCols(), parts = [];
   var brand = (idx(PH, 'Виробник') >= 0) ? String(main[idx(PH, 'Виробник')] || '') : ''; if (brand) parts.push('бренд: ' + brand);
@@ -653,8 +662,9 @@ function buildStore(suffix, step, taken, storeKey) {
           if (nmRU && C.name   >= 0) r[C.name]   = nmRU;   // русское название (если промпт его даёт)
           if (dUA && ci_opisuk >= 0) r[ci_opisuk] = dUA;
           if (dRU && ci_opis   >= 0) r[ci_opis]   = dRU;
-          if (kUA && ci_kwuk   >= 0) r[ci_kwuk]   = kUA;
-          if (kRU && ci_kw     >= 0) r[ci_kw]     = kRU;
+          // ключевые: Пром ждёт запятые между запросами (модель даёт через перенос строки)
+          if (kUA && ci_kwuk   >= 0) r[ci_kwuk]   = kwForProm(kUA);
+          if (kRU && ci_kw     >= 0) r[ci_kw]     = kwForProm(kRU);
         }
       }
       // цена: шаг на цену СО СКИДКОЙ

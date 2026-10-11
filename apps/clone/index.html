@@ -642,12 +642,19 @@ function buildStore(suffix, step, taken, storeKey) {
       if (scTx) {
         var tx = scTexts[normArtKey(baseCode)];
         if (tx) {
-          if (tx.name_ru && C.name >= 0) r[C.name] = tx.name_ru;
-          if (tx.name_ua && C.nameuk >= 0) r[C.nameuk] = tx.name_ua;
-          if (tx.desc_ru && ci_opis >= 0) r[ci_opis] = tx.desc_ru;
-          if (tx.desc_ua && ci_opisuk >= 0) r[ci_opisuk] = tx.desc_ua;
-          if (tx.keywords_ru && ci_kw >= 0) r[ci_kw] = tx.keywords_ru;
-          if (tx.keywords_ua && ci_kwuk >= 0) r[ci_kwuk] = tx.keywords_ua;
+          // принимаем разные имена полей (ваш промпт даёт title_ua + keywords_ru/ua)
+          var nmUA = tx.title_ua || tx.name_ua || tx.name || tx.title;
+          var nmRU = tx.title_ru || tx.name_ru;
+          var dUA  = tx.desc_ua || tx.description_ua || tx.opis_ua;
+          var dRU  = tx.desc_ru || tx.description_ru || tx.opis_ru;
+          var kUA  = tx.keywords_ua || tx.keys_ua;
+          var kRU  = tx.keywords_ru || tx.keys_ru;
+          if (nmUA && C.nameuk >= 0) r[C.nameuk] = nmUA;   // украинское название
+          if (nmRU && C.name   >= 0) r[C.name]   = nmRU;   // русское название (если промпт его даёт)
+          if (dUA && ci_opisuk >= 0) r[ci_opisuk] = dUA;
+          if (dRU && ci_opis   >= 0) r[ci_opis]   = dRU;
+          if (kUA && ci_kwuk   >= 0) r[ci_kwuk]   = kUA;
+          if (kRU && ci_kw     >= 0) r[ci_kw]     = kRU;
         }
       }
       // цена: шаг на цену СО СКИДКОЙ
@@ -1059,10 +1066,14 @@ $('gen-text').addEventListener('click', async function () {
     var nm = String(main[C.name] || main[C.nameuk] || '');
     var desc = (oiOpis >= 0) ? String(main[oiOpis] || '') : '';
     showMsg($('gen-text-msg'), 'warn', 'Генерирую тексты: ' + (s + 1) + ' из ' + sel.length + ' (' + escapeHtml(base) + ')…');
-    try {
-      var r = await api('/gentext', { name: nm, description: desc.slice(0, 4000), image: img, extra: buildExtra(main), system: sys });
-      if (r.data) { scTexts[normArtKey(base)] = r.data; ok++; } else fail.push(base);
-    } catch (e) { fail.push(base + ' (' + e.message + ')'); }
+    var payload = { name: nm, description: desc.slice(0, 4000), image: img, extra: buildExtra(main), system: sys };
+    var merged = {}, errs = [];
+    // 1) название + ключевые (SEO-промпт)
+    try { var r = await api('/gentext', payload); if (r.data) Object.assign(merged, r.data); } catch (e) { errs.push('назва/ключі: ' + e.message); }
+    // 2) описание (промпт описания; свой системный, не зависит от поля)
+    try { var rd = await api('/gendesc', { name: nm, description: desc.slice(0, 4000), image: img, extra: buildExtra(main) }); if (rd.data) Object.assign(merged, rd.data); } catch (e) { errs.push('опис: ' + e.message); }
+    if (Object.keys(merged).length) { scTexts[normArtKey(base)] = merged; ok++; }
+    if (errs.length) fail.push(base + ' (' + errs.join('; ') + ')');
   }
   showMsg($('gen-text-msg'), fail.length ? 'warn' : 'ok',
     'Готово: тексты для ' + ok + ' товаров. Всего привязано: ' + Object.keys(scTexts).length + '.' +

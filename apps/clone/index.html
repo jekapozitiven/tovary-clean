@@ -156,6 +156,18 @@
       <div id="sc-photo-msg"></div>
     </div>
 
+    <div style="margin: 4px 0 12px">
+      <p class="muted" style="margin: 0 0 6px">AI-тексты Street Code (назва/опис/ключові, укр+рус) через OpenAI по фото и данным товара.
+         Вставьте ваш промпт из ChatGPT (если пусто — используется стандартный). Генерирует для <b>выбранных</b> товаров.</p>
+      <textarea id="gen-prompt" placeholder="Ваш промпт (инструкция для ChatGPT)…"
+        style="width:100%; min-height:70px; font-size:12px; color:var(--text); background:#0e0e10; border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px"></textarea>
+      <div class="row-flex" style="margin-top:6px">
+        <button class="btn btn--sm btn--ghost" id="gen-text">Сгенерировать тексты AI (выбранные)</button>
+        <button class="btn btn--sm btn--ghost" id="gen-text-clear">Очистить тексты</button>
+      </div>
+      <div id="gen-text-msg"></div>
+    </div>
+
     <div class="toolbar">
       <input type="text" class="search" id="q" placeholder="Поиск по названию или артикулу…">
       <select id="fcat"><option value="">Все категории</option></select>
@@ -220,6 +232,19 @@ function fileToB64(file) {
     r.onerror = function () { rej(new Error('ошибка чтения файла')); };
     r.readAsDataURL(file);
   });
+}
+
+/* AI-тексты для Street Code: артикул -> {name_ua,name_ru,desc_ua,desc_ru,keywords_ua,keywords_ru} */
+var scTexts = {};
+var GENPROMPT_KEY = 'tovary:clone:genprompt';
+function buildExtra(main) {
+  var cCols = charCols(), parts = [];
+  var brand = (idx(PH, 'Виробник') >= 0) ? String(main[idx(PH, 'Виробник')] || '') : ''; if (brand) parts.push('бренд: ' + brand);
+  var color = getChar(main, cCols, ['колір', 'цвет']); if (color) parts.push('колір: ' + color);
+  var material = getChar(main, cCols, ['тип тканини', 'матеріал', 'материал']); if (material) parts.push('матеріал: ' + material);
+  var season = getChar(main, cCols, ['сезон']); if (season) parts.push('сезон: ' + season);
+  var country = (idx(PH, 'Країна_виробник') >= 0) ? String(main[idx(PH, 'Країна_виробник')] || '') : ''; if (country) parts.push('країна: ' + country);
+  return parts.join('; ');
 }
 
 /* данные выгрузки */
@@ -584,6 +609,8 @@ $('pick-none').addEventListener('click', function () { picked.clear(); render();
 function buildStore(suffix, step, taken, storeKey) {
   var out = [], used = {}, dups = 0, skipped = [];
   var gmap = groupNamesByNum();
+  var ci_opis = idx(PH, 'Опис'), ci_opisuk = idx(PH, 'Опис_укр'), ci_kw = idx(PH, 'Пошукові_запити'), ci_kwuk = idx(PH, 'Пошукові_запити_укр');
+  var scTx = (storeKey === 'streetcode');
   var selected = cards.filter(function (c) { return picked.has(c.key); });
   var nameToNum = {};   // раздел -> общий Номер_групи (первый реальный), чтобы одноимённые группы слились
   var numRename = {};   // Номер_групи -> новое имя (какие строки листа групп переименовать)
@@ -611,6 +638,18 @@ function buildStore(suffix, step, taken, storeKey) {
       r[C.code] = groupArticle;
       if (C.name >= 0 && r[C.name] !== '' && r[C.name] != null) r[C.name] = String(r[C.name]) + suffix;
       if (C.nameuk >= 0 && r[C.nameuk] !== '' && r[C.nameuk] != null) r[C.nameuk] = String(r[C.nameuk]) + suffix;
+      // AI-тексты (только Street Code): перезаписываем назву/опис/ключові (без суффикса в названии)
+      if (scTx) {
+        var tx = scTexts[normArtKey(baseCode)];
+        if (tx) {
+          if (tx.name_ru && C.name >= 0) r[C.name] = tx.name_ru;
+          if (tx.name_ua && C.nameuk >= 0) r[C.nameuk] = tx.name_ua;
+          if (tx.desc_ru && ci_opis >= 0) r[ci_opis] = tx.desc_ru;
+          if (tx.desc_ua && ci_opisuk >= 0) r[ci_opisuk] = tx.desc_ua;
+          if (tx.keywords_ru && ci_kw >= 0) r[ci_kw] = tx.keywords_ru;
+          if (tx.keywords_ua && ci_kwuk >= 0) r[ci_kwuk] = tx.keywords_ua;
+        }
+      }
       // цена: шаг на цену СО СКИДКОЙ
       var price = (C.price >= 0) ? parseFloat(r[C.price]) : NaN;
       var d = (C.disc >= 0) ? parseDisc(r[C.disc]) : { has: false, percent: false, amount: 0 };
@@ -998,6 +1037,35 @@ $('sc-photo-files').addEventListener('change', async function () {
   this.value = '';
   showMsg($('sc-photo-msg'), fail.length ? 'warn' : 'ok',
     'Загружено AI-фото: ' + ok + '. Всего привязано к артикулам: ' + Object.keys(scPhotos).length + '.' +
+    (fail.length ? ('<br>Не вышло: ' + fail.map(escapeHtml).join(', ')) : ''));
+});
+
+/* AI-тексты Street Code: промпт сохраняем, генерируем для выбранных */
+if ($('gen-prompt')) {
+  try { $('gen-prompt').value = localStorage.getItem(GENPROMPT_KEY) || ''; } catch (e) {}
+  $('gen-prompt').addEventListener('input', function () { try { localStorage.setItem(GENPROMPT_KEY, this.value); } catch (e) {} });
+}
+$('gen-text-clear').addEventListener('click', function () { scTexts = {}; showMsg($('gen-text-msg'), 'warn', 'AI-тексты очищены.'); });
+$('gen-text').addEventListener('click', async function () {
+  var sel = cards.filter(function (c) { return picked.has(c.key); });
+  if (!sel.length) { showMsg($('gen-text-msg'), 'warn', 'Не выбрано ни одного товара.'); return; }
+  var sys = $('gen-prompt').value.trim();
+  var oiOpis = idx(PH, 'Опис');
+  var ok = 0, fail = [];
+  for (var s = 0; s < sel.length; s++) {
+    var main = PROWS[sel[s].mainIdx];
+    var base = String(main[C.code] || '').trim();
+    var img = (C.img >= 0) ? String(main[C.img] || '').split(',')[0].trim() : '';
+    var nm = String(main[C.name] || main[C.nameuk] || '');
+    var desc = (oiOpis >= 0) ? String(main[oiOpis] || '') : '';
+    showMsg($('gen-text-msg'), 'warn', 'Генерирую тексты: ' + (s + 1) + ' из ' + sel.length + ' (' + escapeHtml(base) + ')…');
+    try {
+      var r = await api('/gentext', { name: nm, description: desc.slice(0, 4000), image: img, extra: buildExtra(main), system: sys });
+      if (r.data) { scTexts[normArtKey(base)] = r.data; ok++; } else fail.push(base);
+    } catch (e) { fail.push(base + ' (' + e.message + ')'); }
+  }
+  showMsg($('gen-text-msg'), fail.length ? 'warn' : 'ok',
+    'Готово: тексты для ' + ok + ' товаров. Всего привязано: ' + Object.keys(scTexts).length + '.' +
     (fail.length ? ('<br>Не вышло: ' + fail.map(escapeHtml).join(', ')) : ''));
 });
 

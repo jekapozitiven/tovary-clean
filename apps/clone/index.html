@@ -163,9 +163,11 @@
         style="width:100%; min-height:70px; font-size:12px; color:var(--text); background:#0e0e10; border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px"></textarea>
       <div class="row-flex" style="margin-top:6px">
         <button class="btn btn--sm btn--ghost" id="gen-text">Сгенерировать тексты AI (выбранные)</button>
+        <button class="btn btn--sm btn--ghost" id="gen-compare">Было → стало</button>
         <button class="btn btn--sm btn--ghost" id="gen-text-clear">Очистить тексты</button>
       </div>
       <div id="gen-text-msg"></div>
+      <div id="gen-compare-box"></div>
     </div>
 
     <div class="toolbar">
@@ -1062,7 +1064,45 @@ if ($('gen-prompt')) {
   try { $('gen-prompt').value = localStorage.getItem(GENPROMPT_KEY) || ''; } catch (e) {}
   $('gen-prompt').addEventListener('input', function () { try { localStorage.setItem(GENPROMPT_KEY, this.value); } catch (e) {} });
 }
-$('gen-text-clear').addEventListener('click', function () { scTexts = {}; showMsg($('gen-text-msg'), 'warn', 'AI-тексты очищены.'); });
+$('gen-text-clear').addEventListener('click', function () { scTexts = {}; $('gen-compare-box').innerHTML=''; showMsg($('gen-text-msg'), 'warn', 'AI-тексты очищены.'); });
+
+/* Было → стало: показать оригинал Black Street и сгенерированный текст рядом */
+$('gen-compare').addEventListener('click', function () {
+  var sel = cards.filter(function (c) { return picked.has(c.key); });
+  if (!sel.length) { showMsg($('gen-text-msg'), 'warn', 'Не выбрано ни одного товара.'); return; }
+  var oiOpis = idx(PH, 'Опис'), oiOpisUk = idx(PH, 'Опис_укр');
+  var oiKw = idx(PH, 'Пошукові_запити'), oiKwUk = idx(PH, 'Пошукові_запити_укр');
+  function cnt(s){ s=String(s==null?'':s); return s ? (kwForProm(s).split(', ').length + ' шт · ' + kwForProm(s).length + ' симв') : '0'; }
+  function stripTags(s){ return String(s==null?'':s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); }
+  function cell(old, neu){
+    return '<td style="width:50%;vertical-align:top;padding:6px;border:1px solid var(--border)">' +
+      '<div class="muted" style="font-size:10px;margin-bottom:3px">БЫЛО</div><div style="font-size:11px;margin-bottom:8px;white-space:pre-wrap">' + escapeHtml(old||'—') + '</div>' +
+      '<div class="muted" style="font-size:10px;margin-bottom:3px;color:#7ee081">СТАЛО</div><div style="font-size:11px;white-space:pre-wrap">' + escapeHtml(neu||'—') + '</div></td>';
+  }
+  function rowPair(label, old, neu){
+    return '<tr><td style="font-size:11px;font-weight:600;padding:6px;border:1px solid var(--border);white-space:nowrap">' + escapeHtml(label) + '</td>' + cell(old, neu) + '</tr>';
+  }
+  var html = '', shown = 0, nogen = 0;
+  for (var s = 0; s < sel.length; s++) {
+    var main = PROWS[sel[s].mainIdx];
+    var base = String(main[C.code] || '').trim();
+    var tx = scTexts[normArtKey(base)];
+    if (!tx) { nogen++; continue; }
+    shown++;
+    html += '<div style="margin:10px 0"><div style="font-size:12px;font-weight:700;margin-bottom:4px">' + escapeHtml(base) + '</div>' +
+      '<table style="width:100%;border-collapse:collapse;table-layout:fixed">' +
+      rowPair('Назва укр', String(main[C.nameuk]||''), tx.title_ua||tx.name_ua||'') +
+      rowPair('Назва рус', String(main[C.name]||''), tx.title_ru||tx.name_ru||'') +
+      rowPair('Опис укр', stripTags(oiOpisUk>=0?main[oiOpisUk]:''), stripTags(tx.desc_ua||'')) +
+      rowPair('Опис рус', stripTags(oiOpis>=0?main[oiOpis]:''), stripTags(tx.desc_ru||'')) +
+      rowPair('Ключі укр (' + cnt(oiKwUk>=0?main[oiKwUk]:'') + ' → ' + cnt(tx.keywords_ua||'') + ')', kwForProm(oiKwUk>=0?main[oiKwUk]:''), kwForProm(tx.keywords_ua||'')) +
+      rowPair('Ключі рус (' + cnt(oiKw>=0?main[oiKw]:'') + ' → ' + cnt(tx.keywords_ru||'') + ')', kwForProm(oiKw>=0?main[oiKw]:''), kwForProm(tx.keywords_ru||'')) +
+      '</table></div>';
+  }
+  if (!shown) { showMsg($('gen-text-msg'), 'warn', 'Нет сгенерированных текстов. Сначала нажмите «Сгенерировать тексты AI».'); $('gen-compare-box').innerHTML=''; return; }
+  $('gen-compare-box').innerHTML = '<div style="margin-top:8px">' + html + '</div>' +
+    (nogen ? '<p class="muted" style="font-size:11px">Без сгенерированного текста (пропущены): ' + nogen + '</p>' : '');
+});
 $('gen-text').addEventListener('click', async function () {
   var sel = cards.filter(function (c) { return picked.has(c.key); });
   if (!sel.length) { showMsg($('gen-text-msg'), 'warn', 'Не выбрано ни одного товара.'); return; }

@@ -1108,6 +1108,7 @@ $('gen-text').addEventListener('click', async function () {
   if (!sel.length) { showMsg($('gen-text-msg'), 'warn', 'Не выбрано ни одного товара.'); return; }
   var sys = $('gen-prompt').value.trim();
   var oiOpis = idx(PH, 'Опис');
+  var oiKw = idx(PH, 'Пошукові_запити'), oiKwUk = idx(PH, 'Пошукові_запити_укр');
   var ok = 0, fail = [];
   for (var s = 0; s < sel.length; s++) {
     var main = PROWS[sel[s].mainIdx];
@@ -1115,8 +1116,10 @@ $('gen-text').addEventListener('click', async function () {
     var img = (C.img >= 0) ? String(main[C.img] || '').split(',')[0].trim() : '';
     var nm = String(main[C.name] || main[C.nameuk] || '');
     var desc = (oiOpis >= 0) ? String(main[oiOpis] || '') : '';
+    var exKwUa = (oiKwUk >= 0) ? String(main[oiKwUk] || '') : '';
+    var exKwRu = (oiKw >= 0) ? String(main[oiKw] || '') : '';
     showMsg($('gen-text-msg'), 'warn', 'Генерирую тексты: ' + (s + 1) + ' из ' + sel.length + ' (' + escapeHtml(base) + ')…');
-    var payload = { name: nm, description: desc.slice(0, 4000), image: img, extra: buildExtra(main), system: sys };
+    var payload = { name: nm, description: desc.slice(0, 4000), image: img, extra: buildExtra(main), system: sys, ex_keywords_ua: exKwUa, ex_keywords_ru: exKwRu };
     var merged = {}, errs = [];
     // 1) название + ключевые (SEO-промпт)
     try { var r = await api('/gentext', payload); if (r.data) Object.assign(merged, r.data); } catch (e) { errs.push('назва/ключі: ' + e.message); }

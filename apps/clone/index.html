@@ -523,6 +523,8 @@ function parseWb(bytes) {
     nameuk: idx(PH, 'Назва_позиції_укр'),
     price:  idx(PH, 'Ціна'),
     disc:   idx(PH, 'Знижка'),
+    discFrom: idx(PH, 'Термін_дії_знижки_від'),
+    discTo:   idx(PH, 'Термін_дії_знижки_до'),
     img:    idx(PH, 'Посилання_зображення'),
     gnum:   idx(PH, 'Номер_групи'),
     gname:  idx(PH, 'Назва_групи'),
@@ -674,6 +676,11 @@ function buildStore(suffix, step, taken, storeKey) {
       var d = (C.disc >= 0) ? parseDisc(r[C.disc]) : { has: false, percent: false, amount: 0 };
       if (d.has && !d.percent) { r[C.disc] = round2(d.amount + step); }
       else if (!isNaN(price)) { r[C.price] = round2(price - step); }
+      // Скидка должна быть активной: убираем даты акции (иначе прошедший срок = скидка не показывается)
+      if (d.has) {
+        if (C.discFrom >= 0) r[C.discFrom] = '';
+        if (C.discTo   >= 0) r[C.discTo]   = '';
+      }
       // Для создания НОВЫХ товаров: внутренние id пустые (иначе Prom ищет их и отклоняет импорт)
       if (C.uid >= 0)   r[C.uid]   = '';
       if (C.idtov >= 0) r[C.idtov] = '';

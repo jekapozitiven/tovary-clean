@@ -133,8 +133,6 @@
         <input type="number" id="step-core22" value="2" step="0.5"></label>
       <label class="f"><span>Street Code дешевле на, грн</span>
         <input type="number" id="step-streetcode" value="10" step="0.5"></label>
-      <label class="f"><span>Blink: размер шрифта описания, px</span>
-        <input type="number" id="blink-font" value="14" step="1" min="8"></label>
     </div>
 
     <details style="margin: 4px 0 12px">
@@ -362,13 +360,14 @@ function parseDisc(v) {
 function round2(x) { return Math.round(x * 100) / 100; }
 
 /* Описание Blink: заголовки h1-h6 -> абзацы, размеры шрифта -> заданный px */
-function cleanDesc(html, px) {
+/* Описание для Blink: как на Проме. Заголовки h1-h6 превращаем в абзацы,
+   но СОХРАНЯЕМ их inline-стиль (размер + жирность) — чтобы вид был идентичным,
+   даже если Хорошоп не поддерживает теги заголовков. Размеры шрифта не трогаем. */
+function descForBlink(html) {
   if (!html) return html;
-  var size = parseInt(px, 10) || 14;
-  var s = String(html);
-  s = s.replace(/<(h[1-6])\b[^>]*>/gi, '<p>').replace(/<\/h[1-6]>/gi, '</p>');
-  s = s.replace(/font-size:\s*\d+(\.\d+)?px/gi, 'font-size:' + size + 'px');
-  return s;
+  return String(html)
+    .replace(/<(h[1-6])((?:\s[^>]*)?)>/gi, function (m, tag, attrs) { return '<p' + (attrs || '') + '>'; })
+    .replace(/<\/h[1-6]>/gi, '</p>');
 }
 
 /* Картинки из описания: вытащить ссылки и заменить на перенесённые (R2) */
@@ -880,7 +879,6 @@ function renderCatTable() {
 function buildBlink(taken) {
   var cCols = charCols();
   var virob = idx(PH, 'Виробник'), opis = idx(PH, 'Опис'), opisuk = idx(PH, 'Опис_укр'), avail = idx(PH, 'Наявність');
-  var fpx = parseInt(($('blink-font') && $('blink-font').value) || '14', 10) || 14;
   var selected = cards.filter(function (c) { return picked.has(c.key); });
 
   var gmap = groupNamesByNum();
@@ -922,8 +920,9 @@ function buildBlink(taken) {
     var nameUa = cutByColor(String(main[C.nameuk] || ''), color);
     if (titles.length < 12) titles.push({ b: String(main[C.name] || ''), a: nameRu });
     var brand = virob >= 0 ? String(main[virob] || '') : '';
-    var descRu = replaceImgSrcs(cleanDesc(opis >= 0 ? String(main[opis] || '') : '', fpx), descImgMap);
-    var descUa = replaceImgSrcs(cleanDesc(opisuk >= 0 ? String(main[opisuk] || '') : '', fpx), descImgMap);
+    // описание переносим КАК НА ПРОМЕ (заголовки, размеры, жирный) — только ссылки фото меняем на R2
+    var descRu = replaceImgSrcs(descForBlink(opis >= 0 ? String(main[opis] || '') : ''), descImgMap);
+    var descUa = replaceImgSrcs(descForBlink(opisuk >= 0 ? String(main[opisuk] || '') : ''), descImgMap);
     var pv = specVals[s2];
     for (var j = 0; j < card.idxs.length; j++) {
       var ri = card.idxs[j], r = PROWS[ri], isMain = (ri === card.mainIdx);

@@ -146,6 +146,15 @@
     </details>
 
     <div style="margin: 4px 0 12px">
+      <p class="muted" style="margin: 0 0 6px">Шпаргалка для AI-фото: по <b>выбранным</b> товарам — главное фото + артикул + краткое описание (из характеристик товара, без выдумок).
+         Скачиваете HTML-файл, по каждому фото вставляете описание в свою AI для генерации.</p>
+      <div class="row-flex">
+        <button class="btn btn--sm btn--ghost" id="photo-brief">Файл для AI-фото (фото + артикул + описание)</button>
+      </div>
+      <div id="photo-brief-msg"></div>
+    </div>
+
+    <div style="margin: 4px 0 12px">
       <p class="muted" style="margin: 0 0 6px">AI-фото Street Code (из AiKadry): назовите файлы по артикулу (напр. <b>Arm-TN12.png</b>) и выберите пачкой —
          фото зальётся в R2 и станет обложкой на Street Code (и на все размеры). Остальные фото — оригинальные.</p>
       <div class="row-flex">
@@ -360,6 +369,46 @@ function cleanDesc(html, px) {
   s = s.replace(/<(h[1-6])\b[^>]*>/gi, '<p>').replace(/<\/h[1-6]>/gi, '</p>');
   s = s.replace(/font-size:\s*\d+(\.\d+)?px/gi, 'font-size:' + size + 'px');
   return s;
+}
+
+/* Картинки из описания: вытащить ссылки и заменить на перенесённые (R2) */
+var descImgMap = {};   // исходный src -> ссылка в R2
+function extractImgSrcs(html) {
+  var out = [], re = /<img\b[^>]*\bsrc=["']([^"']+)["']/gi, m;
+  while ((m = re.exec(String(html || '')))) out.push(m[1]);
+  return out;
+}
+function replaceImgSrcs(html, map) {
+  return String(html || '').replace(/(<img\b[^>]*\bsrc=["'])([^"']+)(["'])/gi, function (all, a, src, c) {
+    return a + (map[src] || src) + c;
+  });
+}
+/* Переносим внешние картинки из описаний выбранных товаров в R2 (для Blink) */
+async function rehostDescImages(selected) {
+  var oiOpis = idx(PH, 'Опис'), oiOpisUk = idx(PH, 'Опис_укр');
+  var pub = (proxyCfg().photos_public || '');  // чтобы не трогать уже-перенесённые
+  var set = {};
+  for (var s = 0; s < selected.length; s++) {
+    var m = PROWS[selected[s].mainIdx];
+    var html = (oiOpis >= 0 ? String(m[oiOpis] || '') : '') + ' ' + (oiOpisUk >= 0 ? String(m[oiOpisUk] || '') : '');
+    extractImgSrcs(html).forEach(function (u) {
+      if (!/^https?:\/\//i.test(u)) return;
+      if (pub && u.indexOf(pub) === 0) return;   // уже в R2
+      if (descImgMap[u]) return;                 // уже перенесли
+      set[u] = 1;
+    });
+  }
+  var urls = Object.keys(set);
+  if (!urls.length) return { done: 0, fail: 0 };
+  var done = 0, fail = 0;
+  for (var i = 0; i < urls.length; i++) {
+    showMsg($('out'), 'warn', 'Переношу картинки из описания в хранилище: ' + (i + 1) + ' из ' + urls.length + '…');
+    try {
+      var r = await api('/fetchphoto', { url: urls[i] });
+      if (r && r.url) { descImgMap[urls[i]] = r.url; done++; } else fail++;
+    } catch (e) { fail++; }
+  }
+  return { done: done, fail: fail };
 }
 
 /* Обрезка названия Blink по цвету: оставляем часть до слова-цвета включительно */
@@ -873,8 +922,8 @@ function buildBlink(taken) {
     var nameUa = cutByColor(String(main[C.nameuk] || ''), color);
     if (titles.length < 12) titles.push({ b: String(main[C.name] || ''), a: nameRu });
     var brand = virob >= 0 ? String(main[virob] || '') : '';
-    var descRu = cleanDesc(opis >= 0 ? String(main[opis] || '') : '', fpx);
-    var descUa = cleanDesc(opisuk >= 0 ? String(main[opisuk] || '') : '', fpx);
+    var descRu = replaceImgSrcs(cleanDesc(opis >= 0 ? String(main[opis] || '') : '', fpx), descImgMap);
+    var descUa = replaceImgSrcs(cleanDesc(opisuk >= 0 ? String(main[opisuk] || '') : '', fpx), descImgMap);
     var pv = specVals[s2];
     for (var j = 0; j < card.idxs.length; j++) {
       var ri = card.idxs[j], r = PROWS[ri], isMain = (ri === card.mainIdx);
@@ -938,6 +987,11 @@ $('make').addEventListener('click', async function () {
   var stampSC    = await cacheStamp('streetcode');
   var stampBlink = await cacheStamp('blink');
 
+  // переносим картинки из описаний в R2 (иначе Хорошоп режет внешние src) — для Blink
+  var selectedNow = cards.filter(function (c) { return picked.has(c.key); });
+  var reh = { done: 0, fail: 0 };
+  try { reh = await rehostDescImages(selectedNow); } catch (e) {}
+
   var bonna = buildStore(SUF_B, sb, takenBonna, 'bonna');
   var core  = buildStore(SUF_C, sc, takenCore, 'core22');
   var scode = buildStore(SUF_S, ss, takenSC, 'streetcode');
@@ -985,7 +1039,11 @@ $('make').addEventListener('click', async function () {
       }).join('<br>') + '</div>';
   }
 
-  $('out').innerHTML = savedNote +
+  var rehNote = (reh.done || reh.fail)
+    ? '<div class="msg msg--' + (reh.fail ? 'warn' : 'ok') + '">Картинки описания перенесены в хранилище R2: ' + reh.done +
+      (reh.fail ? (', не удалось: ' + reh.fail) : '') + ' (в Blink идут ссылки на R2).</div>'
+    : '';
+  $('out').innerHTML = savedNote + rehNote +
     '<div class="files">' +
     fcard('Bonna-shop (Prom)', 'import-bonna.xlsx', bonna.rows) +
     fcard('Core22 (Prom)', 'import-core22.xlsx', core.rows) +
@@ -1044,6 +1102,87 @@ $('ai-gen').addEventListener('click', async function () {
 });
 
 /* загрузка готовых AI-фото (AiKadry) для Street Code */
+/* Краткое описание для AI-фото: только факты из характеристик товара (без выдумок) */
+function photoBriefText(main, card) {
+  var cCols = charCols(), lines = [];
+  var title = String(main[C.nameuk] || main[C.name] || '').trim();
+  if (title) lines.push(title);
+  var brand = (idx(PH, 'Виробник') >= 0) ? String(main[idx(PH, 'Виробник')] || '').trim() : '';
+  if (brand) lines.push('Бренд: ' + brand);
+  var seen = {};
+  for (var i = 0; i < cCols.length; i++) {
+    var nm = String(main[cCols[i]] == null ? '' : main[cCols[i]]).trim();
+    var val = String(main[cCols[i] + 2] == null ? '' : main[cCols[i] + 2]).trim();
+    if (!nm || !val) continue;
+    var low = nm.toLowerCase();
+    if (low.indexOf('розмір') !== -1 || low.indexOf('размер') !== -1) continue; // размеры — отдельно
+    if (seen[low]) continue; seen[low] = 1;
+    lines.push(nm + ': ' + val);
+  }
+  var country = (idx(PH, 'Країна_виробник') >= 0) ? String(main[idx(PH, 'Країна_виробник')] || '').trim() : '';
+  if (country) lines.push('Країна: ' + country);
+  var sizes = [];
+  for (var j = 0; j < card.idxs.length; j++) {
+    var sz = getChar(PROWS[card.idxs[j]], cCols, ['розмір', 'размер']);
+    if (sz && sizes.indexOf(sz) === -1) sizes.push(sz);
+  }
+  if (sizes.length) lines.push('Розміри: ' + sizes.join(', '));
+  return lines.join('\n');
+}
+
+$('photo-brief').addEventListener('click', function () {
+  var sel = cards.filter(function (c) { return picked.has(c.key); });
+  if (!sel.length) { showMsg($('photo-brief-msg'), 'warn', 'Не выбрано ни одного товара.'); return; }
+  var cardsHtml = '';
+  for (var s = 0; s < sel.length; s++) {
+    var main = PROWS[sel[s].mainIdx];
+    var art = String(main[C.code] || '').trim();
+    var img = (C.img >= 0) ? String(main[C.img] || '').split(',')[0].trim() : '';
+    var txt = photoBriefText(main, sel[s]);
+    cardsHtml +=
+      '<div class="card">' +
+      '<div class="ph">' + (img ? '<img src="' + escapeHtml(img) + '" loading="lazy">' : '<div class="noimg">нет фото</div>') + '</div>' +
+      '<div class="info">' +
+      '<div class="art">' + escapeHtml(art) + '</div>' +
+      (img ? '<a class="dl" href="' + escapeHtml(img) + '" target="_blank" download>Открыть / скачать фото</a>' : '') +
+      '<textarea readonly rows="' + Math.min(16, txt.split('\n').length + 1) + '">' + escapeHtml(txt) + '</textarea>' +
+      '<button class="copy">Скопировать описание</button>' +
+      '</div></div>';
+  }
+  var page =
+    '<!doctype html><html lang="uk"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Шпаргалка для AI-фото</title><style>' +
+    'body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f4f4f5;color:#111;margin:0;padding:16px}' +
+    'h1{font-size:18px;margin:0 0 4px}.sub{color:#666;font-size:13px;margin:0 0 16px}' +
+    '.card{display:flex;gap:14px;background:#fff;border:1px solid #e3e3e6;border-radius:12px;padding:12px;margin-bottom:12px;break-inside:avoid}' +
+    '.ph{flex:0 0 200px}.ph img{width:200px;height:200px;object-fit:contain;background:#fafafa;border:1px solid #eee;border-radius:8px}' +
+    '.noimg{width:200px;height:200px;display:flex;align-items:center;justify-content:center;color:#aaa;border:1px dashed #ccc;border-radius:8px}' +
+    '.info{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}' +
+    '.art{font-size:16px;font-weight:700}' +
+    '.dl{font-size:12px;color:#2563eb;text-decoration:none}.dl:hover{text-decoration:underline}' +
+    'textarea{width:100%;box-sizing:border-box;font-size:12px;line-height:1.45;color:#222;border:1px solid #ddd;border-radius:8px;padding:8px;resize:vertical;background:#fbfbfb}' +
+    '.copy{align-self:flex-start;font-size:12px;padding:5px 10px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer}' +
+    '.copy:hover{background:#f0f0f0}@media print{.copy,.dl{display:none}}' +
+    '</style></head><body>' +
+    '<h1>Шпаргалка для AI-фото — Street Code</h1>' +
+    '<p class="sub">По каждому товару: главное фото, артикул и краткое описание из характеристик. Товаров: ' + sel.length + '.</p>' +
+    cardsHtml +
+    '<script>document.querySelectorAll(".copy").forEach(function(b){b.addEventListener("click",function(){var t=b.parentElement.querySelector("textarea");t.select();document.execCommand("copy");b.textContent="Скопировано ✓";setTimeout(function(){b.textContent="Скопировать описание"},1200);});});<\/script>' +
+    '</body></html>';
+  var blob = new Blob([page], { type: 'text/html;charset=utf-8' });
+  window._files = window._files || {};
+  window._files['ai-photo-brief.html'] = blob;
+  (async function () {
+    var saved = false;
+    if (dirHandle) saved = await saveToDir('ai-photo-brief.html', blob);
+    showMsg($('photo-brief-msg'), 'ok',
+      'Готово: ' + sel.length + ' товаров. ' + (saved ? 'Сохранено в папку: ai-photo-brief.html. ' : '') +
+      '<button class="btn btn--sm" id="photo-brief-dl">Скачать файл</button>');
+    if ($('photo-brief-dl')) $('photo-brief-dl').addEventListener('click', function () { download('ai-photo-brief.html', blob); });
+  })();
+});
+
 $('sc-photo-pick').addEventListener('click', function () { $('sc-photo-files').click(); });
 $('sc-photo-clear').addEventListener('click', function () { scPhotos = {}; showMsg($('sc-photo-msg'), 'warn', 'AI-фото очищены.'); });
 $('sc-photo-files').addEventListener('change', async function () {

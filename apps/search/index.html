@@ -70,6 +70,8 @@
     border-radius:8px;padding:6px 12px}
   .ship{display:inline-block;margin:8px 8px 0 0;font-size:14.5px;color:#0f5132;background:#e7f6ec;border:1px solid #bfe3cb;
     border-radius:8px;padding:6px 12px}
+  .deposit{margin:8px 0 0;font-size:15px;font-weight:600;color:#b91c1c;background:#fde8e8;border:1px solid #f3b4b4;
+    border-radius:8px;padding:8px 12px}
   .note{margin:8px 0 0;font-size:14px;color:var(--text);background:#f1f4f8;border:1px solid var(--line);
     border-radius:8px;padding:8px 12px;white-space:pre-wrap}
   .note b{font-weight:600}
@@ -113,6 +115,7 @@
     <label style="margin-top:10px">Поле:</label>
     <select id="bulk-field" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px">
       <option value="ship">Відправка (днів)</option>
+      <option value="deposit">Завдаток (відправка по завдатку)</option>
       <option value="fit">Примітка про розмір</option>
       <option value="note">Примітки</option>
     </select>
@@ -129,7 +132,7 @@
 <div class="lightbox" id="lb"><div id="lbcontent"></div></div>
 
 <script>
-const APP_VERSION = '2026-10-11-1';   // ← бампати при кожному оновленні сторінки
+const APP_VERSION = '2026-10-22-1';   // ← бампати при кожному оновленні сторінки
 // відкидає з кінця мітки копій (копN) і суфікси магазину (B)/(С)/(S): "In-3009 (коп1) (B)" -> "In-3009"
 function stripTail(s){
   let x=String(s||'').trim(), prev;
@@ -196,7 +199,7 @@ function fixGrammar(s){
   // подвоєна М у розмірних словах: маломмірить -> маломірить (зберігаємо регістр)
   s=s.replace(/(мало|більше|повно)(м)м(?=[іеІЕ])/gi,'$1$2');
   // «на підлогу розміру» -> «на пів розміру»
-  s=s.replace(/підлогу(\s+розмір)/gi,(m,g1)=> (m[0]===m[0].toUpperCase()?'ПІВ':'пів')+g1);
+  s=s.replace(/підлогу(\s+розмір)/gi,(m,g1)=> (m[0]===m[0].toUpperCase()?'ПіВ':'пів')+g1);
   return s;
 }
 // текст опису (без тегів, з переносами рядків)
@@ -335,6 +338,7 @@ function render(p){
   const fitLine  = p.fit ? '<div class="fit">'+esc(p.fit)+'</div>' : '';
   const shipTxt  = /^\d+$/.test(p.ship||'') ? (p.ship+' дн.') : (p.ship||'');
   const shipLine = p.ship ? '<div class="ship"><b>Відправка:</b> '+esc(shipTxt)+'</div>' : '';
+  const depLine  = p.deposit ? '<div class="deposit">🔴 <b>Відправка тільки по завдатку:</b> '+esc(p.deposit)+'</div>' : '';
   const noteLine = p.note ? '<div class="note"><b>Примітки:</b> '+esc(p.note).replace(/\n/g,'<br>')+'</div>' : '';
   const chartBtn = p.hasChart ? '<button class="chartbtn" id="chart-open">Розмірна сітка</button>' : '';
 
@@ -344,6 +348,8 @@ function render(p){
       '<input id="fit-inp" type="text" value="'+esc(p.fit||'')+'" placeholder="напр. Маломірить — беріть на розмір більше">'+
       '<label>Відправка (скільки днів):</label>'+
       '<input id="ship-inp" type="text" value="'+esc(p.ship||'')+'" placeholder="напр. 3">'+
+      '<label style="color:#b91c1c">Завдаток (відправка тільки по завдатку):</label>'+
+      '<input id="dep-inp" type="text" value="'+esc(p.deposit||'')+'" placeholder="напр. 200 грн">'+
       '<label>Примітки:</label>'+
       '<textarea id="note-inp" rows="3" placeholder="інша інформація про товар">'+esc(p.note||'')+'</textarea>'+
       '<label>Розмірна сітка (до 2 фото):</label>'+
@@ -366,6 +372,7 @@ function render(p){
           '<div id="auto-size"></div>'+
           fitLine +
           shipLine +
+          depLine +
           noteLine +
           (chartBtn?'<div>'+chartBtn+'</div>':'')+
           ownerPanel +
@@ -504,11 +511,12 @@ async function saveExtra(p){
     const fit=($('fit-inp').value||'').trim();
     const note=($('note-inp').value||'').trim();
     const ship=($('ship-inp').value||'').trim();
+    const deposit=($('dep-inp').value||'').trim();
     // key — стабильный ключ; base — совместимость со старой версией воркера
-    const payload={ key:p.ekey||extraKey(p), base:p.base, fit, note, ship, charts:pendingCharts.slice(0,2) };
+    const payload={ key:p.ekey||extraKey(p), base:p.base, fit, note, ship, deposit, charts:pendingCharts.slice(0,2) };
     const j=await extraSet(payload);
     if(j && j.ok){
-      p.fit=fit; p.note=note; p.ship=ship; p.hasChart=pendingCharts.length>0;
+      p.fit=fit; p.note=note; p.ship=ship; p.deposit=deposit; p.hasChart=pendingCharts.length>0;
       if(msg){ msg.style.color='var(--ok)'; msg.textContent='Збережено ✓'; }
       render(p);
     } else {

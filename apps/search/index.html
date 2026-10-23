@@ -81,8 +81,60 @@
   .chartbtn{display:inline-block;margin:10px 8px 0 0;font-size:15px;font-weight:600;border:0;border-radius:10px;
     padding:10px 18px;background:#0f766e;color:#fff;cursor:pointer}
   .chartbtn:hover{background:#0b5f58}
-  .gear{display:none;position:absolute;top:14px;right:16px;font-size:20px;background:none;border:0;cursor:pointer;opacity:.5}
-  .gear:hover{opacity:1}
+  /* шестерня доступу — завжди зверху праворуч, на всіх екранах */
+  .gear{position:fixed;top:12px;right:12px;z-index:30;width:44px;height:44px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1;
+    background:var(--card);border:1px solid var(--line);color:var(--dim);cursor:pointer;
+    box-shadow:0 2px 10px rgba(20,30,50,.10);transition:transform .15s,box-shadow .15s,color .15s,background .15s}
+  .gear:hover{color:var(--text);box-shadow:0 6px 18px rgba(20,30,50,.16);transform:translateY(-1px)}
+  .gear.is-on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.35)}
+  .gear .gear-dot{position:absolute;top:9px;right:9px;width:9px;height:9px;border-radius:50%;background:var(--ok);
+    border:2px solid var(--card);display:none}
+  .gear.is-on .gear-dot{display:block;background:#fff;border-color:var(--accent)}
+
+  /* вікно доступу */
+  .modal-overlay{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:20px;
+    background:rgba(15,20,32,.46);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+  .modal-overlay.is-open{display:flex;animation:ovfade .16s ease}
+  @keyframes ovfade{from{opacity:0}to{opacity:1}}
+  .modal-card{position:relative;width:100%;max-width:384px;background:var(--card);border-radius:20px;
+    padding:28px 26px 26px;box-shadow:0 26px 64px rgba(12,18,38,.34);
+    animation:cardin .22s cubic-bezier(.2,.8,.2,1)}
+  @keyframes cardin{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+  .modal-x{position:absolute;top:15px;right:15px;width:32px;height:32px;border:0;border-radius:9px;background:transparent;
+    color:var(--dim);font-size:22px;line-height:1;cursor:pointer;transition:.12s}
+  .modal-x:hover{background:var(--chip);color:var(--text)}
+  .modal-title{margin:0 0 5px;font-size:21px;font-weight:700;color:var(--text);letter-spacing:-.01em}
+  .modal-sub{margin:0 0 20px;font-size:13.5px;color:var(--dim)}
+  .role-group{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:20px}
+  .role-opt{display:flex;flex-direction:column;gap:3px;padding:14px 14px 13px;border:1.5px solid var(--line);
+    border-radius:14px;background:var(--card);cursor:pointer;text-align:left;transition:.14s}
+  .role-opt:hover{border-color:#c3d0e6;background:#fafcff}
+  .role-opt.is-active{border-color:var(--accent);background:#eff5ff;box-shadow:0 0 0 3px rgba(37,99,235,.13)}
+  .role-ic{font-size:23px;line-height:1}
+  .role-name{font-size:15px;font-weight:700;color:var(--text)}
+  .role-desc{font-size:11.5px;color:var(--dim);line-height:1.3}
+  .modal-label{display:block;font-size:12.5px;color:var(--dim);margin:0 0 7px;font-weight:600}
+  .pass-wrap{position:relative;margin-bottom:6px}
+  .modal-input{width:100%;padding:12px 46px 12px 14px;border:1.5px solid var(--line);border-radius:12px;font-size:15px;
+    color:var(--text);background:var(--card);box-sizing:border-box;transition:.14s;font-family:inherit}
+  .modal-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.15)}
+  .pass-eye{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:0;background:transparent;
+    color:var(--dim);cursor:pointer;font-size:16px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+  .pass-eye:hover{background:var(--chip)}
+  .modal-err{min-height:18px;font-size:13px;color:var(--err);margin:3px 2px 12px}
+  .modal-btn{width:100%;padding:13px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:15px;
+    font-weight:700;cursor:pointer;transition:.14s}
+  .modal-btn:hover{background:#1d4ed8}
+  .modal-btn:disabled{opacity:.6;cursor:default}
+  .modal-btn--danger{background:var(--err)}
+  .modal-btn--danger:hover{background:#991b1b}
+  .modal-who{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:14px;
+    background:var(--chip);margin-bottom:18px}
+  .modal-who .who-ic{font-size:26px}
+  .modal-who .who-role{font-size:16px;font-weight:700;color:var(--text)}
+  .modal-who .who-note{font-size:12px;color:var(--dim)}
+  @media (prefers-reduced-motion:reduce){.modal-overlay.is-open,.modal-card{animation:none}}
   .ownerbox{margin-top:12px;padding:12px;border:1px dashed var(--accent);border-radius:10px;background:#f5f8ff}
   .ownerbox label{display:block;font-size:12.5px;color:var(--dim);margin:8px 0 3px}
   .ownerbox input[type=text]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px}
@@ -94,7 +146,7 @@
 </head>
 <body>
 <div class="wrap">
-  <button id="gear" class="gear" title="Вийти з режиму власника">⚙</button>
+  <button id="gear" class="gear" title="Доступ"><span>⚙</span><span class="gear-dot"></span></button>
   <h1>Пошук товару</h1>
   <p class="sub">Введіть артикул або назву — покажемо фото, назву, опис і наявність.</p>
 
@@ -131,10 +183,54 @@
   <div id="result"></div>
 </div>
 
+<!-- вікно доступу (власник / менеджер) -->
+<div id="auth-modal" class="modal-overlay" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <button class="modal-x" id="auth-close" aria-label="Закрити">×</button>
+
+    <div id="auth-login">
+      <h2 class="modal-title" id="auth-title">Доступ до системи</h2>
+      <p class="modal-sub">Оберіть рівень доступу та введіть пароль.</p>
+      <div class="role-group">
+        <button type="button" class="role-opt is-active" data-role="owner">
+          <span class="role-ic">👑</span>
+          <span class="role-name">Власник</span>
+          <span class="role-desc">Повний доступ до всіх полів</span>
+        </button>
+        <button type="button" class="role-opt" data-role="manager">
+          <span class="role-ic">🗝️</span>
+          <span class="role-name">Менеджер</span>
+          <span class="role-desc">Мітки, зокрема внутрішні</span>
+        </button>
+      </div>
+      <label class="modal-label" for="auth-pass">Пароль</label>
+      <div class="pass-wrap">
+        <input id="auth-pass" class="modal-input" type="password" placeholder="Введіть пароль" autocomplete="off" enterkeyhint="go">
+        <button type="button" class="pass-eye" id="auth-eye" aria-label="Показати пароль">👁</button>
+      </div>
+      <div class="modal-err" id="auth-err"></div>
+      <button class="modal-btn" id="auth-submit">Увійти</button>
+    </div>
+
+    <div id="auth-info" style="display:none">
+      <h2 class="modal-title">Ви увійшли</h2>
+      <p class="modal-sub">Щоб змінити рівень доступу — вийдіть і увійдіть знову.</p>
+      <div class="modal-who">
+        <span class="who-ic" id="who-ic">👑</span>
+        <div>
+          <div class="who-role" id="who-role">Власник</div>
+          <div class="who-note" id="who-note">Повний доступ</div>
+        </div>
+      </div>
+      <button class="modal-btn modal-btn--danger" id="auth-logout">Вийти з доступу</button>
+    </div>
+  </div>
+</div>
+
 <div class="lightbox" id="lb"><div id="lbcontent"></div></div>
 
 <script>
-const APP_VERSION = '2026-10-23-1';   // ← бампати при кожному оновленні сторінки
+const APP_VERSION = '2026-10-23-2';   // ← бампати при кожному оновленні сторінки
 // відкидає з кінця мітки копій (копN) і суфікси магазину (B)/(С)/(S): "In-3009 (коп1) (B)" -> "In-3009"
 function stripTail(s){
   let x=String(s||'').trim(), prev;
@@ -328,7 +424,7 @@ async function loadDetail(d, needDesc, needImg){
 }
 async function lookup(q){
   const res = await fetch(WORKER_URL.replace(/\/+$/,'')+'/lookup', {
-    method:'POST', headers:{'Content-Type':'application/json','X-App-Password':ownerPass()},
+    method:'POST', headers:authHeaders(),
     body: JSON.stringify({ q })
   });
   return res.json();
@@ -448,6 +544,9 @@ async function openChart(p){
 
 /* ---- режим владельца: сохранение заметки и фото сетки ---- */
 function ownerPass(){ return localStorage.getItem('search:pass')||''; }
+function ownerRole(){ return localStorage.getItem('search:role')||''; }
+// заголовки для запитів: пароль + обрана роль (щоб сервер знав, за кого входимо)
+function authHeaders(){ return {'Content-Type':'application/json','X-App-Password':ownerPass(),'X-Role':ownerRole()}; }
 function fileToDataURL(file, maxW){
   return new Promise((resolve,reject)=>{
     const img=new Image();
@@ -467,7 +566,7 @@ function fileToDataURL(file, maxW){
 }
 async function extraSet(payload){
   const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/extra-set',{
-    method:'POST', headers:{'Content-Type':'application/json','X-App-Password':ownerPass()},
+    method:'POST', headers:authHeaders(),
     body: JSON.stringify(payload)
   });
   return res.json();
@@ -579,7 +678,7 @@ async function openResult(key){
   $('result').innerHTML=''; setStatus('Відкриваю…'); $('status').style.display='block';
   try{
     const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/lookup',{
-      method:'POST', headers:{'Content-Type':'application/json','X-App-Password':ownerPass()}, body:JSON.stringify({ key })
+      method:'POST', headers:authHeaders(), body:JSON.stringify({ key })
     });
     const data=await res.json();
     if(data && data.found && data.product){ $('status').style.display='none'; render(data.product); }
@@ -670,32 +769,71 @@ document.addEventListener('paste', async (e)=>{
 
 /* ---- масове редагування (режим власника) ---- */
 let bulkMatched=[];
+const ROLE_META={ owner:{ic:'👑',name:'Власник',note:'Повний доступ'}, manager:{ic:'🗝️',name:'Менеджер',note:'Мітки, зокрема внутрішні'} };
 function updateOwnerUI(){
   const b=$('bulkbox'); if(b) b.style.display=OWNER?'block':'none';          // масове редагування — лише власник
-  const g=$('gear'); if(g) g.style.display=isStaff()?'block':'none';          // шестерня (вихід) — власник і менеджер
+  const g=$('gear'); if(g){ g.classList.toggle('is-on', isStaff()); g.title=isStaff()?('Доступ: '+(ROLE_META[ROLE]?ROLE_META[ROLE].name:'')):'Доступ'; }
 }
-// перевірка пароля на сервері: повертає роль ('owner'|'manager') або null
-async function verifyRole(pass){
+// перевірка пароля на сервері під обрану роль: повертає роль або null
+async function verifyRole(pass, want){
   try{
     const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/ping',{
-      method:'POST', headers:{'Content-Type':'application/json','X-App-Password':pass}, body:'{}'
+      method:'POST', headers:{'Content-Type':'application/json','X-App-Password':pass,'X-Role':want||''}, body:'{}'
     });
     const j=await res.json().catch(()=>({}));
-    if(res.ok && j && j.ok) return j.role || 'owner';
+    if(res.ok && j && j.ok) return j.role || want || 'owner';
     return null;
   }catch(e){ return null; }
 }
 function applyRole(role){ ROLE=role||'guest'; OWNER=(ROLE==='owner'); updateOwnerUI(); }
-async function enterOwner(){
-  const pass=prompt('Пароль (власник або менеджер):');
-  if(!pass) return;
-  const role=await verifyRole(pass);
-  if(role){
-    localStorage.setItem('search:pass', pass); applyRole(role);
-    if(currentProduct){ const q=currentProduct.base; if(q){ const d=await lookup(q); if(d&&d.found&&d.product){ render(d.product); return; } } render(currentProduct); }
-  } else {
-    alert('Невірний пароль.');
+async function reloadCurrent(){
+  if(!currentProduct) return;
+  const q=currentProduct.base;
+  if(q){ const d=await lookup(q); if(d&&d.found&&d.product){ render(d.product); return; } }
+  render(currentProduct);
+}
+
+/* ---- вікно доступу ---- */
+let pickedRole='owner';
+function openAuth(){
+  const m=$('auth-modal'); if(!m) return;
+  const login=$('auth-login'), info=$('auth-info');
+  if(isStaff()){
+    const meta=ROLE_META[ROLE]||ROLE_META.owner;
+    $('who-ic').textContent=meta.ic; $('who-role').textContent=meta.name; $('who-note').textContent=meta.note;
+    login.style.display='none'; info.style.display='';
+  }else{
+    login.style.display=''; info.style.display='none';
+    $('auth-err').textContent=''; $('auth-pass').value='';
+    setPicked(pickedRole);
   }
+  m.classList.add('is-open'); m.setAttribute('aria-hidden','false');
+  if(!isStaff()) setTimeout(()=>{ const p=$('auth-pass'); if(p) p.focus(); },60);
+}
+function closeAuth(){ const m=$('auth-modal'); if(m){ m.classList.remove('is-open'); m.setAttribute('aria-hidden','true'); } }
+function setPicked(r){
+  pickedRole=r;
+  document.querySelectorAll('.role-opt').forEach(b=>b.classList.toggle('is-active', b.dataset.role===r));
+}
+async function submitAuth(){
+  const pass=($('auth-pass').value||'').trim();
+  const err=$('auth-err'), btn=$('auth-submit');
+  if(!pass){ err.textContent='Введіть пароль.'; return; }
+  err.textContent=''; btn.disabled=true; btn.textContent='Перевіряю…';
+  const role=await verifyRole(pass, pickedRole);
+  btn.disabled=false; btn.textContent='Увійти';
+  if(role){
+    localStorage.setItem('search:pass', pass);
+    localStorage.setItem('search:role', role);
+    applyRole(role); closeAuth(); reloadCurrent();
+  }else{
+    err.textContent='Невірний пароль для цього рівня доступу.';
+    $('auth-pass').select();
+  }
+}
+function doLogout(){
+  localStorage.removeItem('search:pass'); localStorage.removeItem('search:role');
+  applyRole('guest'); closeAuth(); if(currentProduct) render(currentProduct);
 }
 function bulkSelectedCount(){
   return document.querySelectorAll('.bulk-chk:checked').length;
@@ -741,7 +879,7 @@ async function bulkApply(){
     for(let i=0;i<items.length;i+=150){
       const chunk=items.slice(i,i+150);
       const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/extra-bulk',{
-        method:'POST', headers:{'Content-Type':'application/json','X-App-Password':ownerPass()},
+        method:'POST', headers:authHeaders(),
         body:JSON.stringify({ items:chunk, field, value })
       });
       const j=await res.json();
@@ -753,12 +891,16 @@ async function bulkApply(){
   }catch(e){ msg.style.color='var(--err)'; msg.textContent='Збій: '+e.message; }
 }
 
-/* ---- вход/выход из режима владельца (шестерёнка) ---- */
-// вихід із режиму власника (шестерня видима лише власнику)
-$('gear').addEventListener('click', ()=>{
-  if(!isStaff()) return;
-  if(confirm('Вийти з режиму доступу?')){ localStorage.removeItem('search:pass'); applyRole('guest'); if(currentProduct) render(currentProduct); }
-});
+/* ---- шестерня доступу + вікно ---- */
+$('gear').addEventListener('click', openAuth);
+$('auth-close').addEventListener('click', closeAuth);
+$('auth-submit').addEventListener('click', submitAuth);
+$('auth-logout').addEventListener('click', doLogout);
+document.querySelectorAll('.role-opt').forEach(b=>b.addEventListener('click', ()=>{ setPicked(b.dataset.role); $('auth-pass').focus(); }));
+$('auth-pass').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); submitAuth(); } });
+$('auth-eye').addEventListener('click', ()=>{ const p=$('auth-pass'); p.type = p.type==='password'?'text':'password'; p.focus(); });
+$('auth-modal').addEventListener('click', e=>{ if(e.target===$('auth-modal')) closeAuth(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeAuth(); });
 $('bulk-find').addEventListener('click', bulkFind);
 $('bulk-apply').addEventListener('click', bulkApply);
 $('bulk-all').addEventListener('change', ()=>{
@@ -767,19 +909,19 @@ $('bulk-all').addEventListener('change', ()=>{
   updateBulkSel();
 });
 
-// ПРИХОВАНИЙ вхід для власника: Ctrl+Alt+O  або  адреса з #admin
+// швидкий виклик вікна доступу: Ctrl+Alt+O  або  адреса з #admin
 document.addEventListener('keydown', (e)=>{
-  if((e.ctrlKey||e.metaKey) && e.altKey && (e.key==='o'||e.key==='O'||e.code==='KeyO')){ e.preventDefault(); if(!isStaff()) enterOwner(); }
+  if((e.ctrlKey||e.metaKey) && e.altKey && (e.key==='o'||e.key==='O'||e.code==='KeyO')){ e.preventDefault(); openAuth(); }
 });
-if(location.hash==='#admin'){ history.replaceState(null,'',location.pathname+location.search); enterOwner(); }
+if(location.hash==='#admin'){ history.replaceState(null,'',location.pathname+location.search); openAuth(); }
 
-// якщо пароль вже збережений у цьому браузері — тихо перевіряємо на сервері
+// якщо пароль вже збережений у цьому браузері — тихо перевіряємо на сервері під збережену роль
 (async ()=>{
   const saved=localStorage.getItem('search:pass');
   if(saved){
-    const role=await verifyRole(saved);
-    if(role){ applyRole(role); if(currentProduct) render(currentProduct); }
-    else localStorage.removeItem('search:pass');
+    const role=await verifyRole(saved, localStorage.getItem('search:role')||'');
+    if(role){ localStorage.setItem('search:role', role); applyRole(role); if(currentProduct) render(currentProduct); }
+    else { localStorage.removeItem('search:pass'); localStorage.removeItem('search:role'); }
   }
 })();
 

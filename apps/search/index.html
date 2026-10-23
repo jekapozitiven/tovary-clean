@@ -75,6 +75,8 @@
   .note{margin:8px 0 0;font-size:14px;color:var(--text);background:#f1f4f8;border:1px solid var(--line);
     border-radius:8px;padding:8px 12px;white-space:pre-wrap}
   .note b{font-weight:600}
+  .note.inote{background:#f3efff;border-color:#d9ccff;color:#4c1d95}
+  .note.inote b{color:#4c1d95}
   .ownerbox textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;resize:vertical}
   .chartbtn{display:inline-block;margin:10px 8px 0 0;font-size:15px;font-weight:600;border:0;border-radius:10px;
     padding:10px 18px;background:#0f766e;color:#fff;cursor:pointer}
@@ -132,7 +134,7 @@
 <div class="lightbox" id="lb"><div id="lbcontent"></div></div>
 
 <script>
-const APP_VERSION = '2026-10-22-1';   // ← бампати при кожному оновленні сторінки
+const APP_VERSION = '2026-10-23-1';   // ← бампати при кожному оновленні сторінки
 // відкидає з кінця мітки копій (копN) і суфікси магазину (B)/(С)/(S): "In-3009 (коп1) (B)" -> "In-3009"
 function stripTail(s){
   let x=String(s||'').trim(), prev;
@@ -154,7 +156,9 @@ function fullImg(u){
   }
   return u;
 }
-let OWNER = false;   // вмикається лише після перевірки пароля на сервері
+let OWNER = false;   // true лише для власника (повний доступ)
+let ROLE = 'guest';  // 'guest' | 'manager' | 'owner'
+function isStaff(){ return ROLE === 'owner' || ROLE === 'manager'; }
 let currentProduct = null;
 let pendingCharts = [];    // текущий набор фото сетки (dataURL), до 2 штук
 
@@ -199,7 +203,7 @@ function fixGrammar(s){
   // подвоєна М у розмірних словах: маломмірить -> маломірить (зберігаємо регістр)
   s=s.replace(/(мало|більше|повно)(м)м(?=[іеІЕ])/gi,'$1$2');
   // «на підлогу розміру» -> «на пів розміру»
-  s=s.replace(/підлогу(\s+розмір)/gi,(m,g1)=> (m[0]===m[0].toUpperCase()?'ПіВ':'пів')+g1);
+  s=s.replace(/підлогу(\s+розмір)/gi,(m,g1)=> (m[0]===m[0].toUpperCase()?'ПІВ':'пів')+g1);
   return s;
 }
 // текст опису (без тегів, з переносами рядків)
@@ -324,7 +328,7 @@ async function loadDetail(d, needDesc, needImg){
 }
 async function lookup(q){
   const res = await fetch(WORKER_URL.replace(/\/+$/,'')+'/lookup', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json','X-App-Password':ownerPass()},
     body: JSON.stringify({ q })
   });
   return res.json();
@@ -339,10 +343,14 @@ function render(p){
   const shipTxt  = /^\d+$/.test(p.ship||'') ? (p.ship+' дн.') : (p.ship||'');
   const shipLine = p.ship ? '<div class="ship"><b>Відправка:</b> '+esc(shipTxt)+'</div>' : '';
   const depLine  = p.deposit ? '<div class="deposit">🔴 <b>Відправка тільки по завдатку:</b> '+esc(p.deposit)+'</div>' : '';
-  const noteLine = p.note ? '<div class="note"><b>Примітки:</b> '+esc(p.note).replace(/\n/g,'<br>')+'</div>' : '';
+  // Публічна мітка — бачать усі (ТЦ теж). Внутрішня — лише власник/менеджер.
+  const noteLine  = p.note ? '<div class="note"><b>Примітка:</b> '+esc(p.note).replace(/\n/g,'<br>')+'</div>' : '';
+  const inoteLine = (isStaff() && p.inote) ? '<div class="note inote"><b>🔒 Внутрішня (тільки ми):</b> '+esc(p.inote).replace(/\n/g,'<br>')+'</div>' : '';
   const chartBtn = p.hasChart ? '<button class="chartbtn" id="chart-open">Розмірна сітка</button>' : '';
 
-  const ownerPanel = OWNER ? (
+  let staffPanel = '';
+  if (ROLE === 'owner') {
+    staffPanel =
     '<div class="ownerbox">'+
       '<label>Примітка про розмір (маломірить / більшемірить):</label>'+
       '<input id="fit-inp" type="text" value="'+esc(p.fit||'')+'" placeholder="напр. Маломірить — беріть на розмір більше">'+
@@ -350,14 +358,26 @@ function render(p){
       '<input id="ship-inp" type="text" value="'+esc(p.ship||'')+'" placeholder="напр. 3">'+
       '<label style="color:#b91c1c">Завдаток (відправка тільки по завдатку):</label>'+
       '<input id="dep-inp" type="text" value="'+esc(p.deposit||'')+'" placeholder="напр. 200 грн">'+
-      '<label>Примітки:</label>'+
-      '<textarea id="note-inp" rows="3" placeholder="інша інформація про товар">'+esc(p.note||'')+'</textarea>'+
+      '<label>Примітка (бачать усі, і ТЦ):</label>'+
+      '<textarea id="note-inp" rows="2" placeholder="видно всім: колл-центру теж">'+esc(p.note||'')+'</textarea>'+
+      '<label style="color:#6d28d9">🔒 Внутрішня мітка (тільки власник і менеджер):</label>'+
+      '<textarea id="inote-inp" rows="2" placeholder="ТЦ цього НЕ бачить">'+esc(p.inote||'')+'</textarea>'+
       '<label>Розмірна сітка (до 2 фото):</label>'+
       '<div id="chart-editor"></div>'+
       '<div style="margin-top:10px"><button class="obtn" id="extra-save">Зберегти</button>'+
       '<span class="omsg" id="extra-msg"></span></div>'+
-    '</div>'
-  ) : '';
+    '</div>';
+  } else if (ROLE === 'manager') {
+    staffPanel =
+    '<div class="ownerbox">'+
+      '<label>Примітка (бачать усі, і ТЦ):</label>'+
+      '<textarea id="note-inp" rows="2" placeholder="видно всім: колл-центру теж">'+esc(p.note||'')+'</textarea>'+
+      '<label style="color:#6d28d9">🔒 Внутрішня мітка (тільки власник і менеджер):</label>'+
+      '<textarea id="inote-inp" rows="2" placeholder="ТЦ цього НЕ бачить">'+esc(p.inote||'')+'</textarea>'+
+      '<div style="margin-top:10px"><button class="obtn" id="extra-save">Зберегти мітки</button>'+
+      '<span class="omsg" id="extra-msg"></span></div>'+
+    '</div>';
+  }
 
   // якщо є посилання на товар (Black Street) — опис завжди тягнемо звідти; інакше показуємо індексний
   const desc = (!p.detail && p.desc) ? descBlock(p.desc) : '<div id="desc-slot"></div>';
@@ -374,19 +394,22 @@ function render(p){
           shipLine +
           depLine +
           noteLine +
+          inoteLine +
           (chartBtn?'<div>'+chartBtn+'</div>':'')+
-          ownerPanel +
+          staffPanel +
         '</div>'+
       '</div>'+ desc +
     '</div>';
 
   bindGallery();
   const co=$('chart-open'); if(co) co.addEventListener('click', ()=>openChart(p));
+  if(isStaff()){
+    const sv=$('extra-save'); if(sv) sv.addEventListener('click', ()=>saveExtra(p));
+  }
   if(OWNER){
     pendingCharts = [];
     renderChartEditor();
     loadExistingCharts(p);
-    const sv=$('extra-save'); if(sv) sv.addEventListener('click', ()=>saveExtra(p));
   }
 
   // опис/назва/фото/розмірні підказки — завжди з Black Street (/detail), якщо є посилання
@@ -508,15 +531,20 @@ async function pasteChart(){
 async function saveExtra(p){
   const msg=$('extra-msg'); if(msg){ msg.style.color='var(--dim)'; msg.textContent='Зберігаю…'; }
   try{
-    const fit=($('fit-inp').value||'').trim();
-    const note=($('note-inp').value||'').trim();
-    const ship=($('ship-inp').value||'').trim();
-    const deposit=($('dep-inp').value||'').trim();
+    const note =($('note-inp')  ? $('note-inp').value  : '').trim();
+    const inote=($('inote-inp') ? $('inote-inp').value : '').trim();
     // key — стабильный ключ; base — совместимость со старой версией воркера
-    const payload={ key:p.ekey||extraKey(p), base:p.base, fit, note, ship, deposit, charts:pendingCharts.slice(0,2) };
+    const payload={ key:p.ekey||extraKey(p), base:p.base, note, inote };
+    if(OWNER){
+      payload.fit    =($('fit-inp') ? $('fit-inp').value : '').trim();
+      payload.ship   =($('ship-inp')? $('ship-inp').value: '').trim();
+      payload.deposit=($('dep-inp') ? $('dep-inp').value : '').trim();
+      payload.charts =pendingCharts.slice(0,2);
+    }
     const j=await extraSet(payload);
     if(j && j.ok){
-      p.fit=fit; p.note=note; p.ship=ship; p.deposit=deposit; p.hasChart=pendingCharts.length>0;
+      p.note=note; p.inote=inote;
+      if(OWNER){ p.fit=payload.fit; p.ship=payload.ship; p.deposit=payload.deposit; p.hasChart=pendingCharts.length>0; }
       if(msg){ msg.style.color='var(--ok)'; msg.textContent='Збережено ✓'; }
       render(p);
     } else {
@@ -551,7 +579,7 @@ async function openResult(key){
   $('result').innerHTML=''; setStatus('Відкриваю…'); $('status').style.display='block';
   try{
     const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/lookup',{
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ key })
+      method:'POST', headers:{'Content-Type':'application/json','X-App-Password':ownerPass()}, body:JSON.stringify({ key })
     });
     const data=await res.json();
     if(data && data.found && data.product){ $('status').style.display='none'; render(data.product); }
@@ -643,25 +671,28 @@ document.addEventListener('paste', async (e)=>{
 /* ---- масове редагування (режим власника) ---- */
 let bulkMatched=[];
 function updateOwnerUI(){
-  const b=$('bulkbox'); if(b) b.style.display=OWNER?'block':'none';
-  const g=$('gear'); if(g) g.style.display=OWNER?'block':'none';   // шестерня — тільки для входу власника (вихід)
+  const b=$('bulkbox'); if(b) b.style.display=OWNER?'block':'none';          // масове редагування — лише власник
+  const g=$('gear'); if(g) g.style.display=isStaff()?'block':'none';          // шестерня (вихід) — власник і менеджер
 }
-// перевірка пароля на сервері (щоб панель не відкривалась випадковим значенням)
-async function verifyPass(pass){
+// перевірка пароля на сервері: повертає роль ('owner'|'manager') або null
+async function verifyRole(pass){
   try{
     const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/ping',{
       method:'POST', headers:{'Content-Type':'application/json','X-App-Password':pass}, body:'{}'
     });
     const j=await res.json().catch(()=>({}));
-    return res.ok && j && j.ok;
-  }catch(e){ return false; }
+    if(res.ok && j && j.ok) return j.role || 'owner';
+    return null;
+  }catch(e){ return null; }
 }
+function applyRole(role){ ROLE=role||'guest'; OWNER=(ROLE==='owner'); updateOwnerUI(); }
 async function enterOwner(){
-  const pass=prompt('Пароль власника:');
+  const pass=prompt('Пароль (власник або менеджер):');
   if(!pass) return;
-  if(await verifyPass(pass)){
-    localStorage.setItem('search:pass', pass); OWNER=true; updateOwnerUI();
-    if(currentProduct) render(currentProduct);
+  const role=await verifyRole(pass);
+  if(role){
+    localStorage.setItem('search:pass', pass); applyRole(role);
+    if(currentProduct){ const q=currentProduct.base; if(q){ const d=await lookup(q); if(d&&d.found&&d.product){ render(d.product); return; } } render(currentProduct); }
   } else {
     alert('Невірний пароль.');
   }
@@ -725,8 +756,8 @@ async function bulkApply(){
 /* ---- вход/выход из режима владельца (шестерёнка) ---- */
 // вихід із режиму власника (шестерня видима лише власнику)
 $('gear').addEventListener('click', ()=>{
-  if(!OWNER) return;
-  if(confirm('Вийти з режиму власника?')){ localStorage.removeItem('search:pass'); OWNER=false; updateOwnerUI(); if(currentProduct) render(currentProduct); }
+  if(!isStaff()) return;
+  if(confirm('Вийти з режиму доступу?')){ localStorage.removeItem('search:pass'); applyRole('guest'); if(currentProduct) render(currentProduct); }
 });
 $('bulk-find').addEventListener('click', bulkFind);
 $('bulk-apply').addEventListener('click', bulkApply);
@@ -738,7 +769,7 @@ $('bulk-all').addEventListener('change', ()=>{
 
 // ПРИХОВАНИЙ вхід для власника: Ctrl+Alt+O  або  адреса з #admin
 document.addEventListener('keydown', (e)=>{
-  if((e.ctrlKey||e.metaKey) && e.altKey && (e.key==='o'||e.key==='O'||e.code==='KeyO')){ e.preventDefault(); if(!OWNER) enterOwner(); }
+  if((e.ctrlKey||e.metaKey) && e.altKey && (e.key==='o'||e.key==='O'||e.code==='KeyO')){ e.preventDefault(); if(!isStaff()) enterOwner(); }
 });
 if(location.hash==='#admin'){ history.replaceState(null,'',location.pathname+location.search); enterOwner(); }
 
@@ -746,7 +777,8 @@ if(location.hash==='#admin'){ history.replaceState(null,'',location.pathname+loc
 (async ()=>{
   const saved=localStorage.getItem('search:pass');
   if(saved){
-    if(await verifyPass(saved)){ OWNER=true; updateOwnerUI(); if(currentProduct) render(currentProduct); }
+    const role=await verifyRole(saved);
+    if(role){ applyRole(role); if(currentProduct) render(currentProduct); }
     else localStorage.removeItem('search:pass');
   }
 })();

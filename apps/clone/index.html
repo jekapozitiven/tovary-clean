@@ -136,7 +136,7 @@
     </div>
 
     <details style="margin: 4px 0 12px">
-      <summary style="cursor: pointer; font-size: 13px; color: var(--text-dim)">Категории по магазинам (можно менять названия перед выгрузкой)</summary>
+      <summary style="cursor: pointer; display: inline-block; padding: 9px 17px; font-size: 14px; font-weight: 700; color: var(--text); background: #16161a; border: 1px solid var(--border); border-radius: var(--radius-sm); list-style: none">⚙️ Категории по магазинам — разделы Blink (нажми, чтобы открыть)</summary>
       <p class="muted" style="margin: 8px 0 0">Слева — группа Black Street. Справа — как назвать раздел на каждом магазине
         (Blink — полный путь через «/»). Пусто = не менять (на Prom оставит исходную группу). Изменения сохраняются в браузере.</p>
       <div class="cat-scroll" id="cat-table"></div>
@@ -803,7 +803,9 @@ var CAT_DEFAULTS = [
   { bs:'Зимові куртки', bonna:'', core22:'', blink:'Жіночий одяг/Жіночі зимові куртки' },
   { bs:'Піжами', bonna:'', core22:'', blink:'Жіночий одяг/Піжами-Новорічні светри' },
   { bs:'Дитячий одяг', bonna:'', core22:'', blink:'Дитячий одяг/Костюми' },
-  { bs:'Жіночі кросівки', bonna:'', core22:'', blink:'Жіноче взуття' }
+  { bs:'Жіночі кросівки', bonna:'', core22:'', blink:'Жіноче взуття' },
+  { bs:'Куртки/Жилетки', bonna:'', core22:'', blink:'Чоловічий одяг/Верхній одяг/Весняний-осінній верхній одяг' },
+  { bs:'Шкарпетки', bonna:'', core22:'', blink:'Аксесуари/Шапки-Шарфи-Рукавиці' }
 ];
 var catMap = {};
 function catDefault(key, st) {

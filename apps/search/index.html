@@ -59,6 +59,21 @@
   .ritem img{width:44px;height:44px;object-fit:cover;border-radius:8px;background:#f0f2f5;flex:0 0 44px}
   .ritem .rn{font-weight:600}
   .ritem .ra{color:var(--dim);font-size:13px}
+  .ritem .rbody{flex:1}
+  .ritem .mass-chk{width:20px;height:20px;flex:0 0 20px;cursor:pointer;margin:0}
+  .ritem.sel{border-color:var(--accent);background:#eff5ff}
+  /* панель масового редагування над списком (лише власник) */
+  .massbar{background:#f5f8ff;border:1px dashed var(--accent);border-radius:12px;padding:12px 14px;margin:0 0 12px}
+  .massbar .mass-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .massbar .mass-all-l{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14.5px;cursor:pointer}
+  .massbar .mass-all-l input{width:19px;height:19px;cursor:pointer}
+  .massbar .mass-sel{font-size:13px;color:var(--dim)}
+  .massbar .mass-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .massbar select,.massbar .mass-row input{padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit}
+  .massbar select{flex:1 1 200px}
+  .massbar .mass-row input{flex:1 1 160px}
+  .massbar .obtn{flex:0 0 auto}
+  .massbar .omsg{display:block;margin-top:8px;font-size:13px;min-height:16px}
   .desc{padding:0 18px 20px}
   .desc h3{font-size:14px;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin:6px 0 8px}
   .desc-body{font-size:14px;line-height:1.55;border-top:1px solid var(--line);padding-top:12px;max-height:520px;overflow:auto;color:var(--text)}
@@ -158,30 +173,6 @@
     <button id="go">Знайти</button>
   </div>
 
-  <div id="bulkbox" class="ownerbox" style="display:none;margin-top:14px">
-    <h3 style="margin:0 0 8px;font-size:15px">Масове редагування</h3>
-    <label>Початок артикулу:</label>
-    <input id="bulk-prefix" type="text" placeholder="напр. Ads-">
-    <button class="obtn" id="bulk-find" type="button">Знайти товари</button>
-    <span class="ohint" id="bulk-count" style="margin-left:8px"></span>
-    <div id="bulk-list-wrap" style="display:none;margin-top:10px">
-      <label style="display:flex;align-items:center;gap:7px;color:var(--text);font-size:14px;margin:0 0 6px;cursor:pointer">
-        <input type="checkbox" id="bulk-all" checked> Вибрати всі (<span id="bulk-sel">0</span>)</label>
-      <div id="bulk-list" style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff;padding:6px"></div>
-    </div>
-    <label style="margin-top:10px">Поле:</label>
-    <select id="bulk-field" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px">
-      <option value="ship">Відправка (днів)</option>
-      <option value="deposit">Завдаток (відправка по завдатку)</option>
-      <option value="fit">Примітка про розмір</option>
-      <option value="note">Примітки</option>
-    </select>
-    <label>Значення:</label>
-    <input id="bulk-value" type="text" placeholder="напр. 3">
-    <div style="margin-top:10px"><button class="obtn" id="bulk-apply" type="button">Застосувати до вибраних</button>
-    <span class="omsg" id="bulk-msg"></span></div>
-  </div>
-
   <div id="status" class="status">Введіть артикул або назву та натисніть «Знайти».</div>
   <div id="result"></div>
 </div>
@@ -233,7 +224,7 @@
 <div class="lightbox" id="lb"><div id="lbcontent"></div></div>
 
 <script>
-const APP_VERSION = '2026-10-23-4';   // ← бампати при кожному оновленні сторінки
+const APP_VERSION = '2026-11-06-1';   // ← бампати при кожному оновленні сторінки
 // відкидає з кінця мітки копій (копN) і суфікси магазину (B)/(С)/(S): "In-3009 (коп1) (B)" -> "In-3009"
 function stripTail(s){
   let x=String(s||'').trim(), prev;
@@ -678,16 +669,91 @@ async function ensureCatalog(){
   CATALOG=(j && Array.isArray(j.list)) ? j.list : [];
   return CATALOG;
 }
+// поля для масового редагування (власник) — усе, чим керує власник
+const MASS_FIELDS=[
+  ['ship','Відправка (днів)'],
+  ['deposit','Завдаток (відправка тільки по завдатку)'],
+  ['fit','Примітка про розмір (маломірить/більшемірить)'],
+  ['note','Примітка (бачать усі, і ТЦ)'],
+  ['inote','Внутрішня мітка (тільки ми)']
+];
+let lastResults=[];
 function renderResults(matches, total){
-  const html = matches.map(m=>
-    '<button class="ritem" data-k="'+esc(m.k||m.b)+'">'+
+  lastResults=matches;
+  const own=OWNER;
+  const rows=matches.map((m,i)=>
+    '<div class="ritem'+(own?' has-chk':'')+'" data-k="'+esc(m.k||m.b)+'" data-i="'+i+'">'+
+      (own?'<input type="checkbox" class="mass-chk" data-i="'+i+'">':'')+
       (m.img?'<img src="'+esc(m.img)+'" alt="">':'<img alt="">')+
-      '<span><span class="rn">'+esc(m.n)+'</span><br><span class="ra">Артикул: '+esc(m.b)+'</span></span>'+
-    '</button>').join('');
-  $('result').innerHTML='<div class="results">'+html+'</div>';
-  document.querySelectorAll('.ritem').forEach(b=>b.addEventListener('click',()=>openResult(b.dataset.k)));
+      '<span class="rbody"><span class="rn">'+esc(m.n)+'</span><br><span class="ra">Артикул: '+esc(m.b)+'</span></span>'+
+    '</div>').join('');
+  const toolbar = own ? (
+    '<div class="massbar">'+
+      '<div class="mass-top">'+
+        '<label class="mass-all-l"><input type="checkbox" id="mass-all"> Вибрати всі</label>'+
+        '<span class="mass-sel" id="mass-sel">Вибрано: 0</span>'+
+      '</div>'+
+      '<div class="mass-row">'+
+        '<select id="mass-field">'+MASS_FIELDS.map(f=>'<option value="'+f[0]+'">'+f[1]+'</option>').join('')+'</select>'+
+        '<input id="mass-value" type="text" placeholder="Значення (порожнє = очистити)">'+
+        '<button class="obtn" id="mass-apply" type="button">Застосувати до вибраних</button>'+
+      '</div>'+
+      '<span class="omsg" id="mass-msg"></span>'+
+    '</div>'
+  ) : '';
+  $('result').innerHTML='<div class="results">'+toolbar+rows+'</div>';
+  // клік по рядку відкриває товар (крім кліку по галочці)
+  document.querySelectorAll('.ritem').forEach(b=>b.addEventListener('click',(e)=>{
+    if(e.target.classList.contains('mass-chk')) return;
+    openResult(b.dataset.k);
+  }));
+  if(own){
+    document.querySelectorAll('.mass-chk').forEach(ch=>ch.addEventListener('change', e=>{
+      e.target.closest('.ritem').classList.toggle('sel', e.target.checked);
+      updateMassSel();
+    }));
+    $('mass-all').addEventListener('change', ()=>{
+      const on=$('mass-all').checked;
+      document.querySelectorAll('.mass-chk').forEach(ch=>{ ch.checked=on; ch.closest('.ritem').classList.toggle('sel',on); });
+      updateMassSel();
+    });
+    $('mass-apply').addEventListener('click', massApply);
+  }
   $('status').style.display='block';
-  setStatus('Знайдено: '+total+(total>matches.length?(' (показані перші '+matches.length+')'):'')+'. Натисніть на товар, щоб побачити параметри.');
+  const hint = own ? '. Позначте потрібні або «Вибрати всі» для масової зміни; клік по товару — відкрити.'
+                   : '. Натисніть на товар, щоб побачити параметри.';
+  setStatus('Знайдено: '+total+(total>matches.length?(' (показані перші '+matches.length+')'):'')+hint);
+}
+function massSelectedCount(){ return document.querySelectorAll('.mass-chk:checked').length; }
+function updateMassSel(){
+  const n=massSelectedCount();
+  const s=$('mass-sel'); if(s) s.textContent='Вибрано: '+n;
+  const a=$('mass-all'); if(a) a.checked = n>0 && n===lastResults.length;
+}
+async function massApply(){
+  const msg=$('mass-msg'); if(!msg) return;
+  const chosen=[];
+  document.querySelectorAll('.mass-chk:checked').forEach(ch=>{ const m=lastResults[+ch.dataset.i]; if(m) chosen.push(m); });
+  if(!chosen.length){ msg.style.color='var(--err)'; msg.textContent='Не вибрано жодного товару.'; return; }
+  const field=$('mass-field').value, value=$('mass-value').value;
+  const fname=(MASS_FIELDS.find(f=>f[0]===field)||[,field])[1];
+  const shown = value==='' ? 'ОЧИСТИТИ' : '«'+value+'»';
+  if(!confirm('Записати '+fname+' = '+shown+' для '+chosen.length+' товар(ів)?')) return;
+  const items=chosen.map(m=> m.e||m.k).filter(Boolean);
+  msg.style.color='var(--dim)'; msg.textContent='Застосовую…';
+  try{
+    let updated=0;
+    for(let i=0;i<items.length;i+=150){
+      const chunk=items.slice(i,i+150);
+      const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/extra-bulk',{
+        method:'POST', headers:authHeaders(), body:JSON.stringify({ items:chunk, field, value })
+      });
+      const j=await res.json();
+      if(!j || !j.ok){ msg.style.color='var(--err)'; msg.textContent='Помилка: '+((j&&j.error)||'не збережено (пароль?)'); return; }
+      updated+=j.updated||0; msg.textContent='Застосовую… '+updated+'/'+items.length;
+    }
+    msg.style.color='var(--ok)'; msg.textContent='Оновлено: '+updated+' товар(ів) ✓';
+  }catch(e){ msg.style.color='var(--err)'; msg.textContent='Збій: '+e.message; }
 }
 async function openResult(key){
   $('result').innerHTML=''; setStatus('Відкриваю…'); $('status').style.display='block';
@@ -782,12 +848,11 @@ document.addEventListener('paste', async (e)=>{
   }
 });
 
-/* ---- масове редагування (режим власника) ---- */
-let bulkMatched=[];
 const ROLE_META={ owner:{ic:'👑',name:'Власник',note:'Повний доступ'}, manager:{ic:'🗝️',name:'Менеджер',note:'Мітки, зокрема внутрішні'} };
 function updateOwnerUI(){
-  const b=$('bulkbox'); if(b) b.style.display=OWNER?'block':'none';          // масове редагування — лише власник
   const g=$('gear'); if(g){ g.classList.toggle('is-on', isStaff()); g.title=isStaff()?('Доступ: '+(ROLE_META[ROLE]?ROLE_META[ROLE].name:'')):'Доступ'; }
+  // якщо список результатів відкритий — перемалюємо його під нову роль (галочки з'являються/зникають)
+  if(lastResults && lastResults.length && document.querySelector('.results')) renderResults(lastResults, lastResults.length);
 }
 // перевірка пароля на сервері під обрану роль: повертає роль або null
 async function verifyRole(pass, want){
@@ -850,61 +915,6 @@ function doLogout(){
   localStorage.removeItem('search:pass'); localStorage.removeItem('search:role');
   applyRole('guest'); closeAuth(); if(currentProduct) render(currentProduct);
 }
-function bulkSelectedCount(){
-  return document.querySelectorAll('.bulk-chk:checked').length;
-}
-function updateBulkSel(){ const s=$('bulk-sel'); if(s) s.textContent=bulkSelectedCount(); }
-async function bulkFind(){
-  const pref=($('bulk-prefix').value||'').trim().toLowerCase();
-  const c=$('bulk-count');
-  if(!pref){ c.textContent='Введіть початок артикулу.'; bulkMatched=[]; $('bulk-list-wrap').style.display='none'; return; }
-  c.textContent='Шукаю…';
-  const list=await ensureCatalog();
-  bulkMatched=list.filter(m=> m.b && m.b.toLowerCase().indexOf(pref)===0);
-  c.textContent='Знайдено: '+bulkMatched.length+' товар(ів).';
-  // список із галочками (усі вибрані за замовчуванням)
-  const box=$('bulk-list');
-  box.innerHTML=bulkMatched.map((m,i)=>
-    '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;border-bottom:1px solid #eef1f5;font-size:13.5px;cursor:pointer">'+
-      '<input type="checkbox" class="bulk-chk" data-i="'+i+'" checked>'+
-      (m.img?'<img src="'+esc(m.img)+'" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:0 0 34px">':'<span style="width:34px;flex:0 0 34px"></span>')+
-      '<span style="flex:1"><b>'+esc(m.b)+'</b> — '+esc(m.n||'')+'</span>'+
-    '</label>').join('') || '<div class="ohint">Нічого не знайдено.</div>';
-  $('bulk-list-wrap').style.display = bulkMatched.length?'block':'none';
-  $('bulk-all').checked = true;
-  box.querySelectorAll('.bulk-chk').forEach(ch=>ch.addEventListener('change', ()=>{
-    updateBulkSel();
-    $('bulk-all').checked = bulkSelectedCount()===bulkMatched.length;
-  }));
-  updateBulkSel();
-}
-async function bulkApply(){
-  const msg=$('bulk-msg');
-  if(!bulkMatched.length){ msg.style.color='var(--err)'; msg.textContent='Спочатку «Знайти товари».'; return; }
-  const chosen=[];
-  document.querySelectorAll('.bulk-chk').forEach(ch=>{ if(ch.checked) chosen.push(bulkMatched[+ch.dataset.i]); });
-  if(!chosen.length){ msg.style.color='var(--err)'; msg.textContent='Не вибрано жодного товару.'; return; }
-  const field=$('bulk-field').value;
-  const value=$('bulk-value').value;
-  if(!confirm('Записати значення у поле для '+chosen.length+' товар(ів)?')) return;
-  const items=chosen.map(m=> m.e || m.k).filter(Boolean);
-  msg.style.color='var(--dim)'; msg.textContent='Застосовую…';
-  try{
-    let updated=0;
-    for(let i=0;i<items.length;i+=150){
-      const chunk=items.slice(i,i+150);
-      const res=await fetch(WORKER_URL.replace(/\/+$/,'')+'/extra-bulk',{
-        method:'POST', headers:authHeaders(),
-        body:JSON.stringify({ items:chunk, field, value })
-      });
-      const j=await res.json();
-      if(!j || !j.ok){ msg.style.color='var(--err)'; msg.textContent='Помилка: '+((j&&j.error)||'не збережено (пароль?)'); return; }
-      updated+=j.updated||0;
-      msg.textContent='Застосовую… '+updated+'/'+items.length;
-    }
-    msg.style.color='var(--ok)'; msg.textContent='Оновлено: '+updated+' товар(ів) ✓';
-  }catch(e){ msg.style.color='var(--err)'; msg.textContent='Збій: '+e.message; }
-}
 
 /* ---- шестерня доступу + вікно ---- */
 $('gear').addEventListener('click', openAuth);
@@ -916,13 +926,6 @@ $('auth-pass').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDe
 $('auth-eye').addEventListener('click', ()=>{ const p=$('auth-pass'); p.type = p.type==='password'?'text':'password'; p.focus(); });
 $('auth-modal').addEventListener('click', e=>{ if(e.target===$('auth-modal')) closeAuth(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeAuth(); });
-$('bulk-find').addEventListener('click', bulkFind);
-$('bulk-apply').addEventListener('click', bulkApply);
-$('bulk-all').addEventListener('change', ()=>{
-  const on=$('bulk-all').checked;
-  document.querySelectorAll('.bulk-chk').forEach(ch=>{ ch.checked=on; });
-  updateBulkSel();
-});
 
 // швидкий виклик вікна доступу: Ctrl+Alt+O  або  адреса з #admin
 document.addEventListener('keydown', (e)=>{

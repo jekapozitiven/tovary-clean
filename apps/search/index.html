@@ -224,7 +224,7 @@
 <div class="lightbox" id="lb"><div id="lbcontent"></div></div>
 
 <script>
-const APP_VERSION = '2026-11-06-1';   // ← бампати при кожному оновленні сторінки
+const APP_VERSION = '2026-11-24-1';   // ← бампати при кожному оновленні сторінки
 // відкидає з кінця мітки копій (копN) і суфікси магазину (B)/(С)/(S): "In-3009 (коп1) (B)" -> "In-3009"
 function stripTail(s){
   let x=String(s||'').trim(), prev;
@@ -312,8 +312,13 @@ const stripBullet=(s)=>{ try{ return String(s||'').replace(/^[^\p{L}\p{N}]+/u,''
 
 // підказка про посадку: маломірить / більшемірить / повнорозмірний.
 // Беремо КОРОТКУ примітку (у дужках або короткий рядок), НЕ довгий абзац.
-function extractFit(html){
-  const kw=/(маломір|мало мір|маломер|мало мер|більшемір|большемер|велик[оа]мір|великомер|повномір|повно ?розмір|полноразмер|повно ?мір)/i;
+// ===== НОВОЕ (fit-normal-1124): вставить вместо extractFit / fitType / showSizeHint =====
+const FIT_RED_RE=/(маломір|мало мір|маломер|мало мер|більшемір|большемер|велик[оа]мір|великомер)/i;
+// повномірні / повнорозмірний / полноразмерный / «в розмір» / «в размер» (но не «в розмірній сітці», «в размере»)
+const FIT_NORMAL_RE=/(повномір|повно ?розмір|полноразмер|повно ?мір|(?<![a-zа-яёіїєґ'’])в\s+(розмір|размер)(?![a-zа-яёіїєґ-]))/i;
+function extractFit(html, kind){
+  const kw = kind==='red' ? FIT_RED_RE : kind==='normal' ? FIT_NORMAL_RE
+           : new RegExp(FIT_RED_RE.source+'|'+FIT_NORMAL_RE.source,'i');
   const txt=descToText(html);
   // 1) примітка в дужках: (маломірять), (більшемірять)
   const par=txt.match(/\(([^)]{1,60})\)/g)||[];
@@ -323,6 +328,40 @@ function extractFit(html){
   for(const ln of lines){ if(kw.test(ln) && (ln.length<=70 || /^(розмір|размер|size)/i.test(ln))) return clean(ln); }
   return '';
 }
+// тип посадки: 'large' / 'small' (червона плашка, пріоритет) / 'normal' (зелена) / ''
+function fitType(html){
+  const txt=descToText(html);
+  if(/більшемір|большемер|велик[оа]мір|великомер/i.test(txt)) return 'large';
+  if(/маломір|мало мір|маломер|мало мер/i.test(txt)) return 'small';
+  if(FIT_NORMAL_RE.test(txt)) return 'normal';
+  return '';
+}
+function fitHintHtml(html){
+  const ft=fitType(html);
+  if(ft==='large' || ft==='small'){
+    const fit=extractFit(html,'red');
+    const label = (fit && fit.length<=70) ? fit : (ft==='large'?'Більшемірить':'Маломірить');
+    return '<div class="fit" style="background:#fde8e8;border-color:#f3b4b4;color:#b91c1c;font-weight:700;font-size:15px">⚠️ '+esc(label)+'</div>';
+  }
+  if(ft==='normal'){
+    const fit=extractFit(html,'normal');
+    const label = (fit && fit.length<=70) ? fit : 'Повномірні розміри';
+    return '<div class="fit" style="background:#e7f6ec;border-color:#a7dcb8;color:#166534;font-weight:700;font-size:15px">✅ '+esc(label)+'</div>';
+  }
+  return '';
+}
+function showSizeHint(html){
+  const slot=document.getElementById('auto-size'); if(!slot) return;
+  // посадка: червона (мало/більше) або зелена (повномірні)
+  let out=fitHintHtml(html);
+  // розміри — показуємо для одягу/взуття, але НЕ для сумок/аксесуарів і НЕ для габаритів (22×14×7)
+  const sizes=extractSizes(html);
+  if(sizes && !isBagLike() && !isDimensionLine(sizes))
+    out+='<div class="fit" style="background:#eef2f7;border-color:#d7dee7;color:#334155;font-weight:600">📐 '+esc(sizes)+'</div>';
+  slot.innerHTML=out;
+}
+// ===== /НОВОЕ =====
+
 // лінія з розмірами: «Розмірна сітка: …», «Розміри: …», «Размеры: …»
 function extractSizes(html){
   const lines=descToText(html).split(/\n+/).map(s=>stripBullet(s)).filter(Boolean);
@@ -332,28 +371,6 @@ function extractSizes(html){
   return '';
 }
 // визначаємо тип посадки: маломірить / більшемірить
-function fitType(html){
-  const txt=descToText(html);
-  if(/більшемір|большемер/i.test(txt)) return 'large';
-  if(/маломір|мало мір|маломер|мало мер/i.test(txt)) return 'small';
-  return '';
-}
-function showSizeHint(html){
-  const slot=document.getElementById('auto-size'); if(!slot) return;
-  let out='';
-  const fit=extractFit(html);
-  const ft=fitType(html);
-  // маломірить / більшемірить — ПОМІТНИЙ червоний блок
-  if(ft){
-    const label = (fit && fit.length<=70) ? fit : (ft==='large'?'Більшемірить':'Маломірить');
-    out+='<div class="fit" style="background:#fde8e8;border-color:#f3b4b4;color:#b91c1c;font-weight:700;font-size:15px">⚠️ '+esc(label)+'</div>';
-  }
-  // розміри — показуємо для одягу/взуття, але НЕ для сумок/аксесуарів і НЕ для габаритів (22×14×7)
-  const sizes=extractSizes(html);
-  if(sizes && !isBagLike() && !isDimensionLine(sizes))
-    out+='<div class="fit" style="background:#eef2f7;border-color:#d7dee7;color:#334155;font-weight:600">📐 '+esc(sizes)+'</div>';
-  slot.innerHTML=out;
-}
 // приймає СИРІ посилання; показує стиснене (fullImg), а data-raw тримає оригінал для відкату
 function galleryHtml(raws){
   const imgs=(Array.isArray(raws)?raws:[]).filter(Boolean);
